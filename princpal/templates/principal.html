@@ -1,0 +1,146 @@
+﻿{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% load static %}
+  <title>Nexo Rev | Quienes somos</title>
+  <script>
+    (() => {
+      const currentUserStorageKey = "nexorev_current_user";
+      const themePreferenceStorageKey = "nexorev_theme_preferences";
+      const fontSizePreferenceStorageKey = "nexorev_font_size_preferences";
+      const allowedFontSizes = new Set(["normal", "large", "xlarge"]);
+      const currentUser = sessionStorage.getItem(currentUserStorageKey)?.toLowerCase();
+      const getPreferenceMap = (storageKey) => {
+        try {
+          const rawValue = localStorage.getItem(storageKey);
+          const parsedValue = rawValue ? JSON.parse(rawValue) : {};
+          return parsedValue && typeof parsedValue === "object" ? parsedValue : {};
+        } catch {
+          return {};
+        }
+      };
+
+      const themePreferences = getPreferenceMap(themePreferenceStorageKey);
+      const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
+
+      const theme = currentUser && themePreferences[currentUser] === "dark" ? "dark" : "light";
+      const savedFontSize = currentUser ? fontSizePreferences[currentUser] : "normal";
+      const fontSize = allowedFontSizes.has(savedFontSize) ? savedFontSize : "normal";
+
+      document.documentElement.setAttribute("data-theme", theme);
+      document.documentElement.setAttribute("data-font-size", fontSize);
+    })();
+  </script>
+  <link rel="stylesheet" href="{% static 'estilo.css' %}">
+</head>
+<body>
+  <button
+    class="menu-toggle"
+    id="menuToggle"
+    type="button"
+    aria-label="Abrir menu principal"
+    aria-expanded="false"
+    aria-controls="menuPanel"
+  >
+    <span></span>
+    <span></span>
+    <span></span>
+  </button>
+
+  <aside class="menu-panel" id="menuPanel" aria-hidden="true">
+    <h2>Menu</h2>
+    <nav class="menu-links" aria-label="Navegacion principal">
+      <a class="menu-link current" href="/principal/" aria-current="page">Inicio</a>
+      <a class="menu-link" href="/ajustes/">Ajustes</a>
+      <a class="menu-link" href="/logout/">Cerrar sesión</a>
+    </nav>
+  </aside>
+
+  <main class="principal-layout">
+    <section class="intro-card">
+      <p class="chip">Quienes somos</p>
+      <h1>Nexo Rev</h1>
+      <p>
+        Somos un equipo enfocado en fisioterapia y rehabilitacion, comprometido con una atencion cercana,
+        profesional y humana para cada paciente.
+      </p>
+      <p>
+        Nos dedicamos a evaluar, tratar y dar seguimiento a procesos de recuperacion fisica, buscando mejorar
+        movilidad, reducir dolor y apoyar el bienestar integral.
+      </p>
+    </section>
+
+    <section class="value-grid" aria-label="Propuesta de valor">
+      <article class="value-card">
+        <h2>Que hacemos</h2>
+        <p>Atendemos dolor, limitaciones de movimiento y procesos postoperatorios con terapia personalizada.</p>
+      </article>
+
+      <article class="value-card">
+        <h2>Como trabajamos</h2>
+        <p>Combinamos evaluacion clinica, plan de sesiones y seguimiento continuo para medir avances reales.</p>
+      </article>
+
+      <article class="value-card">
+        <h2>Que te llevas</h2>
+        <p>Recuperacion funcional, menos dolor y una guia clara para mantener resultados en casa.</p>
+      </article>
+    </section>
+
+    <section class="info-grid">
+      <article class="process-card">
+        <h2>Proceso en 3 pasos</h2>
+        <ol class="process-list">
+          <li>
+            <span>1</span>
+            <div>
+              <h3>Evaluacion inicial</h3>
+              <p>Conocemos tu historial, sintomas y objetivos.</p>
+            </div>
+          </li>
+          <li>
+            <span>2</span>
+            <div>
+              <h3>Plan personalizado</h3>
+              <p>Disenamos tratamiento segun tu condicion y ritmo.</p>
+            </div>
+          </li>
+          <li>
+            <span>3</span>
+            <div>
+              <h3>Seguimiento</h3>
+              <p>Ajustamos sesiones para consolidar tu recuperacion.</p>
+            </div>
+          </li>
+        </ol>
+      </article>
+
+      <article class="services-card">
+        <h2>Servicios principales</h2>
+        <ul class="service-tags">
+          <li>Dolor lumbar</li>
+          <li>Rehabilitacion postoperatoria</li>
+          <li>Lesiones deportivas</li>
+          <li>Movilidad articular</li>
+          <li>Terapia manual</li>
+          <li>Reeducacion postural</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const menuToggle = document.getElementById("menuToggle");
+    const menuPanel = document.getElementById("menuPanel");
+
+    menuToggle.addEventListener("click", () => {
+      const isOpen = menuPanel.classList.toggle("open");
+      menuToggle.setAttribute("aria-expanded", String(isOpen));
+      menuPanel.setAttribute("aria-hidden", String(!isOpen));
+    });
+  </script>
+</body>
+</html>

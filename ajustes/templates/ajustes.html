@@ -1,0 +1,190 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexo Rev | Ajustes</title>
+  <script>
+    (() => {
+      const currentUserStorageKey = "nexorev_current_user";
+      const themePreferenceStorageKey = "nexorev_theme_preferences";
+      const fontSizePreferenceStorageKey = "nexorev_font_size_preferences";
+      const allowedFontSizes = new Set(["normal", "large", "xlarge"]);
+      const currentUser = sessionStorage.getItem(currentUserStorageKey)?.toLowerCase();
+      const getPreferenceMap = (storageKey) => {
+        try {
+          const rawValue = localStorage.getItem(storageKey);
+          const parsedValue = rawValue ? JSON.parse(rawValue) : {};
+          return parsedValue && typeof parsedValue === "object" ? parsedValue : {};
+        } catch {
+          return {};
+        }
+      };
+
+      const themePreferences = getPreferenceMap(themePreferenceStorageKey);
+      const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
+
+      const theme = currentUser && themePreferences[currentUser] === "dark" ? "dark" : "light";
+      const savedFontSize = currentUser ? fontSizePreferences[currentUser] : "normal";
+      const fontSize = allowedFontSizes.has(savedFontSize) ? savedFontSize : "normal";
+
+      document.documentElement.setAttribute("data-theme", theme);
+      document.documentElement.setAttribute("data-font-size", fontSize);
+    })();
+  </script>
+  <link rel="stylesheet" href="{% static 'estilo.css' %}">
+</head>
+<body>
+  <button
+    class="menu-toggle"
+    id="menuToggle"
+    type="button"
+    aria-label="Abrir menu principal"
+    aria-expanded="false"
+    aria-controls="menuPanel"
+  >
+    <span></span>
+    <span></span>
+    <span></span>
+  </button>
+
+  <aside class="menu-panel" id="menuPanel" aria-hidden="true">
+    <h2>Menu</h2>
+    <nav class="menu-links" aria-label="Navegacion principal">
+      <a class="menu-link" href="/principal/">Inicio</a>
+      <a class="menu-link current" href="/ajustes/" aria-current="page">Ajustes</a>
+      <a class="menu-link" href="/logout/">Cerrar sesión</a>
+    </nav>
+  </aside>
+
+  <main class="settings-layout">
+    <section class="settings-card">
+      <p class="chip">Preferencias</p>
+      <h1>Ajustes de cuenta</h1>
+
+      <div class="setting-row">
+        <div class="setting-copy">
+          <h2>Modo claro y oscuro</h2>
+        </div>
+
+        <label class="switch" for="themeToggle" aria-label="Cambiar tema">
+          <input id="themeToggle" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
+          <h2>Tamano de fuente</h2>
+        </div>
+
+        <select id="fontSizeSelect" class="setting-select" aria-label="Seleccionar tamano de fuente">
+          <option value="normal">Normal</option>
+          <option value="large">Grande</option>
+          <option value="xlarge">Muy grande</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
+          <h2>Datos del usuario</h2>
+        </div>
+
+        <a class="setting-link-btn" href="./cambio%20de%20formulario.html">Ver datos</a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const menuToggle = document.getElementById("menuToggle");
+    const menuPanel = document.getElementById("menuPanel");
+    const themeToggle = document.getElementById("themeToggle");
+    const fontSizeSelect = document.getElementById("fontSizeSelect");
+    const currentUserStorageKey = "nexorev_current_user";
+    const themePreferenceStorageKey = "nexorev_theme_preferences";
+    const fontSizePreferenceStorageKey = "nexorev_font_size_preferences";
+    const allowedFontSizes = new Set(["normal", "large", "xlarge"]);
+
+    const getCurrentUser = () => sessionStorage.getItem(currentUserStorageKey)?.toLowerCase();
+
+    const getPreferenceMap = (storageKey) => {
+      try {
+        const rawValue = localStorage.getItem(storageKey);
+        const parsedValue = rawValue ? JSON.parse(rawValue) : {};
+        return parsedValue && typeof parsedValue === "object" ? parsedValue : {};
+      } catch {
+        return {};
+      }
+    };
+
+    const savePreferenceMap = (storageKey, preferenceMap) => {
+      localStorage.setItem(storageKey, JSON.stringify(preferenceMap));
+    };
+
+    const getThemeForUser = (user) => {
+      if (!user) {
+        return "light";
+      }
+
+      const themePreferences = getPreferenceMap(themePreferenceStorageKey);
+      return themePreferences[user] === "dark" ? "dark" : "light";
+    };
+
+    const getFontSizeForUser = (user) => {
+      if (!user) {
+        return "normal";
+      }
+
+      const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
+      const savedFontSize = fontSizePreferences[user];
+      return allowedFontSizes.has(savedFontSize) ? savedFontSize : "normal";
+    };
+
+    const applyTheme = (theme) => {
+      document.documentElement.setAttribute("data-theme", theme === "light" ? "light" : "dark");
+    };
+
+    const applyFontSize = (fontSize) => {
+      const selectedFontSize = allowedFontSizes.has(fontSize) ? fontSize : "normal";
+      document.documentElement.setAttribute("data-font-size", selectedFontSize);
+    };
+
+    const currentUser = getCurrentUser();
+    const currentTheme = getThemeForUser(currentUser);
+    const currentFontSize = getFontSizeForUser(currentUser);
+    applyTheme(currentTheme);
+    applyFontSize(currentFontSize);
+    themeToggle.checked = currentTheme === "dark";
+    fontSizeSelect.value = currentFontSize;
+
+    menuToggle.addEventListener("click", () => {
+      const isOpen = menuPanel.classList.toggle("open");
+      menuToggle.setAttribute("aria-expanded", String(isOpen));
+      menuPanel.setAttribute("aria-hidden", String(!isOpen));
+    });
+
+    themeToggle.addEventListener("change", () => {
+      const selectedTheme = themeToggle.checked ? "dark" : "light";
+      applyTheme(selectedTheme);
+
+      if (currentUser) {
+        const themePreferences = getPreferenceMap(themePreferenceStorageKey);
+        themePreferences[currentUser] = selectedTheme;
+        savePreferenceMap(themePreferenceStorageKey, themePreferences);
+      }
+    });
+
+    fontSizeSelect.addEventListener("change", () => {
+      const selectedFontSize = allowedFontSizes.has(fontSizeSelect.value) ? fontSizeSelect.value : "normal";
+      applyFontSize(selectedFontSize);
+
+      if (currentUser) {
+        const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
+        fontSizePreferences[currentUser] = selectedFontSize;
+        savePreferenceMap(fontSizePreferenceStorageKey, fontSizePreferences);
+      }
+    });
+  </script>
+</body>
+</html>
