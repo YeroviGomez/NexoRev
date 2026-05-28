@@ -12,17 +12,33 @@ def login_view(request):
 
         if not email or not password:
             context['error_message'] = 'Ingresa correo y contraseña.'
-        else:
-            try:
-                usuario = Usuario.objects.get(email=email)
-            except Usuario.DoesNotExist:
-                usuario = None
+            return render(request, 'login.html', context)
 
-            if usuario is None or not usuario.check_password(password):
-                context['error_message'] = 'Correo o contraseña incorrectos.'
-            else:
-                request.session['current_user'] = usuario.email
-                return redirect('principal')
+        allowed_domains = {
+            'gmail.com','hotmail.com','outlook.com','live.com','yahoo.com','icloud.com',
+            'protonmail.com','zoho.com','aol.com','gmx.com','yandex.com','mail.com',
+            'fastmail.com','tutanota.com'
+        }
+
+        if '@' not in email or not email.endswith('.com'):
+            context['error_message'] = 'Ingrese un correo válido.'
+            return render(request, 'login.html', context)
+
+        domain = email.split('@')[-1]
+        if domain not in allowed_domains:
+            context['error_message'] = 'Ingrese un correo válido.'
+            return render(request, 'login.html', context)
+
+        try:
+            usuario = Usuario.objects.get(email=email)
+        except Usuario.DoesNotExist:
+            usuario = None
+
+        if usuario is None or not usuario.check_password(password):
+            context['error_message'] = 'Correo o contraseña incorrectos.'
+        else:
+            request.session['current_user'] = usuario.email
+            return redirect('principal')
 
     return render(request, 'login.html', context)
 

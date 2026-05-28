@@ -4,30 +4,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nexo Rev | Crear cuenta</title>
-  <link rel="stylesheet" href="{% static 'arte.css' %}">
+  <title>Nexo ReV | Crear cuenta</title>
+  <link rel="stylesheet" href="{% static 'crear_cuenta/arte.css' %}">
 </head>
 <body>
   <main class="auth-layout">
-    <aside class="brand-panel">
-      <p class="chip">Portal de fisioterapia</p>
-      <h1>Nexo Rev</h1>
-      <p class="lead">
-        Crea tu cuenta para acceder al seguimiento de sesiones y avances terapeuticos.
-      </p>
-
-      <ul class="benefits">
-        <li>Historial de progreso en rehabilitacion</li>
-        <li>Acceso a citas y recordatorios</li>
-        <li>Informacion protegida y centralizada</li>
-      </ul>
+    <aside class="brand-panel" aria-label="Nexo ReV">
+      <div class="brand-title">
+        <svg class="brand-mark" width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M6 29h9.4l5.3-20 9.1 37 6.2-23h14" stroke="#009688" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h1>Nexo ReV</h1>
+      </div>
+      <p class="lead">Rehabilitación desde tu hogar</p>
     </aside>
 
     <section class="form-panel">
-      <div class="form-head">
-        <h2>Crear cuenta</h2>
-        <p>Completa tus datos para registrarte.</p>
-      </div>
+      <nav class="tab-switch" role="tablist">
+        <a href="/login/" class="tab">Iniciar Sesión</a>
+        <a href="/registro/" class="tab active">Registrarse</a>
+      </nav>
 
       <form id="signupForm" method="post" action="{% url 'registro' %}" novalidate>
         {% csrf_token %}
@@ -37,6 +33,11 @@
           <p class="form-message success">{{ success_message }}</p>
         {% endif %}
 
+        <div class="form-head">
+          <h2>Crear cuenta</h2>
+          <p>Completa tus datos para comenzar</p>
+        </div>
+
         <div class="field-group">
           <label for="fullName">Nombre completo</label>
           <input
@@ -44,19 +45,19 @@
             name="fullName"
             type="text"
             autocomplete="name"
-            placeholder="Ejemplo: juan perez"
+            placeholder="Juan Pérez"
             required
           >
         </div>
 
         <div class="field-group">
-          <label for="email">Correo electronico</label>
+          <label for="email">Correo electrónico</label>
           <input
             id="email"
             name="email"
             type="email"
             autocomplete="email"
-            placeholder="Ingrese su correo electronico"
+            placeholder="tu@ejemplo.com"
             required
           >
         </div>
@@ -68,7 +69,7 @@
             name="password"
             type="password"
             autocomplete="new-password"
-            placeholder="Minimo 8 caracteres"
+            placeholder="••••••••"
             required
           >
         </div>
@@ -80,19 +81,14 @@
             name="confirmPassword"
             type="password"
             autocomplete="new-password"
-            placeholder="Repite tu contraseña"
+            placeholder="••••••••"
             required
           >
         </div>
 
-        <button type="submit" class="primary-btn">Crear cuenta</button>
+        <button type="submit" class="primary-btn">Registrarse</button>
         <p id="formMessage" class="form-message" aria-live="polite"></p>
       </form>
-
-      <p class="signup-cta">
-        &iquest;Ya tienes cuenta?
-        <a href="/login/" class="text-link">Iniciar sesion</a>
-      </p>
     </section>
   </main>
 
@@ -104,7 +100,16 @@
     const confirmPasswordInput = document.getElementById("confirmPassword");
     const formMessage = document.getElementById("formMessage");
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const allowedDomains = new Set([
+      'gmail.com','hotmail.com','outlook.com','live.com','yahoo.com','icloud.com','protonmail.com','zoho.com','aol.com','gmx.com','yandex.com','mail.com','fastmail.com','tutanota.com'
+    ]);
+
+    function validEmailDomain(email) {
+      if (!email || !email.includes('@')) return false;
+      if (!email.toLowerCase().endsWith('.com')) return false;
+      const domain = email.split('@').pop().toLowerCase();
+      return allowedDomains.has(domain);
+    }
 
     form.addEventListener("submit", (event) => {
       formMessage.textContent = "";
@@ -123,9 +128,9 @@
         return;
       }
 
-      if (!emailRegex.test(email)) {
+      if (!validEmailDomain(email)) {
         event.preventDefault();
-        formMessage.textContent = "Ingresa un correo electrónico válido.";
+        formMessage.textContent = "Ingrese un correo válido.";
         formMessage.classList.add("error");
         emailInput.focus();
         return;
@@ -144,10 +149,7 @@
         formMessage.textContent = "Las contraseñas no coinciden.";
         formMessage.classList.add("error");
         confirmPasswordInput.focus();
-        return;
       }
-
-      // Si todo es válido, dejamos que el formulario se envíe al servidor.
     });
   </script>
 </body>
