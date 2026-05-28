@@ -1,4 +1,4 @@
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 
 from .models import Usuario
 
@@ -25,9 +25,9 @@ def crear_cuenta_view(request):
                 context['error_message'] = 'Ya existe una cuenta con ese correo.'
             else:
                 allowed_domains = {
-                    'gmail.com','hotmail.com','outlook.com','live.com','yahoo.com','icloud.com',
-                    'protonmail.com','zoho.com','aol.com','gmx.com','yandex.com','mail.com',
-                    'fastmail.com','tutanota.com'
+                    'gmail.com', 'hotmail.com', 'outlook.com', 'live.com', 'yahoo.com',
+                    'icloud.com', 'protonmail.com', 'zoho.com', 'aol.com', 'gmx.com',
+                    'yandex.com', 'mail.com', 'fastmail.com', 'tutanota.com'
                 }
 
                 if '@' not in email or not email.endswith('.com'):
@@ -42,7 +42,6 @@ def crear_cuenta_view(request):
                 usuario = Usuario(email=email, nombre=nombre)
                 usuario.set_password(password)
                 usuario.save()
-                context['success_message'] = 'Cuenta creada correctamente. Ahora inicia sesión.'
-                return render(request, 'crear_cuenta.html', context)
+                return redirect('login')
 
     return render(request, 'crear_cuenta.html', context)

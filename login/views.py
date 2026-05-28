@@ -38,6 +38,7 @@ def login_view(request):
             context['error_message'] = 'Correo o contraseña incorrectos.'
         else:
             request.session['current_user'] = usuario.email
+            request.session['show_tutorial'] = True
             return redirect('principal')
 
     return render(request, 'login.html', context)
