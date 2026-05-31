@@ -7,7 +7,7 @@
   <title>Nexo ReV | Inicio</title>
   <link rel="stylesheet" href="{% static 'estilo.css' %}">
 </head>
-<body class="{% if show_tutorial %}tutorial-open{% endif %}">
+<body class="{% if dark_mode %}dark-mode{% endif %} {% if show_tutorial %}tutorial-open{% endif %}">
   <aside class="app-sidebar" id="appSidebar">
     <header class="sidebar-brand">
       <a class="brand-lockup" href="#inicio" data-nav="inicio" aria-label="Nexo ReV inicio">
@@ -280,9 +280,16 @@
 
           <div class="avatar-row">
             <div class="avatar-preview" aria-hidden="true">
-              <span>{{ usuario.nombre|default:"Nexo ReV"|slice:":1" }}</span>
+              {% if usuario.foto %}
+                <img id="avatarImage" src="{{ usuario.foto.url }}" alt="Foto de perfil" style="display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit;">
+                <span id="avatarInitial" style="display: none;">{{ usuario.nombre|default:"Nexo ReV"|slice:":1" }}</span>
+              {% else %}
+                <span id="avatarInitial">{{ usuario.nombre|default:"Nexo ReV"|slice:":1" }}</span>
+                <img id="avatarImage" style="display: none;" alt="Foto de perfil">
+              {% endif %}
             </div>
-            <button class="outline-button" type="button">Cambiar foto</button>
+            <input type="file" id="fotoInput" accept="image/*" style="display: none;">
+            <button class="outline-button" type="button" id="cambiarFotoButton">Cambiar foto</button>
           </div>
 
           <div class="profile-fields">
@@ -291,16 +298,12 @@
               <input type="text" value="{{ usuario.nombre|default:'Juan Pérez' }}">
             </label>
             <label>
-              <span>Correo electrónico</span>
-              <input type="email" value="{{ usuario.email|default:current_user_email|default:'juan@ejemplo.com' }}">
-            </label>
-            <label>
               <span>Teléfono</span>
-              <input type="tel" value="+503 1234-5678">
+              <input type="tel" value="{{ usuario.telefono|default:'' }}">
             </label>
             <label>
               <span>Edad</span>
-              <input type="number" value="35">
+              <input type="number" value="{{ usuario.edad|default:'' }}">
             </label>
           </div>
         </section>
@@ -379,6 +382,55 @@
       </form>
     </section>
   </main>
+
+  <!-- Modal de Alerta -->
+  <div class="custom-modal-overlay hidden" id="alertModal">
+    <div class="custom-modal">
+      <div class="custom-modal-header">
+        <h2 id="alertTitle">Alerta</h2>
+        <button type="button" class="custom-modal-close" id="alertClose">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="custom-modal-body">
+        <p id="alertMessage"></p>
+      </div>
+      <div class="custom-modal-footer">
+        <button type="button" class="custom-modal-button" id="alertOk">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Confirmación -->
+  <div class="custom-modal-overlay hidden" id="confirmModal">
+    <div class="custom-modal">
+      <div class="custom-modal-header">
+        <h2 id="confirmTitle">Confirmar</h2>
+      </div>
+      <div class="custom-modal-body">
+        <p id="confirmMessage"></p>
+      </div>
+      <div class="custom-modal-footer">
+        <button type="button" class="custom-modal-button cancel" id="confirmCancel">Cancelar</button>
+        <button type="button" class="custom-modal-button confirm" id="confirmOk">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Éxito -->
+  <div class="custom-modal-overlay hidden" id="successModal">
+    <div class="custom-modal success">
+      <div class="success-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 6L9 17l-5-5" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <h2 id="successTitle">¡Listo!</h2>
+      <p id="successMessage"></p>
+    </div>
+  </div>
 
   <section class="tutorial-overlay {% if not show_tutorial %}hidden{% endif %}" id="tutorialOverlay" aria-modal="true" role="dialog" aria-labelledby="tutorialTitle">
     <article class="tutorial-modal">
@@ -654,6 +706,324 @@
     });
 
     renderTutorial();
+
+    // ============== FUNCIONALIDAD DE MODALES PERSONALIZADOS ==============
+    const alertModal = document.getElementById("alertModal");
+    const confirmModal = document.getElementById("confirmModal");
+    const successModal = document.getElementById("successModal");
+    const alertTitle = document.getElementById("alertTitle");
+    const alertMessage = document.getElementById("alertMessage");
+    const alertClose = document.getElementById("alertClose");
+    const alertOk = document.getElementById("alertOk");
+    const confirmTitle = document.getElementById("confirmTitle");
+    const confirmMessage = document.getElementById("confirmMessage");
+    const confirmCancel = document.getElementById("confirmCancel");
+    const confirmOk = document.getElementById("confirmOk");
+    const successTitle = document.getElementById("successTitle");
+    const successMessage = document.getElementById("successMessage");
+
+    let confirmCallback = null;
+
+    function showAlert(title, message) {
+      alertTitle.textContent = title;
+      alertMessage.textContent = message;
+      alertModal.classList.remove("hidden");
+      alertOk.focus();
+    }
+
+    function closeAlert() {
+      alertModal.classList.add("hidden");
+    }
+
+    function showConfirm(title, message, callback) {
+      confirmTitle.textContent = title;
+      confirmMessage.textContent = message;
+      confirmCallback = callback;
+      confirmModal.classList.remove("hidden");
+      confirmOk.focus();
+    }
+
+    function closeConfirm(confirmed) {
+      confirmModal.classList.add("hidden");
+      if (confirmed && confirmCallback) {
+        confirmCallback();
+      }
+      confirmCallback = null;
+    }
+
+    function showSuccess(title, message) {
+      successTitle.textContent = title;
+      successMessage.textContent = message;
+      successModal.classList.remove("hidden");
+      
+      setTimeout(() => {
+        successModal.classList.add("hidden");
+      }, 2500);
+    }
+
+    alertOk.addEventListener("click", closeAlert);
+    alertClose.addEventListener("click", closeAlert);
+    confirmCancel.addEventListener("click", () => closeConfirm(false));
+    confirmOk.addEventListener("click", () => closeConfirm(true));
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        if (!alertModal.classList.contains("hidden")) closeAlert();
+        if (!confirmModal.classList.contains("hidden")) closeConfirm(false);
+      }
+    });
+
+    // ============== FUNCIONALIDAD DE PERFIL ==============
+    const profileForm = document.querySelector(".profile-page");
+    const saveButton = document.querySelector(".save-button");
+    const changePasswordButton = document.querySelector(".wide-outline-button");
+    const cambiarFotoButton = document.getElementById("cambiarFotoButton");
+    const fotoInput = document.getElementById("fotoInput");
+    const avatarInitial = document.getElementById("avatarInitial");
+    const avatarImage = document.getElementById("avatarImage");
+
+    // Campos del formulario dentro de profile-fields
+    const profileFields = document.querySelectorAll(".profile-fields input");
+    const nombreInput = profileFields[0];
+    const telefonoInput = profileFields[1];
+    const edadInput = profileFields[2];
+
+    // Campos de contraseña
+    const passwordFields = document.querySelectorAll(".password-fields input");
+    const currentPasswordInput = passwordFields[0];
+    const newPasswordInput = passwordFields[1];
+    const confirmPasswordInput = passwordFields[2];
+
+    // Guardar valores originales para comparar
+    let originalEmail = null;
+
+    // Funcionalidad para cambiar foto
+    cambiarFotoButton.addEventListener("click", (e) => {
+      e.preventDefault();
+      fotoInput.click();
+    });
+
+    fotoInput.addEventListener("change", (e) => {
+      const archivo = e.target.files[0];
+      if (!archivo) return;
+
+      // Validar tipo
+      const tiposPermitidos = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      if (!tiposPermitidos.includes(archivo.type)) {
+        showAlert("Error", "Solo se permiten imágenes (JPG, PNG, GIF, WebP)");
+        fotoInput.value = "";
+        return;
+      }
+
+      // Validar tamaño (5MB)
+      if (archivo.size > 5 * 1024 * 1024) {
+        showAlert("Error", "La imagen no debe superar 5MB");
+        fotoInput.value = "";
+        return;
+      }
+
+      // Mostrar preview
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        avatarInitial.style.display = "none";
+        avatarImage.src = event.target.result;
+        avatarImage.style.display = "block";
+      };
+      reader.readAsDataURL(archivo);
+
+      // Enviar al servidor
+      const formData = new FormData();
+      formData.append('foto', archivo);
+
+      fetch('/principal/api/upload-photo/', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          showSuccess("¡Listo!", "Foto actualizada correctamente");
+          // Recargar la foto desde el servidor evitando caché
+          if (data.foto_url) {
+            setTimeout(() => {
+              avatarImage.src = data.foto_url + '?t=' + new Date().getTime();
+              avatarInitial.style.display = "none";
+              avatarImage.style.display = "block";
+            }, 500);
+          }
+          fotoInput.value = "";
+        } else {
+          showAlert("Error", data.error || "No se pudo subir la foto");
+          avatarInitial.style.display = "block";
+          avatarImage.style.display = "none";
+          fotoInput.value = "";
+        }
+      })
+      .catch(error => {
+        showAlert("Error", "Error al subir la foto: " + error);
+        avatarInitial.style.display = "block";
+        avatarImage.style.display = "none";
+        fotoInput.value = "";
+      });
+    });
+
+    // ============== FUNCIONALIDAD DE MODO OSCURO ==============
+    const darkModeSwitch = document.querySelector(".preference-row:first-of-type .mini-switch input");
+
+    // Aplicar estado inicial del modo oscuro
+    if (document.body.classList.contains("dark-mode")) {
+      darkModeSwitch.checked = true;
+    }
+
+    darkModeSwitch.addEventListener("change", (e) => {
+      const modoOscuroActivo = e.target.checked;
+      document.body.classList.toggle("dark-mode", modoOscuroActivo);
+
+      // Guardar preferencia en el servidor
+      fetch('/principal/api/toggle-dark-mode/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: JSON.stringify({
+          modo_oscuro: modoOscuroActivo,
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (!data.success) {
+          // Revertir si hay error
+          document.body.classList.toggle("dark-mode", !modoOscuroActivo);
+          darkModeSwitch.checked = !modoOscuroActivo;
+        }
+      })
+      .catch(error => {
+        // Revertir si hay error
+        document.body.classList.toggle("dark-mode", !modoOscuroActivo);
+        darkModeSwitch.checked = !modoOscuroActivo;
+      });
+    });
+
+    // Función para cambiar contraseña
+    changePasswordButton.addEventListener("click", (e) => {
+      e.preventDefault();
+
+      const currentPassword = currentPasswordInput.value.trim();
+      const newPassword = newPasswordInput.value.trim();
+      const confirmPassword = confirmPasswordInput.value.trim();
+
+      // Validaciones
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        showAlert("Campos incompletos", "Por favor completa todos los campos de contraseña");
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        showAlert("Error", "Las nuevas contraseñas no coinciden");
+        return;
+      }
+
+      if (newPassword.length < 6) {
+        showAlert("Error", "La nueva contraseña debe tener al menos 6 caracteres");
+        return;
+      }
+
+      if (currentPassword === newPassword) {
+        showAlert("Error", "La nueva contraseña no puede ser igual a la actual");
+        return;
+      }
+
+      // Enviar al servidor
+      fetch('/principal/api/change-password/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+          confirmPassword,
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          showSuccess("¡Listo!", "Contraseña cambiada correctamente");
+          currentPasswordInput.value = "";
+          newPasswordInput.value = "";
+          confirmPasswordInput.value = "";
+        } else {
+          showAlert("Error", data.error || "No se pudo cambiar la contraseña");
+        }
+      })
+      .catch(error => {
+        showAlert("Error", "Error al cambiar la contraseña: " + error);
+      });
+    });
+
+    // Función para guardar cambios
+    saveButton.addEventListener("click", (e) => {
+      e.preventDefault();
+
+      const nuevoNombre = nombreInput.value.trim();
+      const nuevoTelefono = telefonoInput.value.trim();
+      const nuevaEdad = edadInput.value.trim();
+
+      // Validaciones básicas
+      if (!nuevoNombre) {
+        showAlert("Error", "El nombre no puede estar vacío");
+        return;
+      }
+
+      guardarCambios(nuevoNombre, nuevoTelefono, nuevaEdad);
+    });
+
+    function guardarCambios(nombre, telefono, edad) {
+      fetch('/principal/api/update-profile/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: JSON.stringify({
+          nombre,
+          telefono,
+          edad,
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          showSuccess("¡Listo!", "Cambios guardados correctamente");
+        } else {
+          showAlert("Error", data.error || "No se pudieron guardar los cambios");
+        }
+      })
+      .catch(error => {
+        showAlert("Error", "Error al guardar los cambios: " + error);
+      });
+    }
+
+    // Función para obtener CSRF token
+    function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    }
   </script>
 </body>
 </html>

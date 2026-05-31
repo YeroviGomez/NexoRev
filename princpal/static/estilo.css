@@ -14,6 +14,20 @@
   --sidebar-width: 316px;
 }
 
+/* Modo Oscuro */
+body.dark-mode {
+  --bg: #0f1419;
+  --surface: #1a1f2e;
+  --surface-soft: #252d3d;
+  --ink: #e4e6eb;
+  --muted: #a0a9b8;
+  --line: #3a4455;
+  --teal: #00b8a9;
+  --teal-soft: #001f1a;
+  --dark: #ffffff;
+  --shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+}
+
 *,
 *::before,
 *::after {
@@ -1075,4 +1089,353 @@ input {
     grid-row: 2;
     width: 100%;
   }
+}
+
+/* Estilos para modales personalizados */
+.custom-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.custom-modal-overlay.hidden {
+  display: none;
+  opacity: 0;
+}
+
+.custom-modal {
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  max-width: 450px;
+  width: 90%;
+  overflow: hidden;
+  animation: slideUp 0.3s ease;
+}
+
+.custom-modal.success {
+  text-align: center;
+  padding: 2rem 1.5rem;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.custom-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.custom-modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--ink);
+}
+
+.custom-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transition: color 0.2s ease;
+}
+
+.custom-modal-close:hover {
+  color: var(--ink);
+}
+
+.custom-modal-close svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.custom-modal-body {
+  padding: 1.5rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.custom-modal-body p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.success-icon {
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: center;
+}
+
+.success-icon svg {
+  width: 60px;
+  height: 60px;
+  stroke: var(--teal);
+  stroke-width: 2;
+  animation: checkmark 0.5s ease forwards;
+}
+
+@keyframes checkmark {
+  from {
+    stroke-dasharray: 50;
+    stroke-dashoffset: 50;
+  }
+  to {
+    stroke-dasharray: 50;
+    stroke-dashoffset: 0;
+  }
+}
+
+.custom-modal.success h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.5rem;
+  color: var(--ink);
+}
+
+.custom-modal.success p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.custom-modal-footer {
+  display: flex;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-top: 1px solid var(--line);
+  justify-content: flex-end;
+}
+
+.custom-modal-button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex: 1;
+}
+
+.custom-modal-button.confirm,
+.custom-modal-button:not(.cancel) {
+  background: var(--teal);
+  color: white;
+}
+
+.custom-modal-button.confirm:hover,
+.custom-modal-button:not(.cancel):hover {
+  background: #00897b;
+  box-shadow: 0 4px 12px rgba(0, 150, 136, 0.3);
+}
+
+.custom-modal-button.cancel {
+  background: var(--surface-soft);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.custom-modal-button.cancel:hover {
+  background: #e8eaed;
+}
+
+/* ============== ESTILOS MEJORADOS PARA MODO OSCURO ============== */
+
+/* Switches en modo oscuro */
+body.dark-mode .mini-switch input:checked + span {
+  background: var(--teal);
+}
+
+body.dark-mode .mini-switch input:checked + span::after {
+  background: var(--surface);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-mode .mini-switch input + span {
+  background: #3a4455;
+}
+
+body.dark-mode .mini-switch input + span::after {
+  background: #666f80;
+}
+
+/* Asegurar que todo el texto sea blanco en modo oscuro */
+body.dark-mode {
+  color: var(--ink);
+}
+
+body.dark-mode h1,
+body.dark-mode h2,
+body.dark-mode h3,
+body.dark-mode h4,
+body.dark-mode h5,
+body.dark-mode h6 {
+  color: var(--ink);
+}
+
+body.dark-mode p,
+body.dark-mode span,
+body.dark-mode label,
+body.dark-mode button,
+body.dark-mode input,
+body.dark-mode textarea,
+body.dark-mode a {
+  color: var(--ink);
+}
+
+/* Barra lateral en modo oscuro */
+body.dark-mode .sidebar-link,
+body.dark-mode .sidebar-link span,
+body.dark-mode .sidebar-button span {
+  color: var(--ink);
+}
+
+body.dark-mode .sidebar-link:hover {
+  color: var(--teal);
+}
+
+body.dark-mode .sidebar-brand a span {
+  color: var(--ink);
+}
+
+/* Inputs en modo oscuro */
+body.dark-mode input[type="text"],
+body.dark-mode input[type="email"],
+body.dark-mode input[type="password"],
+body.dark-mode input[type="tel"],
+body.dark-mode input[type="number"],
+body.dark-mode input[type="search"],
+body.dark-mode textarea {
+  background: var(--surface-soft);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+body.dark-mode input[type="text"]:focus,
+body.dark-mode input[type="email"]:focus,
+body.dark-mode input[type="password"]:focus,
+body.dark-mode input[type="tel"]:focus,
+body.dark-mode input[type="number"]:focus,
+body.dark-mode input[type="search"]:focus,
+body.dark-mode textarea:focus {
+  border-color: var(--teal);
+  background: var(--surface-soft);
+}
+
+/* Botones en modo oscuro */
+body.dark-mode button {
+  color: var(--ink);
+}
+
+body.dark-mode .outline-button {
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+body.dark-mode .outline-button:hover {
+  background: var(--surface-soft);
+}
+
+body.dark-mode .wide-outline-button {
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+body.dark-mode .wide-outline-button:hover {
+  background: var(--surface-soft);
+}
+
+/* Paneles y cards en modo oscuro */
+body.dark-mode .panel,
+body.dark-mode .profile-card,
+body.dark-mode .video-card {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+body.dark-mode .video-card h2,
+body.dark-mode .video-card p {
+  color: var(--ink);
+}
+
+/* Alertas y modales en modo oscuro */
+body.dark-mode .custom-modal {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+body.dark-mode .custom-modal-header {
+  border-bottom-color: var(--line);
+}
+
+body.dark-mode .custom-modal-footer {
+  border-top-color: var(--line);
+}
+
+body.dark-mode .custom-modal-close {
+  color: var(--muted);
+}
+
+body.dark-mode .custom-modal-close:hover {
+  color: var(--ink);
+}
+
+/* Botones en modo oscuro - mejorados */
+body.dark-mode .save-button {
+  background: var(--teal);
+  color: white;
+  border: none;
+}
+
+body.dark-mode .save-button:hover {
+  background: #00a89f;
+  opacity: 0.95;
+}
+
+body.dark-mode .wide-outline-button {
+  border-color: var(--line);
+  color: var(--ink);
+  background: transparent;
+}
+
+body.dark-mode .wide-outline-button:hover {
+  background: var(--surface-soft);
+  color: var(--teal);
+  border-color: var(--teal);
+}
+
+body.dark-mode .outline-button {
+  border-color: var(--line);
+  color: var(--ink);
+  background: transparent;
+}
+
+body.dark-mode .outline-button:hover {
+  background: var(--surface-soft);
+  color: var(--teal);
+  border-color: var(--teal);
 }

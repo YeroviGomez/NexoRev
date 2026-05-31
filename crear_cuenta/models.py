@@ -6,6 +6,10 @@ class Usuario(models.Model):
     email = models.EmailField('correo electrónico', unique=True)
     nombre = models.CharField('nombre completo', max_length=150)
     password = models.CharField('contraseña', max_length=128)
+    telefono = models.CharField('teléfono', max_length=20, blank=True, null=True)
+    edad = models.IntegerField('edad', blank=True, null=True)
+    foto = models.ImageField('foto de perfil', upload_to='perfiles/', blank=True, null=True)
+    modo_oscuro = models.BooleanField('modo oscuro', default=False)
     is_active = models.BooleanField('activo', default=True)
     fecha_creacion = models.DateTimeField('fecha de creación', auto_now_add=True)
 
