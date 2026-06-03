@@ -31,3 +31,16 @@ class Sesion(models.Model):
 
     def __str__(self):
         return f"{self.paciente.nombre} — {self.fecha:%Y-%m-%d}"
+
+
+
+class Diagnostico(models.Model):
+    nivel_dolor = models.IntegerField(default=1)
+    pregunta1 = models.CharField(max_length=255)
+    pregunta2 = models.TextField()
+    pregunta3 = models.CharField(max_length=255)
+    comentario = models.TextField(blank=True, null=True)
+    fecha = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Diagnóstico {self.id} - Dolor: {self.nivel_dolor}"

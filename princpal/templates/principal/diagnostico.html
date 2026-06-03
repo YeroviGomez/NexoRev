@@ -1,6 +1,74 @@
 <section class="app-view" id="diagnosticoView" data-view="diagnostico">
-  <div class="coming-soon">
-    <h1>Diagnóstico</h1>
-    <p>Próximamente</p>
-  </div>
+  <header class="page-head compact">
+    <h1>Formulario de Diagnostico</h1>
+    <p>Completa tu evaluacion para registrar como va tu recuperacion.</p>
+  </header>
+
+  <form class="diagnostic-form panel" method="post">
+    {% csrf_token %}
+
+    <div class="pain-scale">
+      <div class="pain-scale-head">
+        <label for="{{ form.nivel_dolor.id_for_label }}">Nivel de dolor</label>
+        <output id="nivelDolorValue" for="{{ form.nivel_dolor.id_for_label }}">{{ form.nivel_dolor.value|default:"1" }}</output>
+      </div>
+      {{ form.nivel_dolor }}
+      <div class="pain-scale-labels" aria-hidden="true">
+        <span>Nivel 1 bajo</span>
+        <span>Nivel 10 muy alto</span>
+      </div>
+      {{ form.nivel_dolor.errors }}
+    </div>
+
+    <p>
+      {{ form.pregunta1.label_tag }}
+      {{ form.pregunta1 }}
+      {{ form.pregunta1.errors }}
+    </p>
+
+    <p>
+      {{ form.pregunta2.label_tag }}
+      {{ form.pregunta2 }}
+      {{ form.pregunta2.errors }}
+    </p>
+
+    <p>
+      {{ form.pregunta3.label_tag }}
+      {{ form.pregunta3 }}
+      {{ form.pregunta3.errors }}
+    </p>
+
+    <p>
+      {{ form.comentario.label_tag }}
+      {{ form.comentario }}
+      {{ form.comentario.errors }}
+    </p>
+
+    <div class="diagnostic-actions">
+      <button class="save-button" type="submit">Guardar</button>
+      <button class="outline-button" type="reset" onclick="return confirm('Esta seguro de que desea salir? Perdera los datos no guardados')">Cancelar</button>
+    </div>
+  </form>
+
+  {% if messages %}
+    <ul class="form-alerts">
+      {% for message in messages %}
+        <li class="{{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <script>
+    const nivelDolor = document.getElementById("{{ form.nivel_dolor.id_for_label }}");
+    const nivelDolorValue = document.getElementById("nivelDolorValue");
+
+    if (nivelDolor && nivelDolorValue) {
+      const updatePainValue = () => {
+        nivelDolorValue.textContent = nivelDolor.value;
+      };
+
+      nivelDolor.addEventListener("input", updatePainValue);
+      updatePainValue();
+    }
+  </script>
 </section>

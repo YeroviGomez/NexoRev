@@ -1,4 +1,7 @@
-from django.shortcuts import render
+from django.contrib import messages
+from django.shortcuts import get_object_or_404, redirect, render
+from .forms import DiagnosticoForm
+from .models import Diagnostico
 
 from crear_cuenta.models import Usuario
 
@@ -7,6 +10,14 @@ def principal_view(request):
     show_tutorial = request.session.pop('show_tutorial', False)
     current_user_email = request.session.get('current_user', '')
     usuario = None
+    form = DiagnosticoForm(request.POST or None)
+
+    if request.method == "POST":
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Diagnostico guardado exitosamente.")
+            return redirect("/principal/#diagnostico")
+        messages.error(request, "Por favor, complete todos los campos obligatorios.")
 
     if current_user_email:
         try:
@@ -72,4 +83,26 @@ def principal_view(request):
         'current_user_email': current_user_email,
         'videos': videos,
         'categories': categories,
+        'form': form,
     })
+
+def diagnostico_view(request, pk=None):
+    if pk:
+        diagnostico = get_object_or_404(Diagnostico, pk=pk)
+        form = DiagnosticoForm(request.POST or None, instance=diagnostico)
+        if request.method == "POST":
+            if form.is_valid():
+                form.save()
+                messages.success(request, "Diagnóstico actualizado correctamente.")
+                return redirect("diagnostico")
+    else:
+        form = DiagnosticoForm(request.POST or None)
+        if request.method == "POST":
+            if form.is_valid():
+                form.save()
+                messages.success(request, "Diagnóstico guardado exitosamente.")
+                return redirect("diagnostico")
+            else:
+                messages.error(request, "Por favor, complete todos los campos obligatorios.")
+
+    return render(request, "principal/diagnostico.html", {"form": form})
