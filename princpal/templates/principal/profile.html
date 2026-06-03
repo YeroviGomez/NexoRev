@@ -1,0 +1,111 @@
+<section class="app-view" id="perfilView" data-view="perfil">
+  <header class="page-head compact profile-head">
+    <h1>Perfil de Usuario</h1>
+    <p>Administra tu información personal y preferencias</p>
+  </header>
+
+  <form class="profile-page">
+    <section class="profile-card">
+      <h2>Información Personal</h2>
+      <p>Actualiza tus datos personales</p>
+
+      <div class="avatar-row">
+        <div class="avatar-preview" aria-hidden="true">
+          <span>{{ usuario.nombre|default:"Nexo ReV"|slice:":1" }}</span>
+        </div>
+        <button class="outline-button" type="button">Cambiar foto</button>
+      </div>
+
+      <div class="profile-fields">
+        <label>
+          <span>Nombre completo</span>
+          <input type="text" value="{{ usuario.nombre|default:'Juan Pérez' }}">
+        </label>
+        <label>
+          <span>Correo electrónico</span>
+          <input type="email" value="{{ usuario.email|default:current_user_email|default:'juan@ejemplo.com' }}">
+        </label>
+        <label>
+          <span>Teléfono</span>
+          <input type="tel" value="+503 1234-5678">
+        </label>
+        <label>
+          <span>Edad</span>
+          <input type="number" value="35">
+        </label>
+      </div>
+    </section>
+
+    <section class="profile-card">
+      <h2>Preferencias</h2>
+      <p>Configura la experiencia de la aplicación</p>
+
+      <div class="preference-row">
+        <div>
+          <h3>Modo oscuro</h3>
+          <p>Activa el modo oscuro para reducir la fatiga visual</p>
+        </div>
+        <label class="mini-switch" aria-label="Modo oscuro">
+          <input type="checkbox">
+          <span></span>
+        </label>
+      </div>
+      <div class="preference-row">
+        <div>
+          <h3>Notificaciones</h3>
+          <p>Recibe recordatorios de ejercicios y actualizaciones</p>
+        </div>
+        <label class="mini-switch" aria-label="Notificaciones">
+          <input type="checkbox" checked>
+          <span></span>
+        </label>
+      </div>
+      <div class="preference-row">
+        <div>
+          <h3>Reportes semanales</h3>
+          <p>Recibe un resumen de tu progreso cada semana</p>
+        </div>
+        <label class="mini-switch" aria-label="Reportes semanales">
+          <input type="checkbox" checked>
+          <span></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="profile-card">
+      <h2>Seguridad</h2>
+      <p>Administra la seguridad de tu cuenta</p>
+
+      <div class="password-fields">
+        <label>
+          <span>Contraseña actual</span>
+          <input type="password">
+        </label>
+        <label>
+          <span>Nueva contraseña</span>
+          <input type="password">
+        </label>
+        <label>
+          <span>Confirmar nueva contraseña</span>
+          <input type="password">
+        </label>
+      </div>
+
+      <button class="wide-outline-button" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+        </svg>
+        Cambiar contraseña
+      </button>
+    </section>
+
+    <button class="save-button" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+        <path d="M17 21v-8H7v8M7 3v5h8" />
+      </svg>
+      Guardar cambios
+    </button>
+  </form>
+</section>

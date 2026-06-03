@@ -1,0 +1,45 @@
+<section class="app-view" id="videosView" data-view="videos">
+  <header class="page-head compact">
+    <h1>Videos de Ejercicios</h1>
+    <p>Explora nuestra biblioteca de ejercicios de rehabilitación</p>
+  </header>
+
+  <div class="video-toolbar">
+    <label class="search-box" for="videoSearch">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" />
+        <path d="m16 16 4 4" />
+      </svg>
+      <input id="videoSearch" type="search" placeholder="Buscar ejercicios...">
+    </label>
+
+    <div class="filter-row" aria-label="Categorias de videos">
+      {% for category in categories %}
+        <button class="filter-chip{% if forloop.first %} active{% endif %}" type="button">{{ category }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <p class="video-count">Mostrando {{ videos|length }} videos</p>
+
+  <section class="video-grid" aria-label="Videos de ejercicios">
+    {% for video in videos %}
+      <article class="video-card">
+        <div class="video-thumb">
+          <button class="favorite-btn" type="button" aria-label="Agregar a favoritos">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 8.6a5 5 0 0 0-8.1-3.8L12 5.5l-.7-.7a5 5 0 0 0-7.1 7.1l7.8 7.8 7.8-7.8a5 5 0 0 0 1-3.3Z" /></svg>
+          </button>
+          <span>◷ {{ video.duration }}</span>
+        </div>
+        <div class="video-copy">
+          <h2>{{ video.title }}</h2>
+          <p>{{ video.description }}</p>
+          <div class="video-meta">
+            <span class="difficulty {{ video.difficulty }}">{{ video.level }}</span>
+            <span class="category">{{ video.category }}</span>
+          </div>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+</section>

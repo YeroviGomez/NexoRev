@@ -1,0 +1,53 @@
+<section class="tutorial-overlay {% if not show_tutorial %}hidden{% endif %}" id="tutorialOverlay" aria-modal="true" role="dialog" aria-labelledby="tutorialTitle">
+  <article class="tutorial-modal">
+    <div class="tutorial-topbar">
+      <span class="tutorial-step-badge" id="tutorialStepBadge">Paso 1 de 6</span>
+      <button class="tutorial-skip" id="tutorialSkip" type="button">Saltar tutorial</button>
+      <button class="tutorial-close" id="tutorialClose" type="button" aria-label="Cerrar tutorial">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <div class="tutorial-icon" id="tutorialIcon" aria-hidden="true"></div>
+    <header class="tutorial-heading">
+      <h2 id="tutorialTitle">¡Bienvenido a Nexo ReV!</h2>
+      <p id="tutorialSubtitle">Tu plataforma de rehabilitación domiciliaria</p>
+    </header>
+
+    <div class="tutorial-info">
+      <h3>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" />
+          <path d="m9 12 2 2 4-5" />
+        </svg>
+        <span id="tutorialBoxTitle">¿Qué puedes hacer?</span>
+      </h3>
+      <ul id="tutorialList"></ul>
+    </div>
+
+    <p class="tutorial-tip" id="tutorialTip">
+      <span aria-hidden="true">💡</span>
+      <strong>Consejo:</strong> Puedes volver a ver este tutorial en cualquier momento desde el menú lateral haciendo clic en "Guía de uso".
+    </p>
+
+    <footer class="tutorial-footer">
+      <button class="tutorial-nav-btn" id="tutorialPrev" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+        <span>Anterior</span>
+      </button>
+
+      <div class="tutorial-dots" id="tutorialDots" aria-label="Progreso del tutorial"></div>
+
+      <button class="tutorial-next-btn" id="tutorialNext" type="button">
+        <span>Siguiente</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+      </button>
+    </footer>
+  </article>
+</section>
