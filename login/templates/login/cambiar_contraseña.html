@@ -1,0 +1,291 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexo ReV | Cambiar contraseña</title>
+  <link rel="stylesheet" href="{% static 'login/arte.css' %}">
+</head>
+<body>
+  <main class="auth-layout">
+    <aside class="brand-panel" aria-label="Nexo ReV">
+      <div class="brand-title">
+        <svg class="brand-mark" width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M6 29h9.4l5.3-20 9.1 37 6.2-23h14" stroke="#009688" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h1>Nexo ReV</h1>
+      </div>
+      <p class="lead">Rehabilitación desde tu hogar</p>
+    </aside>
+
+    <section class="form-panel">
+      {% if not redirect_to_login %}
+      <form id="verifyCodeForm" method="post" novalidate>
+        {% csrf_token %}
+        {% if error_message %}
+          <p class="form-message error">{{ error_message }}</p>
+        {% endif %}
+
+        <div class="form-head">
+          <h2>Cambiar Contraseña</h2>
+          <p>Ingresa el código que recibiste en <strong>{{ email }}</strong> y tu nueva contraseña</p>
+        </div>
+
+        <div class="field-group">
+          <label for="code">Código de Recuperación</label>
+          <input
+            id="code"
+            name="code"
+            type="text"
+            placeholder="000000"
+            maxlength="6"
+            inputmode="numeric"
+            pattern="[0-9]{6}"
+            required
+            autocomplete="off"
+          >
+          <small class="form-hint">Ingresa el código de 6 dígitos que recibiste por correo (válido por 15 minutos)</small>
+          <div id="codeError" class="field-error" style="display: none;">
+            ⚠️ El código debe tener exactamente 6 dígitos
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label for="password">Nueva Contraseña</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="new-password"
+            placeholder="••••••••"
+            minlength="8"
+            required
+          >
+          <small class="form-hint">Mínimo 8 caracteres, con letras y números</small>
+          <div id="passwordError" class="field-error" style="display: none;">
+            ⚠️ Mínimo 8 caracteres y debe incluir letras y números
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label for="password_confirm">Confirmar Contraseña</label>
+          <input
+            id="password_confirm"
+            name="password_confirm"
+            type="password"
+            autocomplete="new-password"
+            placeholder="••••••••"
+            minlength="8"
+            required
+          >
+          <div id="passwordMismatch" class="field-error" style="display: none;">
+            ⚠️ Las contraseñas no coinciden
+          </div>
+        </div>
+
+        <button type="submit" class="primary-btn">Cambiar Contraseña</button>
+
+        <a href="{% url 'forgot_password' %}" class="text-link">Solicitar un nuevo código</a>
+      </form>
+      {% else %}
+      <div class="success-panel">
+        <div class="form-head">
+          <h2>✅ ¡Éxito!</h2>
+          <p>Tu contraseña ha sido actualizada correctamente.</p>
+        </div>
+        
+        <p class="form-message success">{{ success_message }}</p>
+        
+        <div class="redirect-info">
+          <p>Serás redirigido al inicio de sesión en <span id="countdown">5</span> segundos...</p>
+        </div>
+      </div>
+      {% endif %}
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById("verifyCodeForm");
+    const codeInput = document.getElementById("code");
+    const passwordInput = document.getElementById("password");
+    const passwordConfirmInput = document.getElementById("password_confirm");
+    const successPanel = document.querySelector('.success-panel');
+
+    // Elementos de error
+    const codeError = document.getElementById("codeError");
+    const passwordError = document.getElementById("passwordError");
+    const passwordMismatch = document.getElementById("passwordMismatch");
+
+    // Redirección automática después de 5 segundos si se muestra el panel de éxito
+    if (successPanel) {
+      let countdown = 5;
+      const countdownElement = document.getElementById("countdown");
+      
+      const interval = setInterval(() => {
+        countdown--;
+        if (countdownElement) {
+          countdownElement.textContent = countdown;
+        }
+        
+        if (countdown <= 0) {
+          clearInterval(interval);
+          window.location.href = "{% url 'login' %}";
+        }
+      }, 1000);
+    }
+
+    // Solo permitir números en el campo de código
+    if (codeInput) {
+      codeInput.addEventListener('input', (e) => {
+        e.target.value = e.target.value.replace(/[^0-9]/g, '');
+        
+        // Mostrar/ocultar error del código
+        if (e.target.value.length !== 6) {
+          codeError.style.display = 'block';
+        } else {
+          codeError.style.display = 'none';
+        }
+      });
+    }
+
+    // Validar contraseña en tiempo real
+    if (passwordInput) {
+      passwordInput.addEventListener('input', () => {
+        const password = passwordInput.value;
+        const hasLetters = /[a-zA-Z]/.test(password);
+        const hasNumbers = /[0-9]/.test(password);
+        const isValid = password.length >= 8 && hasLetters && hasNumbers;
+        
+        if (password.length > 0 && !isValid) {
+          passwordError.style.display = 'block';
+        } else {
+          passwordError.style.display = 'none';
+        }
+        
+        // Validar coincidencia de contraseñas
+        validatePasswordMatch();
+      });
+    }
+
+    // Validar coincidencia de contraseñas en tiempo real
+    if (passwordConfirmInput) {
+      passwordConfirmInput.addEventListener('input', validatePasswordMatch);
+    }
+
+    function validatePasswordMatch() {
+      if (passwordConfirmInput.value.length > 0 && passwordInput.value !== passwordConfirmInput.value) {
+        passwordMismatch.style.display = 'block';
+      } else {
+        passwordMismatch.style.display = 'none';
+      }
+    }
+
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        const code = codeInput.value.trim();
+        const password = passwordInput.value;
+        const passwordConfirm = passwordConfirmInput.value;
+
+        if (code.length !== 6) {
+          e.preventDefault();
+          alert('El código debe tener 6 dígitos.');
+          codeInput.focus();
+          return;
+        }
+
+        if (password.length < 8) {
+          e.preventDefault();
+          alert('La contraseña debe tener al menos 8 caracteres.');
+          passwordInput.focus();
+          return;
+        }
+
+        if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+          e.preventDefault();
+          alert('La contraseña debe contener letras y números.');
+          passwordInput.focus();
+          return;
+        }
+
+        if (password !== passwordConfirm) {
+          e.preventDefault();
+          alert('Las contraseñas no coinciden.');
+          passwordConfirmInput.focus();
+          return;
+        }
+      });
+    }
+  </script>
+
+  <style>
+    .success-panel {
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    .success-panel .form-message {
+      margin: 20px 0;
+    }
+
+    .redirect-info {
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #e0f2f1;
+      border-radius: 4px;
+      border-left: 4px solid #009688;
+    }
+
+    .redirect-info p {
+      margin: 0;
+      color: #00695c;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    #countdown {
+      font-weight: bold;
+      color: #009688;
+      font-size: 16px;
+    }
+
+    .field-error {
+      color: #b71c1c;
+      background-color: #ffebee;
+      padding: 10px 12px;
+      border-radius: 4px;
+      margin-top: 6px;
+      font-size: 13px;
+      border-left: 3px solid #f44336;
+      display: none;
+    }
+
+    .form-message.info {
+      color: #0073e6;
+      background-color: #e3f2fd;
+      padding: 12px 16px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      border-left: 4px solid #0073e6;
+    }
+
+    .form-message.success {
+      color: #00695c;
+      background-color: #e0f2f1;
+      padding: 12px 16px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      border-left: 4px solid #009688;
+    }
+
+    .form-message.error {
+      color: #b71c1c;
+      background-color: #ffebee;
+      padding: 12px 16px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      border-left: 4px solid #f44336;
+    }
+  </style>
+</body>
+</html>

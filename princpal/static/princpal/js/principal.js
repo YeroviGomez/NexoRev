@@ -30,9 +30,11 @@ navTriggers.forEach((trigger) => {
   });
 });
 
-sidebarToggle.addEventListener("click", () => {
-  document.body.classList.toggle("sidebar-collapsed");
-});
+if (sidebarToggle) {
+  sidebarToggle.addEventListener("click", () => {
+    document.body.classList.toggle("sidebar-collapsed");
+  });
+}
 
 const initialView = window.location.hash.replace("#", "");
 const validViews = Array.from(appViews).map((view) => view.dataset.view);
@@ -189,26 +191,36 @@ function closeTutorial() {
   document.body.classList.remove("tutorial-open");
 }
 
-tutorialPrev.addEventListener("click", () => {
-  if (tutorialIndex > 0) {
-    tutorialIndex -= 1;
+if (tutorialPrev) {
+  tutorialPrev.addEventListener("click", () => {
+    if (tutorialIndex > 0) {
+      tutorialIndex -= 1;
+      renderTutorial();
+    }
+  });
+}
+
+if (tutorialNext) {
+  tutorialNext.addEventListener("click", () => {
+    if (tutorialIndex === tutorialSteps.length - 1) {
+      closeTutorial();
+      return;
+    }
+
+    tutorialIndex += 1;
     renderTutorial();
-  }
-});
+  });
+}
 
-tutorialNext.addEventListener("click", () => {
-  if (tutorialIndex === tutorialSteps.length - 1) {
-    closeTutorial();
-    return;
-  }
-
-  tutorialIndex += 1;
-  renderTutorial();
-});
-
-tutorialClose.addEventListener("click", closeTutorial);
-tutorialSkip.addEventListener("click", closeTutorial);
-openTutorial.addEventListener("click", openTutorialModal);
+if (tutorialClose) {
+  tutorialClose.addEventListener("click", closeTutorial);
+}
+if (tutorialSkip) {
+  tutorialSkip.addEventListener("click", closeTutorial);
+}
+if (openTutorial) {
+  openTutorial.addEventListener("click", openTutorialModal);
+}
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !tutorialOverlay.classList.contains("hidden")) {
@@ -236,6 +248,10 @@ const successMessage = document.getElementById("successMessage");
 let confirmCallback = null;
 
 function showAlert(title, message) {
+  if (!alertTitle || !alertMessage || !alertModal || !alertOk) {
+    console.warn('Modal de alerta no disponible');
+    return;
+  }
   alertTitle.textContent = title;
   alertMessage.textContent = message;
   alertModal.classList.remove("hidden");
@@ -243,10 +259,16 @@ function showAlert(title, message) {
 }
 
 function closeAlert() {
+  if (!alertModal) return;
   alertModal.classList.add("hidden");
 }
 
 function showConfirm(title, message, callback) {
+  if (!confirmTitle || !confirmMessage || !confirmModal || !confirmOk) {
+    console.warn('Modal de confirmación no disponible');
+    if (callback) callback();
+    return;
+  }
   confirmTitle.textContent = title;
   confirmMessage.textContent = message;
   confirmCallback = callback;
@@ -255,7 +277,9 @@ function showConfirm(title, message, callback) {
 }
 
 function closeConfirm(confirmed) {
-  confirmModal.classList.add("hidden");
+  if (confirmModal) {
+    confirmModal.classList.add("hidden");
+  }
   if (confirmed && confirmCallback) {
     confirmCallback();
   }
@@ -263,6 +287,10 @@ function closeConfirm(confirmed) {
 }
 
 function showSuccess(title, message) {
+  if (!successTitle || !successMessage || !successModal) {
+    console.warn('Modal de éxito no disponible');
+    return;
+  }
   successTitle.textContent = title;
   successMessage.textContent = message;
   successModal.classList.remove("hidden");
@@ -272,15 +300,23 @@ function showSuccess(title, message) {
   }, 2500);
 }
 
-alertOk.addEventListener("click", closeAlert);
-alertClose.addEventListener("click", closeAlert);
-confirmCancel.addEventListener("click", () => closeConfirm(false));
-confirmOk.addEventListener("click", () => closeConfirm(true));
+if (alertOk) {
+  alertOk.addEventListener("click", closeAlert);
+}
+if (alertClose) {
+  alertClose.addEventListener("click", closeAlert);
+}
+if (confirmCancel) {
+  confirmCancel.addEventListener("click", () => closeConfirm(false));
+}
+if (confirmOk) {
+  confirmOk.addEventListener("click", () => closeConfirm(true));
+}
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    if (!alertModal.classList.contains("hidden")) closeAlert();
-    if (!confirmModal.classList.contains("hidden")) closeConfirm(false);
+    if (alertModal && !alertModal.classList.contains("hidden")) closeAlert();
+    if (confirmModal && !confirmModal.classList.contains("hidden")) closeConfirm(false);
   }
 });
 
@@ -309,14 +345,15 @@ const confirmPasswordInput = passwordFields[2];
 let originalEmail = null;
 
 // Funcionalidad para cambiar foto
-cambiarFotoButton.addEventListener("click", (e) => {
-  e.preventDefault();
-  fotoInput.click();
-});
+if (cambiarFotoButton && fotoInput) {
+  cambiarFotoButton.addEventListener("click", (e) => {
+    e.preventDefault();
+    fotoInput.click();
+  });
 
-fotoInput.addEventListener("change", (e) => {
-  const archivo = e.target.files[0];
-  if (!archivo) return;
+  fotoInput.addEventListener("change", (e) => {
+    const archivo = e.target.files[0];
+    if (!archivo) return;
 
   // Validar tipo
   const tiposPermitidos = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -380,47 +417,61 @@ fotoInput.addEventListener("change", (e) => {
     fotoInput.value = "";
   });
 });
+}
 
 // ============== FUNCIONALIDAD DE MODO OSCURO ==============
 const darkModeSwitch = document.querySelector(".preference-row:first-of-type .mini-switch input");
 
-// Aplicar estado inicial del modo oscuro
-if (document.body.classList.contains("dark-mode")) {
-  darkModeSwitch.checked = true;
+function saveDarkModePreferenceLocal(value) {
+  try {
+    localStorage.setItem('nexorev_dark_mode', String(value));
+  } catch (e) {
+    console.warn('No se pudo guardar modo oscuro en localStorage', e);
+  }
 }
 
-darkModeSwitch.addEventListener("change", (e) => {
-  const modoOscuroActivo = e.target.checked;
-  document.body.classList.toggle("dark-mode", modoOscuroActivo);
+function loadDarkModePreference() {
+  try {
+    return localStorage.getItem('nexorev_dark_mode') === 'true';
+  } catch (e) {
+    console.warn('No se pudo leer modo oscuro de localStorage', e);
+    return false;
+  }
+}
 
-  // Guardar preferencia en el servidor
-  fetch('/principal/api/toggle-dark-mode/', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRFToken': getCookie('csrftoken'),
-    },
-    body: JSON.stringify({
-      modo_oscuro: modoOscuroActivo,
-    })
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (!data.success) {
-      // Revertir si hay error
-      document.body.classList.toggle("dark-mode", !modoOscuroActivo);
-      darkModeSwitch.checked = !modoOscuroActivo;
+function applyDarkMode(enabled) {
+  document.documentElement.classList.toggle('dark-mode', enabled);
+  if (document.body) {
+    document.body.classList.toggle('dark-mode', enabled);
+  }
+  try {
+    if (enabled) {
+      // eliminar atributo para que las reglas :root[data-theme="light"] no se apliquen
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      // forzar el tema claro para hojas que usan data-theme
+      document.documentElement.setAttribute('data-theme', 'light');
     }
-  })
-  .catch(error => {
-    // Revertir si hay error
-    document.body.classList.toggle("dark-mode", !modoOscuroActivo);
-    darkModeSwitch.checked = !modoOscuroActivo;
+  } catch (e) {
+    console.warn('No se pudo aplicar data-theme', e);
+  }
+}
+
+applyDarkMode(loadDarkModePreference());
+
+if (darkModeSwitch) {
+  darkModeSwitch.checked = loadDarkModePreference();
+
+  darkModeSwitch.addEventListener("change", (e) => {
+    const modoOscuroActivo = e.target.checked;
+    applyDarkMode(modoOscuroActivo);
+    saveDarkModePreferenceLocal(modoOscuroActivo);
   });
-});
+}
 
 // Función para cambiar contraseña
-changePasswordButton.addEventListener("click", (e) => {
+if (changePasswordButton) {
+  changePasswordButton.addEventListener("click", (e) => {
   e.preventDefault();
 
   const currentPassword = currentPasswordInput.value.trim();
@@ -476,9 +527,11 @@ changePasswordButton.addEventListener("click", (e) => {
     showAlert("Error", "Error al cambiar la contraseña: " + error);
   });
 });
+}
 
 // Función para guardar cambios
-saveButton.addEventListener("click", (e) => {
+if (saveButton) {
+  saveButton.addEventListener("click", (e) => {
   e.preventDefault();
 
   const nuevoNombre = nombreInput.value.trim();
@@ -492,7 +545,8 @@ saveButton.addEventListener("click", (e) => {
   }
 
   guardarCambios(nuevoNombre, nuevoTelefono, nuevaEdad);
-});
+  });
+}
 
 function guardarCambios(nombre, telefono, edad) {
   fetch('/principal/api/update-profile/', {

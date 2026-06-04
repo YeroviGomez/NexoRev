@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nexo ReV | Iniciar sesión</title>
+  <title>Nexo ReV | Recuperar contraseña</title>
   <link rel="stylesheet" href="{% static 'login/arte.css' %}">
 </head>
 <body>
@@ -21,19 +21,25 @@
 
     <section class="form-panel">
       <nav class="tab-switch" role="tablist">
-        <a href="/login/" class="tab active">Iniciar Sesión</a>
+        <a href="{% url 'login' %}" class="tab">Iniciar Sesión</a>
         <a href="/registro/" class="tab">Registrarse</a>
       </nav>
 
-      <form id="loginForm" method="post" action="{% url 'login' %}" novalidate>
+      <form id="forgotPasswordForm" method="post" novalidate>
         {% csrf_token %}
         {% if error_message %}
           <p class="form-message error">{{ error_message }}</p>
         {% endif %}
+        {% if success_message %}
+          <p class="form-message success">{{ success_message }}</p>
+        {% endif %}
+        {% if info_message %}
+          <p class="form-message info">{{ info_message }}</p>
+        {% endif %}
 
         <div class="form-head">
-          <h2>Bienvenido</h2>
-          <p>Ingresa tus credenciales para continuar</p>
+          <h2>Recuperar Contraseña</h2>
+          <p>Ingresa tu correo electrónico para recibir un código de recuperación</p>
         </div>
 
         <div class="field-group">
@@ -48,30 +54,17 @@
           >
         </div>
 
-        <div class="field-group">
-          <label for="password">Contraseña</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autocomplete="current-password"
-            placeholder="••••••••"
-            required
-          >
-        </div>
+        <button type="submit" class="primary-btn">Enviar Código</button>
 
-        <button type="submit" class="primary-btn">Iniciar Sesión</button>
-
-        <a href="{% url 'forgot_password' %}" class="text-link">¿Olvidaste tu contraseña?</a>
+        <a href="{% url 'login' %}" class="text-link">Volver al inicio de sesión</a>
       </form>
     </section>
   </main>
 
   <script>
-    const form = document.getElementById("loginForm");
+    const form = document.getElementById("forgotPasswordForm");
     const emailInput = document.getElementById("email");
 
-    // Validación ligera en cliente. El chequeo definitivo es en backend.
     const allowedDomains = new Set([
       'gmail.com','hotmail.com','outlook.com','live.com','yahoo.com','icloud.com','protonmail.com','zoho.com','aol.com','gmx.com','yandex.com','mail.com','fastmail.com','tutanota.com'
     ]);
@@ -82,18 +75,6 @@
       const domain = email.split('@').pop().toLowerCase();
       return allowedDomains.has(domain);
     }
-
-    form.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
-
-      const fields = Array.from(form.querySelectorAll("input"));
-      const currentIndex = fields.indexOf(event.target);
-
-      if (currentIndex >= 0 && currentIndex < fields.length - 1) {
-        event.preventDefault();
-        fields[currentIndex + 1].focus();
-      }
-    });
 
     form.addEventListener('submit', (e) => {
       const emailVal = emailInput.value.trim();

@@ -47,6 +47,7 @@ input {
   border-right: 1px solid var(--line);
   display: grid;
   grid-template-rows: auto 1fr auto;
+  overflow: hidden;
 }
 
 .sidebar-brand {
@@ -114,10 +115,12 @@ input {
 }
 
 .sidebar-nav {
-  padding: 1.35rem 1rem;
+  padding: 1.2rem 1rem;
   display: grid;
   align-content: start;
-  gap: 0.75rem;
+  gap: 0.65rem;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar-footer {
@@ -128,14 +131,14 @@ input {
 }
 
 .sidebar-link {
-  min-height: 3.75rem;
+  min-height: 3.6rem;
   border-radius: 0.8rem;
   color: #263347;
   text-decoration: none;
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0 1.25rem;
+  padding: 0 1.2rem;
   font-size: 1.15rem;
   font-weight: 500;
   border: 0;
@@ -806,6 +809,12 @@ input {
   justify-content: center;
   padding-left: 0;
   padding-right: 0;
+  overflow: hidden;
+}
+
+.sidebar-collapsed .sidebar-toggle {
+  width: 2.2rem;
+  height: 2.2rem;
 }
 
 .tutorial-open {
@@ -1197,4 +1206,219 @@ input {
     grid-row: 2;
     width: 100%;
   }
+}
+
+/* Dark Mode Styles */
+html.dark-mode,
+body.dark-mode {
+  background: #050510;
+  color: #f8fafc;
+}
+
+html.dark-mode,
+body.dark-mode,
+html.dark-mode button,
+body.dark-mode button,
+html.dark-mode input,
+body.dark-mode input,
+html.dark-mode textarea,
+body.dark-mode textarea,
+html.dark-mode select,
+body.dark-mode select,
+html.dark-mode label,
+body.dark-mode label,
+html.dark-mode span,
+body.dark-mode span,
+html.dark-mode a,
+body.dark-mode a {
+  color: #f8fafc;
+}
+
+html.dark-mode .app-shell,
+body.dark-mode .app-shell,
+html.dark-mode .panel,
+body.dark-mode .panel,
+html.dark-mode .profile-card,
+body.dark-mode .profile-card,
+html.dark-mode .video-card,
+body.dark-mode .video-card,
+html.dark-mode .quick-link,
+body.dark-mode .quick-link {
+  background: #1a1a24;
+  border-color: #2a2a3e;
+}
+
+html.dark-mode .app-sidebar,
+body.dark-mode .app-sidebar {
+  background: #1a1a24;
+  border-right-color: #2a2a3e;
+}
+
+html.dark-mode .sidebar-link:hover,
+body.dark-mode .sidebar-link:hover,
+html.dark-mode .sidebar-link.active,
+body.dark-mode .sidebar-link.active {
+  background: #007f77;
+  color: #f8fafc;
+}
+
+html.dark-mode .tutorial-modal,
+body.dark-mode .tutorial-modal {
+  background: #1a1a24;
+  border-color: #2a2a3e;
+  color: #f8fafc;
+}
+
+html.dark-mode .mini-switch span,
+body.dark-mode .mini-switch span {
+  background: #2a2a3e;
+}
+
+html.dark-mode .mini-switch input:checked + span,
+body.dark-mode .mini-switch input:checked + span {
+  background: #009688;
+}
+
+/* Más overrides para modo oscuro: botones, inputs y tutorial */
+html.dark-mode button,
+body.dark-mode button,
+html.dark-mode a,
+body.dark-mode a {
+  color: #f8fafc;
+}
+
+html.dark-mode input,
+body.dark-mode input,
+html.dark-mode textarea,
+body.dark-mode textarea,
+html.dark-mode select,
+body.dark-mode select {
+  background: #23232d; /* contraste con fondo */
+  color: #f8fafc;
+  border-color: #3a3a4e;
+}
+
+html.dark-mode .outline-button,
+body.dark-mode .outline-button,
+html.dark-mode .wide-outline-button,
+body.dark-mode .wide-outline-button,
+html.dark-mode .profile-card .outline-button,
+html.dark-mode .primary-btn,
+body.dark-mode .primary-btn,
+html.dark-mode .primary-action-btn,
+body.dark-mode .primary-action-btn,
+html.dark-mode .save-button,
+body.dark-mode .save-button,
+html.dark-mode .favorite-btn,
+body.dark-mode .favorite-btn {
+  background: #2b2b36;
+  color: #ffffff;
+  border-color: #3a3a4e;
+}
+
+html.dark-mode .quick-link,
+body.dark-mode .quick-link {
+  background: #1f1f28;
+  color: #f8fafc;
+  border-color: #2e2e3a;
+}
+
+/* Tutorial: paso, info, tips y botones */
+html.dark-mode .tutorial-step-badge,
+body.dark-mode .tutorial-step-badge {
+  background: #000000;
+  color: #ffffff;
+}
+
+html.dark-mode .tutorial-info,
+body.dark-mode .tutorial-info {
+  background: #0b0b0c;
+  border-color: #262626;
+  color: #ffffff;
+}
+
+html.dark-mode .tutorial-info h3,
+body.dark-mode .tutorial-info h3 {
+  color: #ffffff;
+}
+
+html.dark-mode .tutorial-tip,
+body.dark-mode .tutorial-tip {
+  background: #0b0b0c;
+  border-color: #262626;
+  color: #ffffff;
+}
+
+html.dark-mode .tutorial-next-btn,
+body.dark-mode .tutorial-next-btn {
+  background: #000000;
+  color: #ffffff;
+}
+
+html.dark-mode .tutorial-nav-btn,
+body.dark-mode .tutorial-nav-btn {
+  background: #1f1f28;
+  color: #ffffff;
+  border-color: #2e2e3a;
+}
+
+html.dark-mode .tutorial-dots button {
+  background: #3a3a46;
+}
+
+html.dark-mode .tutorial-dots button.active {
+  background: #00b39f;
+}
+
+/* Asegurar contraste en badges, labels y marcadores */
+html.dark-mode .page-head h1,
+body.dark-mode .page-head h1,
+html.dark-mode .page-head p,
+body.dark-mode .page-head p,
+html.dark-mode .panel > p,
+body.dark-mode .panel > p {
+  color: #f8fafc;
+}
+
+/* Ajustes específicos: barra de búsqueda y placeholders en modo oscuro */
+html.dark-mode .search-box,
+body.dark-mode .search-box {
+  background: #17171b;
+  color: #e6eef0;
+  border: 1px solid #2b2b36;
+}
+
+html.dark-mode .search-box input,
+body.dark-mode .search-box input {
+  background: transparent;
+  color: #f8fafc;
+}
+
+html.dark-mode .search-box input::placeholder,
+body.dark-mode .search-box input::placeholder {
+  color: #9aa3ad;
+}
+
+/* Body placeholder (inicio) */
+html.dark-mode .body-placeholder,
+body.dark-mode .body-placeholder {
+  color: #c6d1da;
+}
+
+html.dark-mode .body-placeholder span,
+body.dark-mode .body-placeholder span {
+  background: #0f1113;
+  color: #dbe9ef;
+  border: 2px dashed #2a2a33;
+}
+
+/* Asegurar contraste en tarjetas y copias de video */
+html.dark-mode .video-copy,
+body.dark-mode .video-copy {
+  color: #e6eef0;
+}
+
+html.dark-mode .video-copy p,
+body.dark-mode .video-copy p {
+  color: #cbd6de;
 }
