@@ -421,51 +421,101 @@ if (cambiarFotoButton && fotoInput) {
 
 // ============== FUNCIONALIDAD DE MODO OSCURO ==============
 const darkModeSwitch = document.querySelector(".preference-row:first-of-type .mini-switch input");
+const fontSizeSelect = document.querySelector(".font-size-select");
+const themePreferenceStorageKey = 'nexorev_theme_preferences';
+const fontSizePreferenceStorageKey = 'nexorev_font_size_preferences';
+const allowedFontSizes = ['normal', 'large', 'xlarge'];
+const currentUser = document.body.dataset.currentUser?.toLowerCase() || '';
 
-function saveDarkModePreferenceLocal(value) {
+const getPreferenceMap = (storageKey) => {
   try {
-    localStorage.setItem('nexorev_dark_mode', String(value));
+    const rawValue = localStorage.getItem(storageKey);
+    const parsedValue = rawValue ? JSON.parse(rawValue) : {};
+    return parsedValue && typeof parsedValue === 'object' ? parsedValue : {};
   } catch (e) {
-    console.warn('No se pudo guardar modo oscuro en localStorage', e);
+    console.warn(`No se pudo leer ${storageKey}`, e);
+    return {};
   }
-}
+};
 
-function loadDarkModePreference() {
+const savePreferenceMap = (storageKey, preferenceMap) => {
   try {
-    return localStorage.getItem('nexorev_dark_mode') === 'true';
+    localStorage.setItem(storageKey, JSON.stringify(preferenceMap));
   } catch (e) {
-    console.warn('No se pudo leer modo oscuro de localStorage', e);
-    return false;
+    console.warn(`No se pudo guardar ${storageKey}`, e);
   }
-}
+};
 
-function applyDarkMode(enabled) {
+const getThemeForUser = () => {
+  const themePreferences = getPreferenceMap(themePreferenceStorageKey);
+  if (currentUser && themePreferences[currentUser] === 'dark') {
+    return 'dark';
+  }
+  return localStorage.getItem('nexorev_dark_mode') === 'true' ? 'dark' : 'light';
+};
+
+const getFontSizeForUser = () => {
+  const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
+  const savedValue = currentUser ? fontSizePreferences[currentUser] : null;
+  return allowedFontSizes.includes(savedValue) ? savedValue : 'normal';
+};
+
+const applyDarkMode = (enabled) => {
   document.documentElement.classList.toggle('dark-mode', enabled);
   if (document.body) {
     document.body.classList.toggle('dark-mode', enabled);
   }
   try {
-    if (enabled) {
-      // eliminar atributo para que las reglas :root[data-theme="light"] no se apliquen
-      document.documentElement.removeAttribute('data-theme');
-    } else {
-      // forzar el tema claro para hojas que usan data-theme
-      document.documentElement.setAttribute('data-theme', 'light');
-    }
+    document.documentElement.setAttribute('data-theme', enabled ? 'dark' : 'light');
   } catch (e) {
     console.warn('No se pudo aplicar data-theme', e);
   }
-}
+};
 
-applyDarkMode(loadDarkModePreference());
+const applyFontSize = (size) => {
+  const selected = allowedFontSizes.includes(size) ? size : 'normal';
+  document.documentElement.setAttribute('data-font-size', selected);
+  if (fontSizeSelect) {
+    fontSizeSelect.value = selected;
+  }
+};
+
+const currentTheme = getThemeForUser();
+const currentFontSize = getFontSizeForUser();
+applyDarkMode(currentTheme === 'dark');
+applyFontSize(currentFontSize);
 
 if (darkModeSwitch) {
-  darkModeSwitch.checked = loadDarkModePreference();
-
+  darkModeSwitch.checked = currentTheme === 'dark';
   darkModeSwitch.addEventListener("change", (e) => {
     const modoOscuroActivo = e.target.checked;
     applyDarkMode(modoOscuroActivo);
-    saveDarkModePreferenceLocal(modoOscuroActivo);
+
+    if (currentUser) {
+      const themePreferences = getPreferenceMap(themePreferenceStorageKey);
+      themePreferences[currentUser] = modoOscuroActivo ? 'dark' : 'light';
+      savePreferenceMap(themePreferenceStorageKey, themePreferences);
+    } else {
+      try {
+        localStorage.setItem('nexorev_dark_mode', String(modoOscuroActivo));
+      } catch (error) {
+        console.warn('No se pudo guardar modo oscuro en localStorage', error);
+      }
+    }
+  });
+}
+
+if (fontSizeSelect) {
+  fontSizeSelect.value = currentFontSize;
+  fontSizeSelect.addEventListener('change', (e) => {
+    const selectedValue = allowedFontSizes.includes(e.target.value) ? e.target.value : 'normal';
+    applyFontSize(selectedValue);
+
+    if (currentUser) {
+      const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
+      fontSizePreferences[currentUser] = selectedValue;
+      savePreferenceMap(fontSizePreferenceStorageKey, fontSizePreferences);
+    }
   });
 }
 

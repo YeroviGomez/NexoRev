@@ -6,23 +6,55 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nexo ReV | Inicio</title>
   <script>
-    try {
-      const dm = localStorage.getItem('nexorev_dark_mode') === 'true';
-      document.documentElement.classList.toggle('dark-mode', dm);
-      if (document.body) document.body.classList.toggle('dark-mode', dm);
-      // También establecer atributo data-theme para estilos que lo usan
-      if (dm) {
-        document.documentElement.removeAttribute('data-theme');
-      } else {
-        document.documentElement.setAttribute('data-theme', 'light');
+    (() => {
+      const currentUser = "{{ current_user_email|default:''|escapejs }}".trim().toLowerCase();
+      const currentUserStorageKey = 'nexorev_current_user';
+      const themePreferenceStorageKey = 'nexorev_theme_preferences';
+      const fontSizePreferenceStorageKey = 'nexorev_font_size_preferences';
+      const allowedFontSizes = new Set(['normal', 'large', 'xlarge']);
+
+      const getPreferenceMap = (storageKey) => {
+        try {
+          const raw = localStorage.getItem(storageKey);
+          const parsed = raw ? JSON.parse(raw) : {};
+          return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch {
+          return {};
+        }
+      };
+
+      if (currentUser) {
+        try {
+          sessionStorage.setItem(currentUserStorageKey, currentUser);
+        } catch {}
       }
-    } catch (e) {
-      console.warn('No se pudo aplicar el modo oscuro desde localStorage', e);
-    }
+
+      const themePreferences = getPreferenceMap(themePreferenceStorageKey);
+      const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
+      const theme = currentUser && themePreferences[currentUser] === 'dark'
+        ? 'dark'
+        : localStorage.getItem('nexorev_dark_mode') === 'true' ? 'dark' : 'light';
+      const fontSize = currentUser && allowedFontSizes.has(fontSizePreferences[currentUser])
+        ? fontSizePreferences[currentUser]
+        : 'normal';
+
+      document.documentElement.classList.toggle('dark-mode', theme === 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-font-size', fontSize);
+    })();
+
+    window.addEventListener('pageshow', (event) => {
+      const navigationEntries = performance.getEntriesByType('navigation');
+      const isBackForward = (navigationEntries.length && navigationEntries[0].type === 'back_forward')
+        || (performance.navigation && performance.navigation.type === 2);
+      if (event.persisted || isBackForward) {
+        window.location.reload();
+      }
+    });
   </script>
   <link rel="stylesheet" href="{% static 'estilo.css' %}">
 </head>
-<body class="{% if show_tutorial %}tutorial-open{% endif %}">
+<body class="{% if show_tutorial %}tutorial-open{% endif %}" data-current-user="{{ current_user_email|default:''|escapejs }}">
   {% include "principal/sidebar.html" %}
 
   <main class="app-shell">

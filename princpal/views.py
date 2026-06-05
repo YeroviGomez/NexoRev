@@ -1,11 +1,24 @@
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.cache import cache_control
+from functools import wraps
 from .forms import DiagnosticoForm
 from .models import Diagnostico
 
 from crear_cuenta.models import Usuario
 
 
+def require_login(view_func):
+    @wraps(view_func)
+    def _wrapped_view(request, *args, **kwargs):
+        if not request.session.get('current_user'):
+            return redirect('login')
+        return view_func(request, *args, **kwargs)
+    return _wrapped_view
+
+
+@require_login
+@cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
 def principal_view(request):
     show_tutorial = request.session.pop('show_tutorial', False)
     current_user_email = request.session.get('current_user', '')
@@ -86,6 +99,8 @@ def principal_view(request):
         'form': form,
     })
 
+@require_login
+@cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
 def diagnostico_view(request, pk=None):
     if pk:
         diagnostico = get_object_or_404(Diagnostico, pk=pk)

@@ -14,6 +14,16 @@
   --sidebar-width: 316px;
 }
 
+html[data-font-size="normal"] {
+  font-size: 100%;
+}
+html[data-font-size="large"] {
+  font-size: 120%;
+}
+html[data-font-size="xlarge"] {
+  font-size: 140%;
+}
+
 *,
 *::before,
 *::after {
@@ -635,6 +645,23 @@ input {
 
 .mini-switch input:checked + span::after {
   transform: translateX(1rem);
+}
+
+.font-size-select {
+  min-width: 8rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.font-size-select:focus {
+  outline: 2px solid rgba(0, 150, 136, 0.45);
+  outline-offset: 2px;
 }
 
 .password-fields {

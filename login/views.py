@@ -1,7 +1,10 @@
+from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.core.mail import send_mail
 from django.conf import settings
+from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.cache import cache_control
 from datetime import timedelta
 from crear_cuenta.models import Usuario
 from .models import LoginAttempt
@@ -9,7 +12,11 @@ import random
 import string
 
 
+@cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
 def login_view(request):
+    if request.session.get('current_user'):
+        return redirect('principal')
+
     context = {}
 
     if request.method == 'POST':
@@ -45,7 +52,7 @@ def login_view(request):
         else:
             request.session['current_user'] = usuario.email
             request.session['show_tutorial'] = True
-            return redirect('principal')
+            return HttpResponseRedirect(reverse('principal'), status=303)
 
     return render(request, 'login.html', context)
 
@@ -64,7 +71,7 @@ def forgot_password_view(request):
         
         if not email:
             context['error_message'] = 'Ingresa tu correo electrónico.'
-            return render(request, 'login/forgot_password.html', context)
+            return render(request, 'login/recuperar_contraseña.html', context)
         
         allowed_domains = {
             'gmail.com','hotmail.com','outlook.com','live.com','yahoo.com','icloud.com',
@@ -74,12 +81,12 @@ def forgot_password_view(request):
         
         if '@' not in email or not email.endswith('.com'):
             context['error_message'] = 'Ingrese un correo válido.'
-            return render(request, 'login/forgot_password.html', context)
+            return render(request, 'login/recuperar_contraseña.html', context)
         
         domain = email.split('@')[-1]
         if domain not in allowed_domains:
             context['error_message'] = 'Ingrese un correo válido.'
-            return render(request, 'login/forgot_password.html', context)
+            return render(request, 'login/recuperar_contraseña.html', context)
         
         # Verificar si el email existe en la BD
         try:
@@ -87,7 +94,7 @@ def forgot_password_view(request):
         except Usuario.DoesNotExist:
             # Por seguridad, no revelamos si el email existe o no
             context['info_message'] = 'Si el correo existe en nuestro sistema, recibirás un código de recuperación.'
-            return render(request, 'login/forgot_password.html', context)
+            return render(request, 'login/recuperar_contraseña.html', context)
         
         # Generar código de 6 dígitos
         code = ''.join(random.choices(string.digits, k=6))
@@ -135,9 +142,9 @@ El equipo de Nexo ReV
                     del request.session['recovery_code_time']
             
             context['error_message'] = 'Error al enviar el correo. Por favor, intenta nuevamente.'
-            return render(request, 'login/forgot_password.html', context)
+            return render(request, 'login/recuperar_contraseña.html', context)
     
-    return render(request, 'login/forgot_password.html', context)
+    return render(request, 'login/recuperar_contraseña.html', context)
 
 
 def verify_recovery_code(request):
@@ -159,7 +166,7 @@ def verify_recovery_code(request):
             del request.session['recovery_code_time']
             
             context['error_message'] = 'El código de recuperación ha expirado. Solicita uno nuevo.'
-            return render(request, 'login/forgot_password.html', context)
+            return render(request, 'login/recuperar_contraseña.html', context)
     except Exception:
         return redirect('forgot_password')
     
