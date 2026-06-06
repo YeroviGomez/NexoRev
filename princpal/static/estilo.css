@@ -693,7 +693,29 @@ input {
   gap: 0.45rem;
 }
 
+.diagnostic-client-message {
+  border: 1px solid #fecaca;
+  border-radius: 0.55rem;
+  background: #fef2f2;
+  color: #b91c1c;
+  padding: 0.85rem 1rem;
+  font-weight: 700;
+}
+
+.diagnostic-client-message[hidden] {
+  display: none;
+}
+
+.field-row {
+  border: 1px solid transparent;
+  border-radius: 0.65rem;
+  padding: 0.65rem;
+}
+
 .pain-scale {
+  border: 1px solid transparent;
+  border-radius: 0.65rem;
+  padding: 0.65rem;
   display: grid;
   gap: 0.6rem;
 }
@@ -772,6 +794,29 @@ input {
 .diagnostic-form input[type="radio"] {
   width: auto;
   accent-color: var(--teal);
+}
+
+.diagnostic-form .is-invalid {
+  border-color: #ef4444;
+  background: #fff7f7;
+}
+
+.diagnostic-form .is-invalid input,
+.diagnostic-form .is-invalid textarea,
+.diagnostic-form .is-invalid select {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1);
+}
+
+.diagnostic-form .errorlist {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+  list-style: none;
+  color: #b91c1c;
+  font-size: 0.88rem;
+  font-weight: 700;
 }
 
 .diagnostic-actions {

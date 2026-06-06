@@ -23,14 +23,26 @@ def principal_view(request):
     show_tutorial = request.session.pop('show_tutorial', False)
     current_user_email = request.session.get('current_user', '')
     usuario = None
-    form = DiagnosticoForm(request.POST or None)
+    diagnostico_id = request.session.get('diagnostico_id')
+    diagnostico = None
+    active_view = 'inicio'
+
+    if diagnostico_id:
+        diagnostico = Diagnostico.objects.filter(pk=diagnostico_id).first()
+
+    form = DiagnosticoForm(request.POST or None, instance=diagnostico)
 
     if request.method == "POST":
         if form.is_valid():
-            form.save()
-            messages.success(request, "Diagnostico guardado exitosamente.")
+            diagnostico_guardado = form.save()
+            request.session['diagnostico_id'] = diagnostico_guardado.pk
+            if diagnostico:
+                messages.success(request, "Diagnostico actualizado correctamente.")
+            else:
+                messages.success(request, "Diagnostico guardado exitosamente.")
             return redirect("/principal/#diagnostico")
         messages.error(request, "Por favor, complete todos los campos obligatorios.")
+        active_view = 'diagnostico'
 
     if current_user_email:
         try:
@@ -97,6 +109,8 @@ def principal_view(request):
         'videos': videos,
         'categories': categories,
         'form': form,
+        'is_diagnostic_update': diagnostico is not None,
+        'active_view': active_view,
     })
 
 @require_login

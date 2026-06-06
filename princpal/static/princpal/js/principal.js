@@ -36,7 +36,7 @@ if (sidebarToggle) {
   });
 }
 
-const initialView = window.location.hash.replace("#", "");
+const initialView = window.location.hash.replace("#", "") || document.body.dataset.initialView || "";
 const validViews = Array.from(appViews).map((view) => view.dataset.view);
 if (validViews.includes(initialView)) {
   showView(initialView);
@@ -322,7 +322,7 @@ document.addEventListener("keydown", (event) => {
 
 // ============== FUNCIONALIDAD DE PERFIL ==============
 const profileForm = document.querySelector(".profile-page");
-const saveButton = document.querySelector(".save-button");
+const saveButton = document.querySelector(".profile-page .save-button");
 const changePasswordButton = document.querySelector(".wide-outline-button");
 const cambiarFotoButton = document.getElementById("cambiarFotoButton");
 const fotoInput = document.getElementById("fotoInput");

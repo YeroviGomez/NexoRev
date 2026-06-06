@@ -54,7 +54,7 @@
   </script>
   <link rel="stylesheet" href="{% static 'estilo.css' %}">
 </head>
-<body class="{% if show_tutorial %}tutorial-open{% endif %}" data-current-user="{{ current_user_email|default:''|escapejs }}">
+<body class="{% if show_tutorial %}tutorial-open{% endif %}" data-current-user="{{ current_user_email|default:''|escapejs }}" data-initial-view="{{ active_view|default:'inicio' }}">
   {% include "principal/sidebar.html" %}
 
   <main class="app-shell">
