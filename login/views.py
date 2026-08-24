@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.views.decorators.cache import cache_control
 from datetime import timedelta
 from crear_cuenta.models import Usuario
-from .models import LoginAttempt
+from .models import LoginAttempt, TwoFactorCode
 import random
 import string
 
@@ -50,11 +50,66 @@ def login_view(request):
         if usuario is None or not usuario.check_password(password):
             context['error_message'] = 'Correo o contraseña incorrectos.'
         else:
-            request.session['current_user'] = usuario.email
-            request.session['show_tutorial'] = True
-            return HttpResponseRedirect(reverse('principal'), status=303)
+            TwoFactorCode.objects.filter(email=usuario.email, is_used=False).update(is_used=True)
+            verification = TwoFactorCode.objects.create(
+                email=usuario.email,
+                code=TwoFactorCode.generate_code(),
+            )
+            request.session['pending_2fa_email'] = usuario.email
+            request.session['pending_2fa_id'] = verification.pk
+            request.session.set_expiry(600)
+            try:
+                send_mail(
+                    'Código de acceso - Nexo ReV',
+                    f'Hola {usuario.nombre}, tu código de acceso es {verification.code}. Es válido por 10 minutos.',
+                    settings.DEFAULT_FROM_EMAIL,
+                    [usuario.email],
+                    fail_silently=False,
+                )
+            except Exception:
+                request.session.flush()
+                context['error_message'] = 'No se pudo enviar el código de acceso. Intenta nuevamente.'
+            else:
+                return redirect('verify_2fa')
 
     return render(request, 'login.html', context)
+
+
+def verify_2fa_view(request):
+    verification_id = request.session.get('pending_2fa_id')
+    email = request.session.get('pending_2fa_email')
+    if not verification_id or not email:
+        return redirect('login')
+
+    verification = TwoFactorCode.objects.filter(
+        pk=verification_id, email=email, is_used=False
+    ).first()
+    context = {'email': email}
+    if not verification or not verification.is_valid():
+        request.session.flush()
+        context['error_message'] = 'El código expiró. Inicia sesión nuevamente.'
+        return render(request, 'login/verify_2fa.html', context)
+
+    if request.method == 'POST':
+        code = request.POST.get('code', '').strip()
+        if code != verification.code:
+            verification.attempts += 1
+            verification.save(update_fields=['attempts'])
+            context['error_message'] = 'Código inválido. Verifica el correo e inténtalo nuevamente.'
+            if not verification.is_valid():
+                request.session.flush()
+                context['error_message'] = 'Se agotaron los intentos. Inicia sesión nuevamente.'
+            return render(request, 'login/verify_2fa.html', context)
+
+        verification.is_used = True
+        verification.save(update_fields=['is_used'])
+        request.session.flush()
+        request.session['current_user'] = email
+        request.session['show_tutorial'] = True
+        request.session['show_security_tips'] = True
+        return redirect('principal')
+
+    return render(request, 'login/verify_2fa.html', context)
 
 
 def logout_view(request):

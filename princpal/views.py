@@ -21,6 +21,7 @@ def require_login(view_func):
 @cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
 def principal_view(request):
     show_tutorial = request.session.pop('show_tutorial', False)
+    show_security_tips = request.session.pop('show_security_tips', False)
     current_user_email = request.session.get('current_user', '')
     usuario = None
     diagnostico_id = request.session.get('diagnostico_id')
@@ -104,6 +105,7 @@ def principal_view(request):
 
     return render(request, 'principal.html', {
         'show_tutorial': show_tutorial,
+        'show_security_tips': show_security_tips,
         'usuario': usuario,
         'current_user_email': current_user_email,
         'videos': videos,

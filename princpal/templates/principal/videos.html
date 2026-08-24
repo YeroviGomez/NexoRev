@@ -15,7 +15,7 @@
 
     <div class="filter-row" aria-label="Categorias de videos">
       {% for category in categories %}
-        <button class="filter-chip{% if forloop.first %} active{% endif %}" type="button">{{ category }}</button>
+        <button class="filter-chip{% if forloop.first %} active{% endif %}" type="button" data-category="{{ category }}">{{ category }}</button>
       {% endfor %}
     </div>
   </div>
@@ -24,7 +24,7 @@
 
   <section class="video-grid" aria-label="Videos de ejercicios">
     {% for video in videos %}
-      <article class="video-card">
+      <article class="video-card" data-category="{{ video.category }}" data-title="{{ video.title|lower }} {{ video.description|lower }}">
         <div class="video-thumb">
           <button class="favorite-btn" type="button" aria-label="Agregar a favoritos">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 8.6a5 5 0 0 0-8.1-3.8L12 5.5l-.7-.7a5 5 0 0 0-7.1 7.1l7.8 7.8 7.8-7.8a5 5 0 0 0 1-3.3Z" /></svg>
@@ -38,6 +38,8 @@
             <span class="difficulty {{ video.difficulty }}">{{ video.level }}</span>
             <span class="category">{{ video.category }}</span>
           </div>
+          <button class="routine-button" type="button" data-routine="{{ video.title }}">Marcar rutina completada</button>
+          <div class="routine-progress" hidden><span></span></div>
         </div>
       </article>
     {% endfor %}

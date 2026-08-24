@@ -400,6 +400,114 @@ input {
   background: var(--surface);
 }
 
+.video-card[hidden] {
+  display: none;
+}
+
+.routine-button {
+  margin-top: 0.9rem;
+  border: 1px solid var(--teal);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--teal);
+  background: transparent;
+  cursor: pointer;
+}
+
+.routine-button:disabled {
+  color: #15803d;
+  border-color: #86efac;
+  background: #f0fdf4;
+  cursor: default;
+}
+
+.routine-progress,
+.progress-track {
+  height: 0.45rem;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: var(--surface-soft);
+}
+
+.routine-progress span,
+.progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--teal);
+  transition: width 0.3s ease;
+}
+
+.history-panel,
+.progress-summary {
+  padding: 1rem 0;
+}
+
+.progress-summary {
+  display: flex;
+  gap: 0.65rem;
+  align-items: baseline;
+}
+
+.progress-summary strong {
+  font-size: 2rem;
+  color: var(--teal);
+}
+
+.history-list {
+  padding: 0;
+  list-style: none;
+}
+
+.history-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.security-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(7, 17, 36, 0.55);
+}
+
+.security-overlay.hidden {
+  display: none;
+}
+
+.security-modal {
+  width: min(32rem, 100%);
+  padding: 2rem;
+  border-radius: 0.75rem;
+  background: var(--surface);
+  box-shadow: 0 1rem 3rem rgba(7, 17, 36, 0.2);
+}
+
+.security-modal li {
+  margin: 1rem 0;
+}
+
+.security-critical {
+  color: #9a3412;
+}
+
+.security-check {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  margin: 1.25rem 0;
+}
+
+.security-modal button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .video-thumb {
   position: relative;
   aspect-ratio: 16 / 9;

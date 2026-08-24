@@ -3,6 +3,76 @@ const navTriggers = document.querySelectorAll("[data-nav]");
 const sidebarLinks = document.querySelectorAll(".sidebar-link[data-nav]");
 const appViews = document.querySelectorAll(".app-view");
 
+const progressStorageKey = 'nexorev_completed_routines';
+const getCompletedRoutines = () => {
+  try {
+    const routines = JSON.parse(localStorage.getItem(progressStorageKey) || '[]');
+    return Array.isArray(routines) ? routines : [];
+  } catch {
+    return [];
+  }
+};
+
+const renderProgress = () => {
+  const routines = getCompletedRoutines();
+  const count = routines.length;
+  const completedRoutines = document.getElementById('completedRoutines');
+  const homeProgressText = document.getElementById('homeProgressText');
+  const homeProgressBar = document.getElementById('homeProgressBar');
+  if (completedRoutines) completedRoutines.textContent = count;
+  if (homeProgressText) homeProgressText.textContent = `${count} rutinas completadas`;
+  if (homeProgressBar) homeProgressBar.style.width = `${Math.min(count * 16.67, 100)}%`;
+  const historyList = document.getElementById('historyList');
+  if (historyList) {
+    historyList.innerHTML = routines.length
+      ? routines.map((routine) => `<li><span>${routine}</span><time>${new Date().toLocaleDateString('es-ES')}</time></li>`).join('')
+      : '<li>Aún no has completado rutinas.</li>';
+  }
+};
+
+document.querySelectorAll('.filter-chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.filter-chip').forEach((item) => item.classList.toggle('active', item === chip));
+    const category = chip.dataset.category;
+    document.querySelectorAll('.video-card').forEach((card) => {
+      card.hidden = category !== 'Todas' && card.dataset.category !== category;
+    });
+    updateVideoCount();
+  });
+});
+
+const videoSearch = document.getElementById('videoSearch');
+const updateVideoCount = () => {
+  const visible = document.querySelectorAll('.video-card:not([hidden])').length;
+  const videoCount = document.querySelector('.video-count');
+  if (videoCount) videoCount.textContent = `Mostrando ${visible} videos`;
+};
+if (videoSearch) {
+  videoSearch.addEventListener('input', () => {
+    const query = videoSearch.value.trim().toLowerCase();
+    document.querySelectorAll('.video-card').forEach((card) => {
+      card.hidden = query && !card.dataset.title.includes(query);
+    });
+    updateVideoCount();
+  });
+}
+
+document.querySelectorAll('.routine-button').forEach((button) => {
+  button.addEventListener('click', () => {
+    const routines = getCompletedRoutines();
+    if (!routines.includes(button.dataset.routine)) routines.push(button.dataset.routine);
+    localStorage.setItem(progressStorageKey, JSON.stringify(routines));
+    button.textContent = 'Rutina completada';
+    button.disabled = true;
+    button.nextElementSibling.hidden = false;
+    button.nextElementSibling.querySelector('span').style.width = '100%';
+    renderProgress();
+    window.dispatchEvent(new CustomEvent('routine-completed'));
+  });
+});
+
+renderProgress();
+
 function showView(viewName) {
   appViews.forEach((view) => {
     view.classList.toggle("active", view.dataset.view === viewName);
@@ -638,4 +708,47 @@ function getCookie(name) {
     }
   }
   return cookieValue;
+}
+
+const securityTips = document.getElementById('securityTips');
+const securityCriticalCheck = document.getElementById('securityCriticalCheck');
+const securityTipsClose = document.getElementById('securityTipsClose');
+if (securityTips && securityCriticalCheck && securityTipsClose) {
+  securityCriticalCheck.addEventListener('change', () => {
+    securityTipsClose.disabled = !securityCriticalCheck.checked;
+  });
+  securityTipsClose.addEventListener('click', () => {
+    securityTips.classList.add('hidden');
+    document.body.classList.remove('security-open');
+  });
+  if (!securityTips.classList.contains('hidden')) document.body.classList.add('security-open');
+}
+
+const enableBiometric = document.getElementById('enableBiometric');
+if (enableBiometric) {
+  enableBiometric.addEventListener('click', async () => {
+    if (!window.PublicKeyCredential || !navigator.credentials) {
+      showAlert('Biometría no disponible', 'Este dispositivo no ofrece biometría web. La validación por código de correo seguirá activa.');
+      return;
+    }
+    try {
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+      await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: 'Nexo ReV' },
+          user: { id: challenge, name: currentUser || 'usuario', displayName: currentUser || 'Usuario' },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+          authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+          timeout: 60000,
+        },
+      });
+      localStorage.setItem(`nexorev_biometric_${currentUser}`, 'enabled');
+      showSuccess('Biometría configurada', 'La próxima validación intentará usar tu dispositivo.');
+      enableBiometric.textContent = 'Configurada';
+    } catch {
+      showAlert('Validación no completada', 'La biometría falló o fue cancelada. Puedes continuar usando el código enviado por correo.');
+    }
+  });
 }

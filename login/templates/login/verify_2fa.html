@@ -1,0 +1,25 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexo ReV | Verificación</title>
+  <link rel="stylesheet" href="{% static 'login/arte.css' %}">
+</head>
+<body>
+  <main class="auth-layout">
+    <aside class="brand-panel" aria-label="Nexo ReV"><div class="brand-title"><h1>Nexo ReV</h1></div><p class="lead">Rehabilitación desde tu hogar</p></aside>
+    <section class="form-panel">
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {% if error_message %}<p class="form-message error" role="alert">{{ error_message }}</p>{% endif %}
+        <div class="form-head"><h2>Verificación en dos pasos</h2><p>Ingresa el código enviado a <strong>{{ email }}</strong>.</p></div>
+        <div class="field-group"><label for="code">Código de acceso</label><input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus></div>
+        <button type="submit" class="primary-btn">Verificar y continuar</button>
+        <a href="{% url 'login' %}" class="text-link">Cancelar</a>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

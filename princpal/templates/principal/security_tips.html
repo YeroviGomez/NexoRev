@@ -1,0 +1,14 @@
+<section class="security-overlay {% if not show_security_tips %}hidden{% endif %}" id="securityTips" role="dialog" aria-modal="true" aria-labelledby="securityTipsTitle">
+  <article class="security-modal">
+    <span class="chip">Protege tu cuenta</span>
+    <h2 id="securityTipsTitle">Tips de seguridad</h2>
+    <p>Completa estas recomendaciones para mantener tu cuenta protegida.</p>
+    <ul>
+      <li><strong>Autenticación en dos pasos:</strong> ya está activa y se solicitará por correo en cada inicio.</li>
+      <li><strong>Contraseña única:</strong> no la compartas ni la reutilices en otros servicios.</li>
+      <li class="security-critical"><strong>Recomendación crítica:</strong> confirma que entiendes cómo recuperar el acceso.</li>
+    </ul>
+    <label class="security-check"><input id="securityCriticalCheck" type="checkbox"> Confirmo que leí la recomendación crítica</label>
+    <button id="securityTipsClose" class="primary-btn" type="button" disabled>Continuar</button>
+  </article>
+</section>

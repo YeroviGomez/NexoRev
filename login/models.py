@@ -47,3 +47,27 @@ class PasswordRecovery(models.Model):
             code = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
             if not PasswordRecovery.objects.filter(code=code, is_used=False).exists():
                 return code
+
+
+class TwoFactorCode(models.Model):
+    email = models.EmailField('correo electrónico')
+    code = models.CharField('código', max_length=6)
+    created_at = models.DateTimeField('fecha de creación', auto_now_add=True)
+    attempts = models.PositiveSmallIntegerField('intentos', default=0)
+    is_used = models.BooleanField('utilizado', default=False)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Código de autenticación en dos pasos'
+        verbose_name_plural = 'Códigos de autenticación en dos pasos'
+
+    def is_valid(self):
+        return (
+            not self.is_used
+            and self.attempts < 5
+            and timezone.now() < self.created_at + timedelta(minutes=10)
+        )
+
+    @staticmethod
+    def generate_code():
+        return ''.join(str(secrets.randbelow(10)) for _ in range(6))
