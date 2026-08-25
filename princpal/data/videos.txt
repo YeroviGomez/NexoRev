@@ -1,0 +1,22 @@
+# Agrega cada video en un bloque separado por una línea en blanco:
+# ## Título del video
+# Descripción del video
+# Principiante
+# Rodilla
+# https://www.youtube.com/watch?v=ID_DEL_VIDEO
+
+
+## Rehabilitación de rodilla
+Educación para la Salud
+medio
+rodilla 
+https://www.youtube.com/watch?v=zXKTOdE7dRg
+
+
+## 5 EJERCICIOS para DOLOR de RODILLAS
+Educación para la Salud
+medio
+rodilla 
+https://www.youtube.com/watch?v=rYDcVQ0E0Co&t=333s
+
+

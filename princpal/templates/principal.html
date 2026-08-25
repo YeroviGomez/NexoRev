@@ -52,7 +52,7 @@
       }
     });
   </script>
-  <link rel="stylesheet" href="{% static 'estilo.css' %}">
+  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=6">
 </head>
 <body class="{% if show_tutorial %}tutorial-open{% endif %}" data-current-user="{{ current_user_email|default:''|escapejs }}" data-initial-view="{{ active_view|default:'inicio' }}">
   {% include "principal/sidebar.html" %}
@@ -61,6 +61,7 @@
     {% include "principal/home.html" %}
     {% include "principal/diagnostico.html" %}
     {% include "principal/videos.html" %}
+    {% include "principal/favoritos.html" %}
     {% include "principal/historial.html" %}
     {% include "principal/profile.html" %}
   </main>
@@ -68,6 +69,6 @@
   {% include "principal/tutorial.html" %}
   {% include "principal/security_tips.html" %}
 
-  <script src="{% static 'princpal/js/principal.js' %}" defer></script>
+  <script src="{% static 'princpal/js/principal.js' %}?v=3" defer></script>
 </body>
 </html>

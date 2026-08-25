@@ -1,0 +1,5 @@
+.history-panel { padding: 1rem 0; }
+.progress-summary { padding: 1rem 0; display: flex; gap: 0.65rem; align-items: baseline; }
+.progress-summary strong { font-size: 2rem; color: var(--teal); }
+.history-list { padding: 0; list-style: none; }
+.history-list li { display: flex; justify-content: space-between; padding: 0.8rem 0; border-bottom: 1px solid var(--line); }

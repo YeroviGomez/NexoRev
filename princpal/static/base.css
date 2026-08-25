@@ -1,0 +1,47 @@
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap");
+
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-soft: #f1f3f6;
+  --ink: #071124;
+  --muted: #667085;
+  --line: #dcdfe5;
+  --teal: #009688;
+  --teal-soft: #eafbf8;
+  --dark: #030013;
+  --sidebar-width: 316px;
+}
+
+html[data-font-size="normal"] { font-size: 100%; }
+html[data-font-size="large"] { font-size: 120%; }
+html[data-font-size="xlarge"] { font-size: 140%; }
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: "Outfit", "Segoe UI", sans-serif;
+  background: var(--bg);
+  overflow-x: hidden;
+}
+
+button, input { font: inherit; }
+
+.sidebar-toggle svg,
+.sidebar-link svg,
+.quick-link svg,
+.search-box svg,
+.save-button svg,
+.wide-outline-button svg,
+.favorite-btn svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

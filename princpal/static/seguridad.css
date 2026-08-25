@@ -1,0 +1,7 @@
+.security-overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 1rem; background: rgba(7, 17, 36, 0.55); }
+.security-overlay.hidden { display: none; }
+.security-modal { width: min(32rem, 100%); padding: 2rem; border-radius: 0.75rem; background: var(--surface); box-shadow: 0 1rem 3rem rgba(7, 17, 36, 0.2); }
+.security-modal li { margin: 1rem 0; }
+.security-critical { color: #9a3412; }
+.security-check { display: flex; gap: 0.6rem; align-items: flex-start; margin: 1.25rem 0; }
+.security-modal button:disabled { opacity: 0.5; cursor: not-allowed; }

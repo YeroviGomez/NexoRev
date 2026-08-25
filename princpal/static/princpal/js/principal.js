@@ -2,6 +2,109 @@ const sidebarToggle = document.getElementById("sidebarToggle");
 const navTriggers = document.querySelectorAll("[data-nav]");
 const sidebarLinks = document.querySelectorAll(".sidebar-link[data-nav]");
 const appViews = document.querySelectorAll(".app-view");
+const favoriteUser = document.body.dataset.currentUser?.toLowerCase() || 'anonymous';
+const favoritesStorageKey = `nexorev_favorites_${favoriteUser}`;
+
+const getFavorites = () => {
+  try {
+    const favorites = JSON.parse(localStorage.getItem(favoritesStorageKey) || '[]');
+    return Array.isArray(favorites) ? favorites : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveFavorites = (favorites) => {
+  localStorage.setItem(favoritesStorageKey, JSON.stringify(favorites));
+};
+
+const updateFavoriteButtons = () => {
+  const favorites = getFavorites();
+  document.querySelectorAll('.favorite-btn[data-favorite-id]').forEach((button) => {
+    const isFavorite = favorites.includes(button.dataset.favoriteId);
+    button.classList.toggle('is-favorite', isFavorite);
+    button.setAttribute('aria-pressed', String(isFavorite));
+    button.setAttribute('aria-label', isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos');
+  });
+};
+
+const renderFavorites = () => {
+  const favoritesGrid = document.getElementById('favoritesGrid');
+  const favoritesEmpty = document.getElementById('favoritesEmpty');
+  const favoritesCount = document.getElementById('favoritesCount');
+  if (!favoritesGrid || !favoritesEmpty || !favoritesCount) return;
+
+  const favoriteIds = getFavorites();
+  const sourceCards = Array.from(document.querySelectorAll('#videosView .video-card'));
+  const cardsById = new Map(sourceCards.map((card) => [
+    card.querySelector('.favorite-btn')?.dataset.favoriteId,
+    card,
+  ]));
+  favoritesGrid.innerHTML = '';
+  favoritesCount.textContent = `${favoriteIds.length} ${favoriteIds.length === 1 ? 'video guardado' : 'videos guardados'}`;
+  favoritesEmpty.hidden = favoriteIds.length > 0;
+
+  favoriteIds.forEach((favoriteId, index) => {
+    const sourceCard = cardsById.get(favoriteId);
+    if (!sourceCard) return;
+    const card = sourceCard.cloneNode(true);
+    card.classList.add('favorite-card');
+    card.hidden = false;
+    const favoriteButton = card.querySelector('.favorite-btn');
+    favoriteButton.setAttribute('aria-pressed', 'true');
+    favoriteButton.setAttribute('aria-label', 'Quitar de favoritos');
+    favoriteButton.classList.add('is-favorite');
+    favoriteButton.addEventListener('click', () => {
+      saveFavorites(getFavorites().filter((id) => id !== favoriteId));
+      updateFavoriteButtons();
+      renderFavorites();
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'favorite-order-actions';
+    actions.innerHTML = `
+      <button type="button" class="favorite-order-btn" aria-label="Mover hacia arriba" ${index === 0 ? 'disabled' : ''}>↑</button>
+      <button type="button" class="favorite-order-btn" aria-label="Mover hacia abajo" ${index === favoriteIds.length - 1 ? 'disabled' : ''}>↓</button>
+    `;
+    const [moveUp, moveDown] = actions.querySelectorAll('button');
+    moveUp.addEventListener('click', () => moveFavorite(favoriteId, -1));
+    moveDown.addEventListener('click', () => moveFavorite(favoriteId, 1));
+    card.querySelector('.video-copy').append(actions);
+    favoritesGrid.append(card);
+  });
+};
+
+const moveFavorite = (favoriteId, direction) => {
+  const favorites = getFavorites();
+  const currentIndex = favorites.indexOf(favoriteId);
+  const nextIndex = currentIndex + direction;
+  if (currentIndex < 0 || nextIndex < 0 || nextIndex >= favorites.length) return;
+  [favorites[currentIndex], favorites[nextIndex]] = [favorites[nextIndex], favorites[currentIndex]];
+  saveFavorites(favorites);
+  renderFavorites();
+};
+
+document.querySelectorAll('#videosView .favorite-btn[data-favorite-id]').forEach((button) => {
+  button.addEventListener('click', () => {
+    const favorites = getFavorites();
+    const favoriteId = button.dataset.favoriteId;
+    const nextFavorites = favorites.includes(favoriteId)
+      ? favorites.filter((id) => id !== favoriteId)
+      : [...favorites, favoriteId];
+    saveFavorites(nextFavorites);
+    updateFavoriteButtons();
+    renderFavorites();
+  });
+});
+
+document.getElementById('clearFavorites')?.addEventListener('click', () => {
+  saveFavorites([]);
+  updateFavoriteButtons();
+  renderFavorites();
+});
+
+updateFavoriteButtons();
+renderFavorites();
 
 const progressStorageKey = 'nexorev_completed_routines';
 const getCompletedRoutines = () => {
@@ -72,6 +175,29 @@ document.querySelectorAll('.routine-button').forEach((button) => {
 });
 
 renderProgress();
+
+const videoSafetyTips = document.getElementById('videoSafetyTips');
+const openVideoSafetyTips = document.getElementById('openVideoSafetyTips');
+const closeVideoSafetyTips = document.getElementById('closeVideoSafetyTips');
+const closeVideoSafetyModal = () => {
+  if (videoSafetyTips) videoSafetyTips.classList.add('hidden');
+};
+if (openVideoSafetyTips && videoSafetyTips) {
+  openVideoSafetyTips.addEventListener('click', () => {
+    videoSafetyTips.classList.remove('hidden');
+    closeVideoSafetyTips?.focus();
+  });
+  closeVideoSafetyTips?.addEventListener('click', closeVideoSafetyModal);
+  videoSafetyTips.addEventListener('click', (event) => {
+    if (event.target === videoSafetyTips) closeVideoSafetyModal();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !videoSafetyTips.classList.contains('hidden')) {
+      closeVideoSafetyModal();
+      openVideoSafetyTips.focus();
+    }
+  });
+}
 
 function showView(viewName) {
   appViews.forEach((view) => {

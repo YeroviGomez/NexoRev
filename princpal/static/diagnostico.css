@@ -1,0 +1,23 @@
+.diagnostic-form { max-width: 720px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1rem; }
+.diagnostic-form p { margin: 0; display: grid; gap: 0.45rem; }
+.diagnostic-client-message { border: 1px solid #fecaca; border-radius: 0.55rem; background: #fef2f2; color: #b91c1c; padding: 0.85rem 1rem; font-weight: 700; }
+.diagnostic-client-message[hidden] { display: none; }
+.field-row, .pain-scale { border: 1px solid transparent; border-radius: 0.65rem; padding: 0.65rem; }
+.pain-scale { display: grid; gap: 0.6rem; }
+.pain-scale-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.pain-scale output { min-width: 2.4rem; min-height: 2.4rem; border-radius: 0.5rem; background: var(--teal); color: #ffffff; display: grid; place-items: center; font-size: 1.15rem; font-weight: 800; }
+.pain-scale-labels { display: flex; justify-content: space-between; gap: 1rem; color: #667085; font-size: 0.88rem; font-weight: 700; }
+.diagnostic-form label { color: #050505; font-size: 0.92rem; font-weight: 700; }
+.diagnostic-form input, .diagnostic-form textarea, .diagnostic-form select { width: 100%; border: 1px solid var(--line); border-radius: 0.5rem; background: #f8fafc; color: var(--ink); padding: 0.75rem 0.85rem; font: inherit; }
+.diagnostic-form textarea { min-height: 7rem; resize: vertical; }
+.diagnostic-form input[type="range"] { padding: 0; accent-color: var(--teal); }
+.diagnostic-form ul { margin: 0.25rem 0 0; padding: 0; display: grid; gap: 0.35rem; list-style: none; }
+.diagnostic-form li label { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 500; }
+.diagnostic-form input[type="radio"] { width: auto; accent-color: var(--teal); }
+.diagnostic-form .is-invalid { border-color: #ef4444; background: #fff7f7; }
+.diagnostic-form .is-invalid input, .diagnostic-form .is-invalid textarea, .diagnostic-form .is-invalid select { border-color: #ef4444; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1); }
+.diagnostic-form .errorlist { margin: 0.35rem 0 0; padding: 0; display: grid; gap: 0.25rem; list-style: none; color: #b91c1c; font-size: 0.88rem; font-weight: 700; }
+.diagnostic-actions { display: flex; justify-content: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+.form-alerts { max-width: 720px; margin: 1rem auto 0; padding: 0; list-style: none; }
+.form-alerts li { border-radius: 0.55rem; padding: 0.85rem 1rem; background: #ecfdf5; color: #047857; font-weight: 700; }
+.form-alerts li.error { background: #fef2f2; color: #b91c1c; }

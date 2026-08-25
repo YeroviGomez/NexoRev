@@ -1,0 +1,31 @@
+.tutorial-open { overflow: hidden; }
+.tutorial-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 1rem; background: rgba(0, 0, 0, 0.5); }
+.tutorial-overlay.hidden { display: none; }
+.tutorial-modal { width: min(640px, calc(100vw - 2rem)); min-height: min(766px, calc(100vh - 2rem)); max-height: calc(100vh - 2rem); border: 1px solid #d7dce4; border-radius: 0.55rem; background: #ffffff; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28); color: #101014; padding: 1.6rem 1.75rem 1.25rem; display: grid; grid-template-rows: auto auto auto 1fr auto auto; gap: 1.1rem; overflow: auto; }
+.tutorial-topbar { min-height: 1.9rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; position: relative; }
+.tutorial-step-badge { border-radius: 0.55rem; background: #eceff5; color: #111827; padding: 0.34rem 0.62rem; font-size: 0.9rem; font-weight: 700; line-height: 1; }
+.tutorial-skip { margin-left: auto; border: 0; background: transparent; color: #6d7283; font: inherit; font-size: 1rem; font-weight: 700; cursor: pointer; padding: 0.12rem 1.35rem 0.12rem 0; }
+.tutorial-skip[hidden], .tutorial-tip[hidden] { display: none; }
+.tutorial-close { position: absolute; top: -0.55rem; right: -0.7rem; width: 2rem; height: 2rem; border: 0; background: transparent; color: #424242; display: grid; place-items: center; cursor: pointer; }
+.tutorial-close svg, .tutorial-nav-btn svg, .tutorial-next-btn svg, .tutorial-icon svg, .tutorial-info h3 svg { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+.tutorial-close svg, .tutorial-nav-btn svg, .tutorial-next-btn svg { width: 1.25rem; height: 1.25rem; stroke-width: 2.3; }
+.tutorial-icon { margin-top: 0.1rem; min-height: 4.1rem; display: grid; place-items: center; color: var(--teal); }
+.tutorial-icon svg { width: 4.8rem; height: 4.8rem; stroke-width: 4.5; }
+.tutorial-heading { text-align: center; }
+.tutorial-heading h2 { margin: 0; color: #0d0d12; font-size: 1.85rem; line-height: 1.12; font-weight: 700; }
+.tutorial-heading p { margin: 0.85rem 0 0; color: #727589; font-size: 1.22rem; line-height: 1.35; }
+.tutorial-info { margin-top: 1.75rem; border: 1px solid #76eadb; border-radius: 0.75rem; background: #edfffd; color: #08706c; padding: 1.9rem 1.8rem 1.8rem; }
+.tutorial-info h3 { margin: 0; display: flex; align-items: center; gap: 0.75rem; color: #074f4d; font-size: 1.43rem; line-height: 1.2; font-weight: 700; }
+.tutorial-info h3 svg { width: 1.55rem; height: 1.55rem; min-width: 1.55rem; stroke-width: 2.3; }
+.tutorial-info ul { margin: 1.1rem 0 0; padding-left: 1.2rem; display: grid; gap: 1rem; color: #08706c; font-size: 1.18rem; line-height: 1.48; }
+.tutorial-info li::marker { color: var(--teal); font-size: 0.75em; }
+.tutorial-tip { margin: 0.2rem 0 0; border: 1px solid #bdd6ff; border-radius: 0.75rem; background: #edf5ff; color: #1d46d8; padding: 1.25rem 1.35rem; font-size: 1rem; line-height: 1.45; }
+.tutorial-footer { margin-top: 1.8rem; padding-top: 1.25rem; border-top: 1px solid #ebebeb; display: grid; grid-template-columns: 8.6rem 1fr 9rem; align-items: center; gap: 1rem; }
+.tutorial-nav-btn, .tutorial-next-btn { min-height: 2.85rem; border-radius: 0.65rem; font: inherit; font-weight: 700; font-size: 1rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.65rem; cursor: pointer; }
+.tutorial-nav-btn { border: 1px solid #e4e6eb; background: #ffffff; color: #171717; }
+.tutorial-nav-btn:disabled { color: #8d8d8d; cursor: not-allowed; }
+.tutorial-next-btn { border: 0; background: var(--dark); color: #ffffff; }
+.tutorial-dots { display: flex; align-items: center; justify-content: center; gap: 0.42rem; }
+.tutorial-dots button { width: 0.62rem; height: 0.62rem; border: 0; border-radius: 999px; background: #cfd5de; padding: 0; cursor: pointer; }
+.tutorial-dots button.active { width: 1.85rem; background: var(--teal); }
+.tutorial-dots button.passed { background: #39d8cc; }

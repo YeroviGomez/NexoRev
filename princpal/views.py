@@ -2,10 +2,74 @@ from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import cache_control
 from functools import wraps
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from .forms import DiagnosticoForm
 from .models import Diagnostico
 
 from crear_cuenta.models import Usuario
+
+
+def load_external_videos():
+    catalog_path = Path(__file__).resolve().parent / 'data' / 'videos.txt'
+    videos = []
+    if not catalog_path.exists():
+        return videos
+
+    lines = [line.strip() for line in catalog_path.read_text(encoding='utf-8').splitlines()]
+    blocks = []
+    current_block = []
+    for line in lines:
+        if line.startswith('## ') and current_block:
+            blocks.append(current_block)
+            current_block = []
+        if line and (line.startswith('## ') or not line.startswith('#')):
+            current_block.append(line)
+    if current_block:
+        blocks.append(current_block)
+
+    for block in blocks:
+        if block[0].startswith('## '):
+            if len(block) < 5:
+                continue
+            title = block[0][3:].strip()
+            description, level, category, video_url = block[1:5]
+        else:
+            video_url = block[0]
+            title = 'Video de rehabilitación'
+            description = 'Video agregado desde el catálogo de enlaces.'
+            level = 'Recomendado'
+            category = 'General'
+
+        parsed_url = urlparse(video_url)
+        if parsed_url.scheme not in {'http', 'https'} or not parsed_url.netloc:
+            continue
+
+        video_id = ''
+        if parsed_url.netloc.lower() in {'youtube.com', 'www.youtube.com', 'm.youtube.com'}:
+            video_id = parse_qs(parsed_url.query).get('v', [''])[0]
+            if parsed_url.path.startswith('/shorts/'):
+                video_id = parsed_url.path.split('/shorts/', 1)[1].split('/', 1)[0]
+        elif parsed_url.netloc.lower() == 'youtu.be':
+            video_id = parsed_url.path.strip('/').split('/', 1)[0]
+
+        difficulty = {
+            'principiante': 'easy',
+            'intermedio': 'medium',
+            'medio': 'medium',
+            'avanzado': 'hard',
+        }.get(level.lower(), 'easy')
+        videos.append({
+            'title': title,
+            'description': description,
+            'duration': '',
+            'difficulty': difficulty,
+            'level': level,
+            'category': category,
+            'url': video_url,
+            'preview_image': f'https://img.youtube.com/vi/{video_id}/hqdefault.jpg' if video_id else '',
+        })
+    return videos
 
 
 def require_login(view_func):
@@ -51,57 +115,10 @@ def principal_view(request):
         except Usuario.DoesNotExist:
             usuario = None
 
-    videos = [
-        {
-            'title': 'Ejercicios para dolor de rodilla',
-            'description': 'Rutina básica para fortalecer la rodilla y reducir el dolor',
-            'duration': '10:45',
-            'difficulty': 'easy',
-            'level': 'Principiante',
-            'category': 'Rodilla',
-        },
-        {
-            'title': 'Rehabilitación de hombro',
-            'description': 'Ejercicios de movilidad para recuperar el rango de movimiento del hombro',
-            'duration': '15:30',
-            'difficulty': 'medium',
-            'level': 'Intermedio',
-            'category': 'Hombro',
-        },
-        {
-            'title': 'Fortalecimiento de espalda baja',
-            'description': 'Rutina completa para fortalecer la zona lumbar y prevenir lesiones',
-            'duration': '20:00',
-            'difficulty': 'medium',
-            'level': 'Intermedio',
-            'category': 'Espalda',
-        },
-        {
-            'title': 'Estiramiento de cuello y cervicales',
-            'description': 'Ejercicios suaves para aliviar la tensión en cuello y cervicales',
-            'duration': '8:15',
-            'difficulty': 'easy',
-            'level': 'Principiante',
-            'category': 'Cuello',
-        },
-        {
-            'title': 'Recuperación de tobillo',
-            'description': 'Ejercicios progresivos para rehabilitar esguinces de tobillo',
-            'duration': '12:30',
-            'difficulty': 'easy',
-            'level': 'Principiante',
-            'category': 'Tobillo',
-        },
-        {
-            'title': 'Movilidad de cadera',
-            'description': 'Rutina avanzada para mejorar la flexibilidad y fuerza de la cadera',
-            'duration': '18:45',
-            'difficulty': 'hard',
-            'level': 'Avanzado',
-            'category': 'Cadera',
-        },
-    ]
+    videos = []
     categories = ['Todas', 'Rodilla', 'Hombro', 'Espalda', 'Cuello', 'Tobillo', 'Cadera']
+    videos.extend(load_external_videos())
+    categories = ['Todas'] + list(dict.fromkeys(video['category'] for video in videos))
 
     return render(request, 'principal.html', {
         'show_tutorial': show_tutorial,

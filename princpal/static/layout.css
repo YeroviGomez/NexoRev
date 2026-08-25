@@ -1,0 +1,60 @@
+.app-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  width: var(--sidebar-width);
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+}
+
+.sidebar-brand {
+  height: 88px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #050505;
+  text-decoration: none;
+  font-size: 1.55rem;
+  font-weight: 800;
+  min-width: 0;
+}
+
+.brand-logo { width: 2.6rem; height: 2.6rem; fill: none; stroke: var(--teal); stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+
+.sidebar-toggle { width: 2.4rem; height: 2.4rem; border: 0; background: transparent; color: #252525; display: grid; place-items: center; cursor: pointer; border-radius: 0.5rem; }
+.sidebar-toggle:hover { background: var(--surface-soft); }
+
+.sidebar-nav { padding: 1.2rem 1rem; display: grid; align-content: start; gap: 0.65rem; overflow-y: auto; overflow-x: hidden; }
+.sidebar-footer { border-top: 1px solid var(--line); padding: 1.35rem 1rem; display: grid; gap: 0.75rem; }
+
+.sidebar-link { min-height: 3.6rem; border-radius: 0.8rem; color: #263347; text-decoration: none; display: flex; align-items: center; gap: 1rem; padding: 0 1.2rem; font-size: 1.15rem; font-weight: 500; border: 0; background: transparent; cursor: pointer; text-align: left; }
+.sidebar-button { width: 100%; }
+.sidebar-link:hover, .sidebar-link.active { color: #007f77; background: var(--teal-soft); }
+
+.app-shell { min-height: 100vh; margin-left: var(--sidebar-width); padding: 2.6rem clamp(1.5rem, 3vw, 4.5rem); }
+.app-view { display: none; }
+.app-view.active { display: block; }
+
+.page-head { margin-bottom: 2.6rem; }
+.page-head h1 { margin: 0; color: #071124; font-size: clamp(2.2rem, 3vw, 2.75rem); line-height: 1.06; font-weight: 800; }
+.page-head p { margin: 0.85rem 0 0; color: #344155; font-size: 1.25rem; line-height: 1.4; }
+.page-head.compact { max-width: 1066px; margin: 0 auto 2rem; }
+.page-head.compact h1 { font-size: 2rem; }
+.page-head.compact p { font-size: 1rem; }
+
+.sidebar-collapsed { --sidebar-width: 84px; }
+.sidebar-collapsed .brand-lockup span, .sidebar-collapsed .sidebar-link span { display: none; }
+.sidebar-collapsed .sidebar-brand, .sidebar-collapsed .sidebar-link { justify-content: center; padding-left: 0; padding-right: 0; overflow: hidden; }
+.sidebar-collapsed .sidebar-toggle { width: 2.2rem; height: 2.2rem; }

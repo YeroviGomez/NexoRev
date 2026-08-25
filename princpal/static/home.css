@@ -1,0 +1,14 @@
+.home-grid { display: grid; grid-template-columns: minmax(420px, 1fr) minmax(340px, 0.98fr); gap: 2.5rem; align-items: start; }
+.home-side { display: grid; gap: 1.9rem; }
+.panel { border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); box-shadow: none; }
+.body-panel { min-height: 826px; padding: 1.9rem; }
+.panel h2 { margin: 0; font-size: 1.35rem; font-weight: 700; }
+.panel > p { margin: 0.75rem 0 0; color: #687287; font-size: 1.18rem; }
+.body-placeholder { min-height: 670px; display: grid; place-items: center; color: #8aa1b7; text-align: center; }
+.body-placeholder span { border: 2px dashed #c6d3df; border-radius: 1rem; padding: 4rem 5rem; color: #74899d; background: #f4f9fc; font-size: 1.8rem; font-weight: 800; }
+.selected-panel { min-height: 230px; padding: 1.9rem; }
+.selected-panel p { display: grid; min-height: 116px; place-items: center; text-align: center; }
+.quick-panel { padding: 1.9rem; }
+.quick-panel h2 { margin-bottom: 2rem; }
+.quick-link { width: 100%; min-height: 2.85rem; margin-top: 0.7rem; border: 1px solid var(--line); border-radius: 0.55rem; background: var(--surface); color: #030711; display: flex; align-items: center; gap: 1rem; padding: 0 1.1rem; font-weight: 700; cursor: pointer; text-align: left; }
+.quick-link:hover { border-color: #c3cad6; background: #fbfcfd; }
