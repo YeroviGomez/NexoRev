@@ -55,6 +55,8 @@ def login_view(request):
                 email=usuario.email,
                 code=TwoFactorCode.generate_code(),
             )
+            if settings.DEBUG:
+                print(f'[Nexo ReV] Código 2FA para {usuario.email}: {verification.code}')
             request.session['pending_2fa_email'] = usuario.email
             request.session['pending_2fa_id'] = verification.pk
             request.session.set_expiry(600)
@@ -153,6 +155,8 @@ def forgot_password_view(request):
         
         # Generar código de 6 dígitos
         code = ''.join(random.choices(string.digits, k=6))
+        if settings.DEBUG:
+            print(f'[Nexo ReV] Código de recuperación para {email}: {code}')
         
         # Guardar en sesión con timestamp
         request.session['recovery_email'] = email

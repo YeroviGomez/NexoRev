@@ -1,5 +1,15 @@
 from django import forms
 
+
+class FotoPerfilForm(forms.Form):
+    foto = forms.ImageField(label='Foto de perfil')
+
+    def clean_foto(self):
+        foto = self.cleaned_data['foto']
+        if foto.size > 5 * 1024 * 1024:
+            raise forms.ValidationError('La imagen no debe superar 5 MB.')
+        return foto
+
 from .models import Diagnostico
 
 

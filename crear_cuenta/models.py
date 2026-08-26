@@ -5,6 +5,7 @@ from django.db import models
 class Usuario(models.Model):
     email = models.EmailField('correo electrónico', unique=True)
     nombre = models.CharField('nombre completo', max_length=150)
+    foto_perfil = models.ImageField('foto de perfil', upload_to='perfiles/', null=True, blank=True)
     password = models.CharField('contraseña', max_length=128)
     is_active = models.BooleanField('activo', default=True)
     fecha_creacion = models.DateTimeField('fecha de creación', auto_now_add=True)

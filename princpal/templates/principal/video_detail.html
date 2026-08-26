@@ -1,0 +1,156 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ video.title }} | Nexo ReV</title>
+  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=8">
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+</head>
+<body class="video-detail-page" data-current-user="{{ current_user_email|escapejs }}">
+  <main class="video-detail-shell">
+    <a class="video-back-link" href="{% url 'principal' %}#videos">← Volver a videos</a>
+    <header class="video-detail-heading">
+      <div class="video-detail-title">
+        <span class="video-detail-kicker">Reproduciendo ahora</span>
+        <h1>{{ video.title }}</h1>
+        <p>{{ video.description }}</p>
+      </div>
+      <span class="category detail-category">{{ video.category }}</span>
+    </header>
+
+    <section class="video-player-frame" aria-label="Reproductor de {{ video.title }}">
+      <iframe src="{{ video.embed_url }}&origin={{ request.scheme }}%3A%2F%2F{{ request.get_host }}" title="{{ video.title }}" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+    </section>
+
+    <section class="routine-completion" aria-live="polite">
+      <div>
+        <span class="video-detail-kicker">Tu progreso</span>
+        <h2>¿Terminaste esta rutina?</h2>
+        <p>Marca el ejercicio como completado para registrar tu avance.</p>
+      </div>
+      <button id="completeRoutineButton" class="complete-routine-button{% if completed_today %} is-completed{% endif %}" type="button">
+        <span class="completion-check" aria-hidden="true">✓</span>
+        <span>{% if completed_today %}Desmarcar como completada{% else %}Marcar rutina como completada{% endif %}</span>
+      </button>
+      <a class="history-link" href="{% url 'principal' %}?history_refresh=1#historial">Ver historial</a>
+    </section>
+
+    <section class="motivation-modal" id="motivationModal" role="dialog" aria-modal="true" aria-labelledby="motivationTitle" hidden>
+      <div class="motivation-modal-card">
+        <button class="motivation-close" id="motivationClose" type="button" aria-label="Cerrar mensaje">×</button>
+        <div class="motivation-icon" aria-hidden="true">✓</div>
+        <span class="video-detail-kicker">Rutina completada</span>
+        <h2 id="motivationTitle">¡Excelente trabajo!</h2>
+        <p id="motivationMessage"></p>
+        <button class="motivation-action" id="motivationAction" type="button">Continuar</button>
+      </div>
+    </section>
+
+    <section class="recommendations-section" aria-labelledby="recommendationsTitle">
+      <div class="recommendations-heading">
+        <div>
+          <span class="video-detail-kicker">Continúa tu rutina</span>
+          <h2 id="recommendationsTitle">Más ejercicios de {{ video.category }}</h2>
+        </div>
+      </div>
+      {% if recommendations %}
+        <div class="recommendations-controls">
+          <span class="recommendations-position" id="recommendationsPosition">1 / {{ recommendations|length }}</span>
+          <div class="carousel-controls" aria-label="Controles de recomendaciones">
+            <button type="button" class="carousel-button" data-carousel-direction="-1" aria-label="Ver recomendaciones anteriores">←</button>
+            <button type="button" class="carousel-button" data-carousel-direction="1" aria-label="Ver más recomendaciones">→</button>
+          </div>
+        </div>
+        <div class="recommendations-carousel" id="recommendationsCarousel" tabindex="0" aria-label="Videos recomendados de {{ video.category }}">
+          {% for recommendation in recommendations %}
+            <article class="recommendation-card">
+              <a href="{% url 'video_detail' recommendation.catalog_index %}">
+                <div class="recommendation-thumb">
+                  <img src="{{ recommendation.preview_image }}" alt="Portada de {{ recommendation.title }}" loading="lazy">
+                  <span class="recommendation-play">▶</span>
+                </div>
+                <div class="recommendation-copy">
+                  <h3>{{ recommendation.title }}</h3>
+                  <span>{{ recommendation.level }}</span>
+                </div>
+              </a>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="recommendations-empty">Aún no hay más videos en esta categoría.</p>
+      {% endif %}
+    </section>
+  </main>
+  <script>
+    const completeButton = document.getElementById('completeRoutineButton');
+    const motivationModal = document.getElementById('motivationModal');
+    const motivationClose = document.getElementById('motivationClose');
+    const motivationAction = document.getElementById('motivationAction');
+    const motivationMessage = document.getElementById('motivationMessage');
+    const completeUrl = "{% url 'complete_video' video.catalog_index %}";
+    const csrfToken = "{{ csrf_token }}";
+    const closeMotivation = () => { motivationModal.hidden = true; };
+    completeButton.addEventListener('click', async () => {
+      if (completeButton.disabled) return;
+      completeButton.disabled = true;
+      completeButton.classList.add('is-loading');
+      try {
+        const response = await fetch(completeUrl, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo guardar el progreso.');
+        completeButton.classList.remove('is-loading');
+        completeButton.disabled = false;
+        completeButton.classList.toggle('is-completed', data.completed);
+        completeButton.querySelector('span:last-child').textContent = data.completed
+          ? 'Desmarcar como completada'
+          : 'Marcar rutina como completada';
+        sessionStorage.setItem('nexorev_history_dirty', 'true');
+        if (data.completed) {
+          motivationMessage.textContent = data.message;
+          motivationModal.hidden = false;
+          confetti({ particleCount: 150, spread: 75, origin: { y: 0.6 } });
+        }
+      } catch (error) {
+        completeButton.disabled = false;
+        completeButton.classList.remove('is-loading');
+        alert(error.message);
+      }
+    });
+    motivationClose.addEventListener('click', closeMotivation);
+    motivationAction.addEventListener('click', closeMotivation);
+    motivationModal.addEventListener('click', (event) => { if (event.target === motivationModal) closeMotivation(); });
+
+    const carousel = document.getElementById('recommendationsCarousel');
+    const carouselButtons = document.querySelectorAll('[data-carousel-direction]');
+    const position = document.getElementById('recommendationsPosition');
+    const updateCarousel = () => {
+      if (!carousel) return;
+      const card = carousel.querySelector('.recommendation-card');
+      const step = card ? card.getBoundingClientRect().width + 16 : 320;
+      const current = Math.round(carousel.scrollLeft / step);
+      if (position) position.textContent = `${Math.min(current + 1, carousel.children.length)} / ${carousel.children.length}`;
+      carouselButtons.forEach((button) => {
+        button.disabled = button.dataset.carouselDirection === '-1'
+          ? carousel.scrollLeft <= 1
+          : carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 1;
+      });
+    };
+    carouselButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const card = carousel?.querySelector('.recommendation-card');
+        const step = card ? card.getBoundingClientRect().width + 16 : 320;
+        carousel?.scrollBy({ left: Number(button.dataset.carouselDirection) * step, behavior: 'smooth' });
+      });
+    });
+    carousel?.addEventListener('scroll', updateCarousel, { passive: true });
+    window.addEventListener('resize', updateCarousel);
+    updateCarousel();
+  </script>
+</body>
+</html>

@@ -44,3 +44,20 @@ class Diagnostico(models.Model):
 
     def __str__(self):
         return f"Diagnóstico {self.id} - Dolor: {self.nivel_dolor}"
+
+
+class VideoView(models.Model):
+    user_email = models.EmailField('correo del usuario')
+    video_id = models.CharField('ID del video', max_length=32)
+    category = models.CharField('categoría', max_length=100)
+    completed = models.BooleanField('rutina completada', default=False)
+    completed_at = models.DateTimeField('fecha de finalización', null=True, blank=True)
+    viewed_at = models.DateTimeField('fecha de visualización', auto_now_add=True)
+
+    class Meta:
+        ordering = ['-viewed_at']
+        verbose_name = 'Video visto'
+        verbose_name_plural = 'Videos vistos'
+
+    def __str__(self):
+        return f'{self.user_email} - {self.video_id}'

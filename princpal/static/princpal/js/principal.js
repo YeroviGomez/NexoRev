@@ -84,18 +84,22 @@ const moveFavorite = (favoriteId, direction) => {
   renderFavorites();
 };
 
-document.querySelectorAll('#videosView .favorite-btn[data-favorite-id]').forEach((button) => {
-  button.addEventListener('click', () => {
-    const favorites = getFavorites();
-    const favoriteId = button.dataset.favoriteId;
-    const nextFavorites = favorites.includes(favoriteId)
-      ? favorites.filter((id) => id !== favoriteId)
-      : [...favorites, favoriteId];
-    saveFavorites(nextFavorites);
-    updateFavoriteButtons();
-    renderFavorites();
+const bindFavoriteButtons = () => {
+  document.querySelectorAll('#videosView .favorite-btn[data-favorite-id]:not([data-bound])').forEach((button) => {
+    button.dataset.bound = 'true';
+    button.addEventListener('click', () => {
+      const favorites = getFavorites();
+      const favoriteId = button.dataset.favoriteId;
+      const nextFavorites = favorites.includes(favoriteId)
+        ? favorites.filter((id) => id !== favoriteId)
+        : [...favorites, favoriteId];
+      saveFavorites(nextFavorites);
+      updateFavoriteButtons();
+      renderFavorites();
+    });
   });
-});
+};
+bindFavoriteButtons();
 
 document.getElementById('clearFavorites')?.addEventListener('click', () => {
   saveFavorites([]);
@@ -122,56 +126,141 @@ const renderProgress = () => {
   const completedRoutines = document.getElementById('completedRoutines');
   const homeProgressText = document.getElementById('homeProgressText');
   const homeProgressBar = document.getElementById('homeProgressBar');
-  if (completedRoutines) completedRoutines.textContent = count;
+  const serverCount = Number(completedRoutines?.dataset.serverCount || 0);
+  if (completedRoutines) completedRoutines.textContent = serverCount + count;
   if (homeProgressText) homeProgressText.textContent = `${count} rutinas completadas`;
   if (homeProgressBar) homeProgressBar.style.width = `${Math.min(count * 16.67, 100)}%`;
   const historyList = document.getElementById('historyList');
-  if (historyList) {
+  if (historyList && !historyList.dataset.serverHistory) {
     historyList.innerHTML = routines.length
       ? routines.map((routine) => `<li><span>${routine}</span><time>${new Date().toLocaleDateString('es-ES')}</time></li>`).join('')
       : '<li>Aún no has completado rutinas.</li>';
   }
 };
 
+const loadHistory = async () => {
+  const historyList = document.getElementById('historyList');
+  const completedRoutines = document.getElementById('completedRoutines');
+  if (!historyList || !completedRoutines) return;
+  try {
+    const response = await fetch('/principal/api/history/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    if (!response.ok) return;
+    const data = await response.json();
+    completedRoutines.dataset.serverCount = String(data.count);
+    completedRoutines.textContent = String(data.count);
+    sessionStorage.removeItem('nexorev_history_dirty');
+    document.querySelectorAll('.routine-button[data-video-id]').forEach((button) => {
+      const completed = data.items.some((item) => item.video_id === button.dataset.videoId);
+      button.classList.toggle('is-completed', completed);
+      button.textContent = completed ? '✓ Completada' : 'Marcar rutina completada';
+    });
+    historyList.innerHTML = data.items.length
+      ? data.items.map((item) => `<li><span>${item.title}</span><time>${item.completed_at} · Completado</time></li>`).join('')
+      : '<li>Aún no has completado rutinas.</li>';
+  } catch (error) {
+    console.warn('No se pudo actualizar el historial', error);
+  }
+};
+
+document.querySelectorAll('[data-nav="historial"]').forEach((trigger) => {
+  trigger.addEventListener('click', loadHistory);
+});
+if (document.getElementById('historyList')) {
+  loadHistory();
+}
+
+const videoSearch = document.getElementById('videoSearch');
+const videoDifficulty = document.getElementById('videoDifficulty');
+const videosEmpty = document.getElementById('videosEmpty');
+let selectedCategory = 'todas';
+
+const updateVideoCount = () => {
+  const visible = document.querySelectorAll('#videoResults .video-card:not([hidden])').length;
+  const videoCount = document.querySelector('.video-count');
+  if (videoCount) videoCount.textContent = `Mostrando ${visible} videos`;
+  if (videosEmpty) videosEmpty.hidden = visible > 0;
+};
+
+const filterVideos = () => {
+  const query = videoSearch?.value.trim().toLowerCase() || '';
+  const difficulty = videoDifficulty?.value || 'Todas';
+  document.querySelectorAll('#videoResults .video-card').forEach((card) => {
+    const matchesCategory = selectedCategory === 'todas' || card.dataset.category === selectedCategory;
+    const matchesDifficulty = difficulty === 'Todas' || card.dataset.difficulty === difficulty;
+    const matchesSearch = !query || card.dataset.title.includes(query);
+    card.hidden = !(matchesCategory && matchesDifficulty && matchesSearch);
+  });
+  updateVideoCount();
+};
+
 document.querySelectorAll('.filter-chip').forEach((chip) => {
   chip.addEventListener('click', () => {
-    document.querySelectorAll('.filter-chip').forEach((item) => item.classList.toggle('active', item === chip));
-    const category = chip.dataset.category;
-    document.querySelectorAll('.video-card').forEach((card) => {
-      card.hidden = category !== 'Todas' && card.dataset.category !== category;
+    selectedCategory = chip.dataset.category.toLowerCase();
+    document.querySelectorAll('.filter-chip').forEach((item) => {
+      const isSelected = item === chip;
+      item.classList.toggle('active', isSelected);
+      item.setAttribute('aria-pressed', String(isSelected));
     });
-    updateVideoCount();
+    filterVideos();
   });
 });
 
-const videoSearch = document.getElementById('videoSearch');
-const updateVideoCount = () => {
-  const visible = document.querySelectorAll('.video-card:not([hidden])').length;
-  const videoCount = document.querySelector('.video-count');
-  if (videoCount) videoCount.textContent = `Mostrando ${visible} videos`;
+if (videoDifficulty) {
+  videoDifficulty.addEventListener('change', filterVideos);
 };
 if (videoSearch) {
-  videoSearch.addEventListener('input', () => {
-    const query = videoSearch.value.trim().toLowerCase();
-    document.querySelectorAll('.video-card').forEach((card) => {
-      card.hidden = query && !card.dataset.title.includes(query);
-    });
-    updateVideoCount();
-  });
+  videoSearch.addEventListener('input', filterVideos);
 }
+filterVideos();
 
-document.querySelectorAll('.routine-button').forEach((button) => {
-  button.addEventListener('click', () => {
-    const routines = getCompletedRoutines();
-    if (!routines.includes(button.dataset.routine)) routines.push(button.dataset.routine);
-    localStorage.setItem(progressStorageKey, JSON.stringify(routines));
-    button.textContent = 'Rutina completada';
-    button.disabled = true;
-    button.nextElementSibling.hidden = false;
-    button.nextElementSibling.querySelector('span').style.width = '100%';
-    renderProgress();
-    window.dispatchEvent(new CustomEvent('routine-completed'));
+const bindRoutineButtons = () => {
+  document.querySelectorAll('.routine-button:not([data-bound])').forEach((button) => {
+    button.dataset.bound = 'true';
+    button.addEventListener('click', async () => {
+      if (button.dataset.completeUrl) {
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+          const response = await fetch(button.dataset.completeUrl, {
+            method: 'POST',
+            headers: {
+              'X-CSRFToken': getCookie('csrftoken') || document.querySelector('meta[name="csrf-token"]')?.content,
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+          });
+          const data = await response.json();
+          if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo actualizar la rutina.');
+          button.classList.toggle('is-completed', data.completed);
+          button.textContent = data.completed ? '✓ Completada' : 'Marcar rutina completada';
+          button.disabled = false;
+          await loadHistory();
+        } catch (error) {
+          button.disabled = false;
+          showAlert('Error', error.message);
+        }
+        return;
+      }
+      const routines = getCompletedRoutines();
+      if (!routines.includes(button.dataset.routine)) routines.push(button.dataset.routine);
+      localStorage.setItem(progressStorageKey, JSON.stringify(routines));
+      button.textContent = 'Rutina completada';
+      button.disabled = true;
+      button.nextElementSibling.hidden = false;
+      button.nextElementSibling.querySelector('span').style.width = '100%';
+      renderProgress();
+      window.dispatchEvent(new CustomEvent('routine-completed'));
+    });
   });
+};
+bindRoutineButtons();
+
+document.body.addEventListener('htmx:afterSwap', (event) => {
+  if (event.target.id === 'videoResults') {
+    bindFavoriteButtons();
+    bindRoutineButtons();
+    updateFavoriteButtons();
+    filterVideos();
+  }
 });
 
 renderProgress();
@@ -569,9 +658,9 @@ if (cambiarFotoButton && fotoInput) {
   // Mostrar preview
   const reader = new FileReader();
   reader.onload = (event) => {
-    avatarInitial.style.display = "none";
+    avatarInitial.hidden = true;
     avatarImage.src = event.target.result;
-    avatarImage.style.display = "block";
+    avatarImage.hidden = false;
   };
   reader.readAsDataURL(archivo);
 
@@ -594,22 +683,22 @@ if (cambiarFotoButton && fotoInput) {
       if (data.foto_url) {
         setTimeout(() => {
           avatarImage.src = data.foto_url + '?t=' + new Date().getTime();
-          avatarInitial.style.display = "none";
-          avatarImage.style.display = "block";
+          avatarInitial.hidden = true;
+          avatarImage.hidden = false;
         }, 500);
       }
       fotoInput.value = "";
     } else {
       showAlert("Error", data.error || "No se pudo subir la foto");
-      avatarInitial.style.display = "block";
-      avatarImage.style.display = "none";
+      avatarInitial.hidden = false;
+      avatarImage.hidden = true;
       fotoInput.value = "";
     }
   })
   .catch(error => {
     showAlert("Error", "Error al subir la foto: " + error);
-    avatarInitial.style.display = "block";
-    avatarImage.style.display = "none";
+    avatarInitial.hidden = false;
+    avatarImage.hidden = true;
     fotoInput.value = "";
   });
 });

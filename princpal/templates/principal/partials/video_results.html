@@ -1,0 +1,13 @@
+<div id="videoResults">
+  <section class="video-grid" aria-label="Videos de ejercicios">
+    {% for video in videos %}{% include "principal/partials/video_card.html" with video=video %}{% empty %}
+      <p class="videos-empty">No hay más videos disponibles.</p>
+    {% endfor %}
+  </section>
+  {% if videos_has_next %}
+    <button class="load-more-videos" type="button" hx-get="{% url 'videos_page' %}?page={{ videos_next_page }}" hx-target="#videoResults" hx-swap="outerHTML" hx-indicator="#videosLoading">
+      <span>Ver más videos</span><span aria-hidden="true">↓</span>
+    </button>
+  {% endif %}
+  <span id="videosLoading" class="htmx-indicator">Cargando videos...</span>
+</div>

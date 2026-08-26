@@ -1,7 +1,11 @@
 <section class="app-view" id="historialView" data-view="historial">
   <div class="history-panel">
     <header class="page-head compact"><h1>Historial</h1><p>Tu progreso de rehabilitación</p></header>
-    <div class="progress-summary"><strong id="completedRoutines">0</strong><span>rutinas completadas</span></div>
-    <ul class="history-list" id="historyList"><li>Aún no has completado rutinas.</li></ul>
+    <div class="progress-summary"><strong id="completedRoutines" data-server-count="{{ completed_history|length }}">{{ completed_history|length }}</strong><span>rutinas completadas</span></div>
+    <ul class="history-list" id="historyList" data-server-history="true">
+      {% for item in completed_history %}
+        <li><span>{{ item.title }}</span><time>{{ item.completed_at|date:"d/m/Y H:i" }} · Completado</time></li>
+      {% empty %}<li>Aún no has completado rutinas.</li>{% endfor %}
+    </ul>
   </div>
 </section>

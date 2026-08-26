@@ -1,0 +1,15 @@
+{% if video %}
+  <article class="featured-video-card">
+    <div class="featured-copy">
+      <span class="video-detail-kicker">Recomendación para ti</span>
+      <h2>{{ video.title }}</h2>
+      <p>{{ video.description }}</p>
+      <span class="category">{{ video.category }}</span>
+      <a class="featured-link" href="{% url 'video_detail' video.catalog_index %}">Ver recomendación <span aria-hidden="true">→</span></a>
+    </div>
+    <a class="featured-thumb" href="{% url 'video_detail' video.catalog_index %}" aria-label="Ver {{ video.title }}">
+      <img src="{{ video.preview_image }}" alt="Portada de {{ video.title }}">
+      <span class="featured-play">▶</span>
+    </a>
+  </article>
+{% endif %}

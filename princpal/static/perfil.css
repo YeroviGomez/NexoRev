@@ -5,6 +5,7 @@
 .profile-card > p { margin: 0.35rem 0 0; color: #667085; font-size: 0.84rem; }
 .avatar-row { margin-top: 1.4rem; padding-bottom: 1rem; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 1.5rem; }
 .avatar-preview { width: 4.6rem; height: 4.6rem; border-radius: 50%; background: radial-gradient(circle at 52% 38%, #f0f2f4 0 14%, transparent 15%), radial-gradient(circle at 52% 90%, #334036 0 33%, transparent 34%), linear-gradient(135deg, #c7cdd2, #8f969d); display: grid; place-items: center; color: #ffffff; font-size: 1.5rem; font-weight: 800; overflow: hidden; }
+.avatar-preview img { width: 100%; height: 100%; object-fit: cover; }
 .outline-button, .wide-outline-button { min-height: 2.35rem; border: 1px solid var(--line); border-radius: 0.45rem; background: #ffffff; color: #050505; font-weight: 700; cursor: pointer; }
 .outline-button { padding: 0 1rem; }
 .profile-fields { margin-top: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }

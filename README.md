@@ -4,7 +4,7 @@ Aplicación orientada a fisioterapia
 Orden para clonar
 
 crear entorno y activarlo
-instalar django y psycopg2-binary
+instalar django, psycopg2-binary y Pillow
 clonar repositorio con git clone: url
 
 ## Configuración del correo 2FA

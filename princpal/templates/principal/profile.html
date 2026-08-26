@@ -11,9 +11,16 @@
 
       <div class="avatar-row">
         <div class="avatar-preview" aria-hidden="true">
-          <span>{{ usuario.nombre|default:"Nexo ReV"|slice:":1" }}</span>
+          {% if usuario.foto_perfil %}
+            <span id="avatarInitial" hidden>{{ usuario.nombre|default:"Nexo ReV"|slice:":1" }}</span>
+            <img id="avatarImage" src="{{ usuario.foto_perfil.url }}" alt="Foto de perfil">
+          {% else %}
+            <span id="avatarInitial">{{ usuario.nombre|default:"Nexo ReV"|slice:":1" }}</span>
+            <img id="avatarImage" src="" alt="Foto de perfil" hidden>
+          {% endif %}
         </div>
-        <button class="outline-button" type="button">Cambiar foto</button>
+        <button class="outline-button" id="cambiarFotoButton" type="button">Cambiar foto</button>
+        <input id="fotoInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden>
       </div>
 
       <div class="profile-fields">
