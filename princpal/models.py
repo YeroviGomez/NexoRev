@@ -46,6 +46,25 @@ class Diagnostico(models.Model):
         return f"Diagnóstico {self.id} - Dolor: {self.nivel_dolor}"
 
 
+class Video(models.Model):
+    title = models.CharField('título', max_length=150)
+    description = models.TextField('descripción', blank=True)
+    level = models.CharField('nivel', max_length=50, default='Principiante')
+    category = models.CharField('categoría', max_length=100, default='General')
+    file = models.FileField('archivo de video', upload_to='videos/')
+    hls_manifest = models.CharField('manifiesto HLS', max_length=255, blank=True)
+    thumbnail = models.ImageField('miniatura', upload_to='miniaturas/', blank=True, null=True)
+    uploaded_at = models.DateTimeField('fecha de carga', auto_now_add=True)
+
+    class Meta:
+        ordering = ['-uploaded_at']
+        verbose_name = 'Video local'
+        verbose_name_plural = 'Videos locales'
+
+    def __str__(self):
+        return self.title
+
+
 class VideoView(models.Model):
     user_email = models.EmailField('correo del usuario')
     video_id = models.CharField('ID del video', max_length=32)

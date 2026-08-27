@@ -4,6 +4,70 @@
     <p>Explora nuestra biblioteca de ejercicios de rehabilitación</p>
   </header>
 
+  <section class="video-upload-panel" aria-labelledby="videoUploadTitle">
+    <form class="video-upload-form" action="{% url 'upload_video' %}" method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <strong class="video-upload-heading" id="videoUploadTitle">Cargar video local</strong>
+      <div class="video-upload-field">
+        <label for="videoTitle">Título del video</label>
+        <input id="videoTitle" name="title" type="text" maxlength="150" required>
+      </div>
+      <div class="video-upload-field">
+        <label for="videoCategory">Parte del cuerpo</label>
+        <select id="videoCategory" name="category" required>
+          <option value="" selected disabled>Selecciona una zona</option>
+          <option value="Rodilla">Rodilla</option>
+          <option value="Hombro">Hombro</option>
+          <option value="Espalda">Espalda</option>
+          <option value="Cuello">Cuello</option>
+          <option value="Tobillo">Tobillo</option>
+          <option value="Cadera">Cadera</option>
+          <option value="General">General</option>
+        </select>
+      </div>
+      <div class="video-upload-field">
+        <label for="videoLevel">Dificultad</label>
+        <select id="videoLevel" name="level" required>
+          <option value="Principiante">Principiante</option>
+          <option value="Intermedio">Intermedio</option>
+          <option value="Avanzado">Avanzado</option>
+        </select>
+      </div>
+      <div class="video-upload-field video-upload-description">
+        <label for="videoDescription">Descripción del ejercicio</label>
+        <textarea id="videoDescription" name="description" rows="3" maxlength="1000" placeholder="Describe brevemente el ejercicio..."></textarea>
+      </div>
+      <div class="video-upload-actions">
+        <div class="video-picker-row">
+          <label class="video-file-picker" for="videoFile">Elegir video</label>
+          <label class="thumbnail-file-picker" for="videoThumbnail">Elegir miniatura</label>
+        </div>
+        <input id="videoFile" name="file" type="file" accept="video/mp4,video/webm,video/ogg,.mp4,.webm,.ogg,.ogv" required>
+        <input id="videoThumbnail" name="thumbnail" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
+        <span class="video-file-name">Ningún video seleccionado</span>
+        <span class="thumbnail-file-name">Miniatura opcional</span>
+        <div class="video-upload-previews">
+          <div class="upload-preview-box" hidden>
+            <div class="upload-preview-heading">
+              <span>Vista previa del video</span>
+              <button class="remove-upload-file" type="button" aria-label="Quitar video seleccionado">×</button>
+            </div>
+            <video class="video-upload-preview" controls playsinline></video>
+          </div>
+          <div class="upload-preview-box" hidden>
+            <div class="upload-preview-heading">
+              <span>Vista previa de la miniatura</span>
+              <button class="remove-upload-file" type="button" aria-label="Quitar miniatura seleccionada">×</button>
+            </div>
+            <img class="thumbnail-upload-preview" alt="Vista previa de la miniatura seleccionada">
+          </div>
+        </div>
+        <button type="submit">Subir video</button>
+      </div>
+      <span class="video-upload-message" role="status" aria-live="polite"></span>
+    </form>
+  </section>
+
   <div class="video-toolbar">
     <label class="search-box" for="videoSearch">
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -71,3 +135,60 @@
   <p class="video-count">Mostrando {{ videos|length }} de {{ videos_total }} videos</p>
   {% include "principal/partials/video_results.html" with videos=videos videos_has_next=videos_has_next videos_next_page=videos_next_page %}
 </section>
+<script>
+  const uploadForm = document.querySelector('.video-upload-form');
+  const uploadMessage = uploadForm?.querySelector('.video-upload-message');
+  const videoFile = document.getElementById('videoFile');
+  const videoFileName = uploadForm?.querySelector('.video-file-name');
+  const videoThumbnail = document.getElementById('videoThumbnail');
+  const thumbnailFileName = uploadForm?.querySelector('.thumbnail-file-name');
+  const videoPreviewBox = uploadForm?.querySelector('.upload-preview-box:first-child');
+  const videoPreview = uploadForm?.querySelector('.video-upload-preview');
+  const thumbnailPreviewBox = uploadForm?.querySelector('.upload-preview-box:last-child');
+  const thumbnailPreview = uploadForm?.querySelector('.thumbnail-upload-preview');
+  const removeVideoButton = videoPreviewBox?.querySelector('.remove-upload-file');
+  const removeThumbnailButton = thumbnailPreviewBox?.querySelector('.remove-upload-file');
+  videoFile?.addEventListener('change', () => {
+    videoFileName.textContent = videoFile.files[0]?.name || 'Ningún video seleccionado';
+    if (videoFile.files[0]) {
+      videoPreview.src = URL.createObjectURL(videoFile.files[0]);
+      videoPreviewBox.hidden = false;
+    }
+  });
+  videoThumbnail?.addEventListener('change', () => {
+    thumbnailFileName.textContent = videoThumbnail.files[0]?.name || 'Miniatura opcional';
+    if (videoThumbnail.files[0]) {
+      thumbnailPreview.src = URL.createObjectURL(videoThumbnail.files[0]);
+      thumbnailPreviewBox.hidden = false;
+    }
+  });
+  removeVideoButton?.addEventListener('click', () => {
+    videoFile.value = '';
+    videoPreview.removeAttribute('src');
+    videoPreview.load();
+    videoFileName.textContent = 'Ningún video seleccionado';
+    videoPreviewBox.hidden = true;
+  });
+  removeThumbnailButton?.addEventListener('click', () => {
+    videoThumbnail.value = '';
+    thumbnailPreview.removeAttribute('src');
+    thumbnailFileName.textContent = 'Miniatura opcional';
+    thumbnailPreviewBox.hidden = true;
+  });
+  uploadForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    uploadMessage.textContent = 'Cargando video...';
+    try {
+      const response = await fetch(uploadForm.action, {
+        method: 'POST',
+        body: new FormData(uploadForm),
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo cargar el video.');
+      window.location.reload();
+    } catch (error) {
+      uploadMessage.textContent = error.message;
+    }
+  });
+</script>

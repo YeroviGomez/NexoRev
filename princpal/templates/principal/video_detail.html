@@ -6,7 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ video.title }} | Nexo ReV</title>
   <link rel="stylesheet" href="{% static 'estilo.css' %}?v=8">
+  {% if video.is_local %}<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css">{% endif %}
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  {% if video.hls_url %}<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>{% endif %}
+  {% if video.is_local %}<script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.min.js"></script>{% endif %}
 </head>
 <body class="video-detail-page" data-current-user="{{ current_user_email|escapejs }}">
   <main class="video-detail-shell">
@@ -21,9 +24,17 @@
     </header>
 
     <section class="video-player-frame" aria-label="Reproductor de {{ video.title }}">
-      <iframe src="{{ video.embed_url }}&origin={{ request.scheme }}%3A%2F%2F{{ request.get_host }}" title="{{ video.title }}" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+      {% if video.is_local %}
+        <video id="videoPlayer" controls controlsList="nodownload" preload="metadata" playsinline aria-label="{{ video.title }}">
+          {% if not video.hls_url %}<source src="{{ video.video_url }}">{% endif %}
+          Tu navegador no puede reproducir este formato de video.
+        </video>
+        {% if video.hls_url %}<span class="video-quality-status" id="qualityStatus">Calidad: Automática</span>{% endif %}
+        <p class="video-load-error" hidden>No se pudo cargar el video. Comprueba que el archivo exista y tenga un formato compatible.</p>
+      {% else %}
+        <iframe src="{{ video.embed_url }}&origin={{ request.scheme }}%3A%2F%2F{{ request.get_host }}" title="{{ video.title }}" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+      {% endif %}
     </section>
-
     <section class="routine-completion" aria-live="polite">
       <div>
         <span class="video-detail-kicker">Tu progreso</span>
@@ -86,6 +97,107 @@
   </main>
   <script>
     const completeButton = document.getElementById('completeRoutineButton');
+    const localVideo = document.querySelector('.video-player-frame video');
+    const videoLoadError = document.querySelector('.video-load-error');
+    const hlsUrl = "{{ video.hls_url|default:'' }}";
+    const qualitySources = {{ video.quality_sources|default:'{}'|safe }};
+    const qualityStatus = document.getElementById('qualityStatus');
+    let hls;
+    let hlsFailed = false;
+     let selectedQuality = 0;
+     let pendingPosition = 0;
+     let wasPlaying = false;
+    let lastAppliedQuality = null;
+    const hasQualitySources = Object.keys(qualitySources).length > 1;
+    const applyHlsQuality = () => {
+       if (!hls || !hlsUrl) return;
+       const playlist = selectedQuality === 0
+         ? hlsUrl
+         : hlsUrl.replace('/master.m3u8', `/${selectedQuality === 360 ? 0 : selectedQuality === 480 ? 1 : 2}/playlist.m3u8`);
+       pendingPosition = localVideo.currentTime;
+       wasPlaying = !localVideo.paused;
+       hls.loadSource(playlist);
+    };
+    const setHlsQuality = (quality) => {
+      const nextQuality = Number(quality);
+      if (nextQuality === lastAppliedQuality) return;
+      lastAppliedQuality = nextQuality;
+      selectedQuality = nextQuality;
+      if (qualityStatus) qualityStatus.textContent = `Calidad: ${selectedQuality === 0 ? 'Automática' : `${selectedQuality}p`}`;
+      if (hasQualitySources) {
+        const source = qualitySources[selectedQuality] || qualitySources[720];
+        pendingPosition = localVideo.currentTime;
+        wasPlaying = !localVideo.paused;
+        window.setTimeout(() => {
+          localVideo.src = source;
+          localVideo.load();
+        }, 0);
+        return;
+      }
+      if (!hls || !hlsUrl) return;
+      applyHlsQuality();
+    };
+    const player = localVideo && window.Plyr ? new Plyr(localVideo, {
+      controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
+      settings: ['speed', 'quality'],
+      speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+      quality: {
+        default: hasQualitySources ? 720 : 0,
+        options: [0, 360, 480, 720],
+        forced: true,
+        onChange: setHlsQuality,
+      },
+      i18n: {
+        settings: 'Configuración',
+        quality: 'Calidad',
+        qualityLabel: { 0: 'Automática' },
+        speed: 'Velocidad de reproducción',
+        normal: 'Normal',
+      },
+    }) : null;
+    player?.elements.container.addEventListener('click', (event) => {
+      const qualityButton = event.target.closest('button[data-plyr="quality"]');
+      if (qualityButton) {
+        setHlsQuality(qualityButton.value);
+      }
+    });
+    if (localVideo && hasQualitySources) {
+      localVideo.src = qualitySources[720] || qualitySources[0];
+      localVideo.addEventListener('loadedmetadata', () => {
+        if (pendingPosition > 0) {
+          localVideo.currentTime = pendingPosition;
+          if (wasPlaying) localVideo.play().catch(() => {});
+          pendingPosition = 0;
+        }
+      });
+    } else if (localVideo && hlsUrl) {
+      if (localVideo.canPlayType('application/vnd.apple.mpegurl')) {
+        localVideo.src = hlsUrl;
+      } else if (window.Hls?.isSupported()) {
+        hls = new Hls({ capLevelToPlayerSize: false, startLevel: -1 });
+        hls.loadSource(hlsUrl);
+        hls.attachMedia(localVideo);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (pendingPosition > 0) {
+            localVideo.currentTime = pendingPosition;
+            if (wasPlaying) localVideo.play().catch(() => {});
+            pendingPosition = 0;
+          }
+        });
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) {
+            hls.destroy();
+            hls = null;
+            hlsFailed = true;
+            localVideo.src = "{{ video.video_url }}";
+            localVideo.load();
+          }
+        });
+      }
+    }
+    localVideo?.addEventListener('error', () => {
+      if (!hlsUrl || hlsFailed) videoLoadError.hidden = false;
+    });
     const motivationModal = document.getElementById('motivationModal');
     const motivationClose = document.getElementById('motivationClose');
     const motivationAction = document.getElementById('motivationAction');

@@ -1,5 +1,7 @@
 from django.contrib import messages
 from django.http import JsonResponse
+from django.http import Http404, StreamingHttpResponse
+from django.conf import settings
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_POST
@@ -9,9 +11,14 @@ from functools import wraps
 from pathlib import Path
 import random
 import re
+import mimetypes
+import os
+import json
+import shutil
+import subprocess
 from urllib.parse import parse_qs, urlparse
-from .forms import DiagnosticoForm, FotoPerfilForm
-from .models import Diagnostico, VideoView
+from .forms import DiagnosticoForm, FotoPerfilForm, VideoUploadForm
+from .models import Diagnostico, Video, VideoView
 
 from crear_cuenta.models import Usuario
 
@@ -75,6 +82,34 @@ def load_external_videos():
     return videos
 
 
+def load_videos():
+    videos = load_external_videos()
+    videos.extend({
+        'title': video.title,
+        'description': video.description or 'Video local de rehabilitación.',
+        'duration': '',
+        'difficulty': {'principiante': 'easy', 'intermedio': 'medium', 'avanzado': 'hard'}.get(video.level.lower(), 'easy'),
+        'level': video.level,
+        'category': video.category,
+        'url': video.file.url,
+        'video_url': video.file.url,
+        'hls_url': f'{settings.MEDIA_URL}{video.hls_manifest}' if video.hls_manifest else '',
+        'quality_sources': json.dumps({
+            0: video.file.url,
+            360: f'{settings.MEDIA_URL}hls/{video.pk}/quality_360.mp4',
+            480: f'{settings.MEDIA_URL}hls/{video.pk}/quality_480.mp4',
+            720: f'{settings.MEDIA_URL}hls/{video.pk}/quality_720.mp4',
+        }),
+        'embed_url': '',
+        'video_id': f'local-{video.pk}',
+        'preview_image': video.thumbnail.url if video.thumbnail else '',
+        'is_local': True,
+    } for video in Video.objects.all())
+    for index, video in enumerate(videos):
+        video['catalog_index'] = index
+    return videos
+
+
 def normalize_youtube_url(url):
     """Devuelve una URL HTTPS de YouTube a partir de sus formatos habituales."""
     video_id = get_youtube_video_id(url)
@@ -116,6 +151,139 @@ def require_login(view_func):
 
 
 @require_login
+def media_file_view(request, path):
+    media_root = Path(settings.MEDIA_ROOT).resolve()
+    file_path = (media_root / path).resolve()
+    if media_root not in file_path.parents or not file_path.is_file():
+        raise Http404
+
+    file_size = file_path.stat().st_size
+    content_type = mimetypes.guess_type(file_path.name)[0] or 'application/octet-stream'
+    range_header = request.headers.get('Range', '')
+    if not range_header.startswith('bytes='):
+        response = StreamingHttpResponse(_stream_file(file_path, 0, file_size), content_type=content_type)
+        response['Content-Length'] = str(file_size)
+        response['Accept-Ranges'] = 'bytes'
+        return response
+
+    try:
+        start_text, end_text = range_header[6:].split('-', 1)
+        start = int(start_text) if start_text else max(file_size - int(end_text), 0)
+        end = int(end_text) if end_text else file_size - 1
+        if start < 0 or start > end or end >= file_size:
+            raise ValueError
+    except (TypeError, ValueError):
+        response = StreamingHttpResponse(status=416)
+        response['Content-Range'] = f'bytes */{file_size}'
+        return response
+
+    content_length = end - start + 1
+    response = StreamingHttpResponse(_stream_file(file_path, start, content_length), status=206, content_type=content_type)
+    response['Content-Length'] = str(content_length)
+    response['Content-Range'] = f'bytes {start}-{end}/{file_size}'
+    response['Accept-Ranges'] = 'bytes'
+    return response
+
+
+def _stream_file(file_path, start, length):
+    with file_path.open('rb') as video_file:
+        video_file.seek(start)
+        remaining = length
+        while remaining:
+            chunk = video_file.read(min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
+
+
+def generate_hls(video):
+    """Genera tres calidades HLS; devuelve la ruta relativa del manifiesto."""
+    ffmpeg = shutil.which('ffmpeg')
+    if not ffmpeg and os.name == 'nt':
+        winget_root = Path(os.environ.get('LOCALAPPDATA', '')) / 'Microsoft' / 'WinGet' / 'Packages'
+        matches = list(winget_root.glob('Gyan.FFmpeg.Shared_*/*/bin/ffmpeg.exe'))
+        ffmpeg = str(matches[0]) if matches else ''
+    if not ffmpeg or not video.file:
+        return ''
+
+    output_dir = Path(settings.MEDIA_ROOT) / 'hls' / str(video.pk)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for quality in ('360p', '480p', '720p'):
+        (output_dir / quality).mkdir(exist_ok=True)
+
+    source_path = str(Path(video.file.path))
+    has_audio = subprocess.run(
+        [ffmpeg, '-i', source_path],
+        capture_output=True, text=True,
+    ).stderr.find('Audio:') >= 0
+    for height in (360, 480, 720):
+        quality_command = [
+            ffmpeg, '-y', '-i', source_path,
+            '-vf', f'scale=-2:{height}', '-c:v', 'libx264', '-preset', 'veryfast',
+            '-profile:v', 'main', '-pix_fmt', 'yuv420p', '-b:v',
+            {360: '800k', 480: '1500k', 720: '3000k'}[height],
+        ]
+        if has_audio:
+            quality_command += ['-c:a', 'aac', '-profile:a', 'aac_low', '-ar', '44100', '-ac', '2', '-b:a', '128k']
+        else:
+            quality_command += ['-an']
+        quality_command += ['-movflags', '+faststart', str(output_dir / f'quality_{height}.mp4')]
+        try:
+            subprocess.run(quality_command, check=True, capture_output=True, text=True)
+        except (OSError, subprocess.CalledProcessError):
+            for generated_height in (360, 480, 720):
+                (output_dir / f'quality_{generated_height}.mp4').unlink(missing_ok=True)
+            break
+
+    output_pattern = str(output_dir / '%v' / 'segment_%03d.ts').replace('\\', '/')
+    playlist_pattern = str(output_dir / '%v' / 'playlist.m3u8').replace('\\', '/')
+    command = [
+        ffmpeg, '-y', '-i', str(Path(video.file.path)),
+        '-filter_complex',
+        '[0:v]split=3[v360][v480][v720];'
+        '[v360]scale=-2:360[v360out];'
+        '[v480]scale=-2:480[v480out];'
+        '[v720]scale=-2:720[v720out]',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'main',
+        '-b:v:0', '800k', '-maxrate:v:0', '856k', '-bufsize:v:0', '1200k',
+        '-b:v:1', '1500k', '-maxrate:v:1', '1605k', '-bufsize:v:1', '2250k',
+        '-b:v:2', '3000k', '-maxrate:v:2', '3210k', '-bufsize:v:2', '4500k',
+        '-f', 'hls', '-hls_time', '6', '-hls_playlist_type', 'vod',
+        '-hls_segment_filename', output_pattern,
+        '-master_pl_name', 'master.m3u8',
+        playlist_pattern,
+    ]
+    video_maps = [
+        '-map', '[v360out]', '-map', '[v480out]', '-map', '[v720out]',
+    ]
+    if has_audio:
+        video_maps = [
+            '-map', '[v360out]', '-map', '0:a:0',
+            '-map', '[v480out]', '-map', '0:a:0',
+            '-map', '[v720out]', '-map', '0:a:0',
+        ]
+        audio_options = ['-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', '128k', '-ar', '44100', '-ac', '2', '-var_stream_map', 'v:0,a:0 v:1,a:1 v:2,a:2']
+    else:
+        audio_options = ['-var_stream_map', 'v:0 v:1 v:2']
+    command[command.index('-c:v'):command.index('-f')] = video_maps + [
+        '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'main',
+        '-b:v:0', '800k', '-maxrate:v:0', '856k', '-bufsize:v:0', '1200k',
+        '-b:v:1', '1500k', '-maxrate:v:1', '1605k', '-bufsize:v:1', '2250k',
+        '-b:v:2', '3000k', '-maxrate:v:2', '3210k', '-bufsize:v:2', '4500k',
+    ] + audio_options
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except (OSError, subprocess.CalledProcessError):
+        for playlist in (output_dir / 'master.m3u8',):
+            playlist.unlink(missing_ok=True)
+        for quality_dir in ('0', '1', '2', '360p', '480p', '720p'):
+            shutil.rmtree(output_dir / quality_dir, ignore_errors=True)
+        return ''
+    return f'hls/{video.pk}/master.m3u8'
+
+
+@require_login
 @cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
 def principal_view(request):
     show_tutorial = request.session.pop('show_tutorial', False)
@@ -151,7 +319,7 @@ def principal_view(request):
 
     videos = []
     categories = ['Todas', 'Rodilla', 'Hombro', 'Espalda', 'Cuello', 'Tobillo', 'Cadera']
-    videos.extend(load_external_videos())
+    videos.extend(load_videos())
     categories = ['Todas'] + list(dict.fromkeys(video['category'] for video in videos))
     page_size = 6
     videos_page = videos[:page_size]
@@ -204,7 +372,7 @@ def diagnostico_view(request, pk=None):
 
 @require_login
 def videos_page_view(request):
-    videos = load_external_videos()
+    videos = load_videos()
     page_number = max(int(request.GET.get('page', 1)), 1)
     start = (page_number - 1) * 6
     end = start + 6
@@ -217,7 +385,7 @@ def videos_page_view(request):
 
 @require_login
 def history_view(request):
-    videos = load_external_videos()
+    videos = load_videos()
     video_titles = {video['video_id']: video['title'] for video in videos}
     completed_videos = VideoView.objects.filter(
         user_email=request.session.get('current_user', ''),
@@ -239,7 +407,7 @@ def history_view(request):
 
 @require_login
 def surprise_video_view(request):
-    videos = load_external_videos()
+    videos = load_videos()
     if not videos:
         return render(request, 'principal/partials/featured_video.html', {'video': None})
 
@@ -262,7 +430,7 @@ def surprise_video_view(request):
 @require_login
 @cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
 def video_detail_view(request, video_index):
-    videos = load_external_videos()
+    videos = load_videos()
     if video_index < 0 or video_index >= len(videos):
         return redirect('principal')
 
@@ -296,7 +464,7 @@ def video_detail_view(request, video_index):
 @require_login
 @require_POST
 def complete_video_view(request, video_index):
-    videos = load_external_videos()
+    videos = load_videos()
     if video_index < 0 or video_index >= len(videos):
         return JsonResponse({'success': False, 'error': 'Video no encontrado.'}, status=404)
 
@@ -354,3 +522,22 @@ def upload_profile_photo(request):
         foto_anterior.delete(save=False)
 
     return JsonResponse({'success': True, 'foto_url': usuario.foto_perfil.url})
+
+
+@require_login
+@require_POST
+def upload_video_view(request):
+    form = VideoUploadForm(request.POST, request.FILES)
+    if not form.is_valid():
+        error = form.errors.get('file', ['Revisa los datos del video.'])[0]
+        return JsonResponse({'success': False, 'error': error}, status=400)
+    video = form.save()
+    hls_manifest = generate_hls(video)
+    if hls_manifest:
+        video.hls_manifest = hls_manifest
+        video.save(update_fields=['hls_manifest'])
+    return JsonResponse({
+        'success': True,
+        'video_id': video.pk,
+        'adaptive_streaming': bool(hls_manifest),
+    })

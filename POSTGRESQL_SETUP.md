@@ -10,7 +10,7 @@ Esta guía explica cómo configurar tu proyecto Django para usar una base de dat
 
 ```sql
 CREATE DATABASE nexorev_db;
-CREATE USER nexorev_user WITH PASSWORD 'tu_contraseña_segura';
+CREATE USER nexorev_user WITH PASSWORD 'abcdabcdab';
 GRANT ALL PRIVILEGES ON DATABASE nexorev_db TO nexorev_user;
 ```
 

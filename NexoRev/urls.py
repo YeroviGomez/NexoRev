@@ -18,9 +18,11 @@ from django.contrib import admin
 from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import include, path
+from princpal import views as principal_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('media/<path:path>', principal_views.media_file_view, name='media_file'),
     path('login/', include('login.urls')),
     path('', include('login.urls')),
     path('registro/', include('crear_cuenta.urls')),

@@ -1,7 +1,7 @@
 <article class="video-card" data-category="{{ video.category|lower }}" data-difficulty="{{ video.difficulty }}" data-title="{{ video.title|lower }} {{ video.description|lower }} {{ video.level|lower }} {{ video.category|lower }}">
   <div class="video-thumb">
     {% if video.preview_image %}<img src="{{ video.preview_image }}" alt="Portada de {{ video.title }}" loading="lazy">{% endif %}
-    {% if video.embed_url %}<a class="video-play" href="{% url 'video_detail' video.catalog_index %}" aria-label="Reproducir {{ video.title }}">▶</a>{% endif %}
+    {% if video.embed_url or video.is_local %}<a class="video-play" href="{% url 'video_detail' video.catalog_index %}" aria-label="Reproducir {{ video.title }}">▶</a>{% endif %}
     <button class="favorite-btn" type="button" aria-label="Agregar a favoritos" aria-pressed="false" data-favorite-id="{{ video.url|default:video.title }}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 8.6a5 5 0 0 0-8.1-3.8L12 5.5l-.7-.7a5 5 0 0 0-7.1 7.1l7.8 7.8 7.8-7.8a5 5 0 0 0 1-3.3Z" /></svg>
     </button>
@@ -12,6 +12,6 @@
     <div class="video-meta"><span class="difficulty {{ video.difficulty }}">{{ video.level }}</span><span class="category">{{ video.category }}</span></div>
     <button class="routine-button" type="button" data-routine="{{ video.title }}" data-video-id="{{ video.video_id }}" data-complete-url="{% url 'complete_video' video.catalog_index %}">Marcar rutina completada</button>
     <div class="routine-progress" hidden><span></span></div>
-    {% if video.embed_url %}<a class="video-open-link" href="{% url 'video_detail' video.catalog_index %}">Abrir video</a>{% endif %}
+    {% if video.embed_url or video.is_local %}<a class="video-open-link" href="{% url 'video_detail' video.catalog_index %}">Abrir video</a>{% endif %}
   </div>
 </article>
