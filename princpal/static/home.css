@@ -12,3 +12,43 @@
 .quick-panel h2 { margin-bottom: 2rem; }
 .quick-link { width: 100%; min-height: 2.85rem; margin-top: 0.7rem; border: 1px solid var(--line); border-radius: 0.55rem; background: var(--surface); color: #030711; display: flex; align-items: center; gap: 1rem; padding: 0 1.1rem; font-weight: 700; cursor: pointer; text-align: left; }
 .quick-link:hover { border-color: #c3cad6; background: #fbfcfd; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.doctor-filters { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+.doctor-filters select { border: 1px solid var(--line); border-radius: 0.65rem; background: var(--surface-strong); color: var(--text); padding: 0.55rem 0.8rem; font-size: 0.92rem; }
+.doctor-patient-actions { margin-bottom: 1rem; }
+.doctor-filter-status { margin: 0 0 1rem; color: var(--muted); font-size: 0.92rem; }
+.patients-panel { padding: 1.9rem; }
+.patients-list { display: grid; gap: 0.9rem; }
+.patient-row { display: grid; gap: 0.8rem; border: 1px solid var(--line); border-radius: 0.9rem; background: var(--surface-strong); padding: 0.9rem 1rem; }
+.patient-row[hidden] { display: none !important; }
+.patient-card { cursor: pointer; transition: border-color 0.2s ease, transform 0.2s ease; }
+.patient-card:hover, .patient-card:focus-visible { border-color: #2563eb; transform: translateY(-1px); outline: none; }
+.patient-main { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.patient-row strong { display: block; font-size: 1.05rem; }
+.patient-row small { color: var(--muted); }
+.patient-meta { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.patient-state { display: inline-flex; align-items: center; border-radius: 999px; padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 700; background: color-mix(in srgb, var(--state-color) 18%, transparent); color: var(--state-color); }
+.patient-percent { font-weight: 700; color: var(--text); }
+.patient-actions { display: flex; justify-content: flex-end; }
+.patient-diagnosis-btn { padding: 0.45rem 0.8rem; border-radius: 0.7rem; }
+.empty-state { margin: 0; color: var(--muted); }
+.doctor-add-patient-form { margin-bottom: 1rem; border: 1px solid var(--line); border-radius: 0.9rem; padding: 1rem; background: var(--surface-strong); }
+.existing-patient-field { display: grid; gap: 0.4rem; margin-bottom: 0.9rem; font-weight: 600; color: var(--text); }
+.existing-patient-field select { border: 1px solid var(--line); border-radius: 0.7rem; padding: 0.7rem 0.8rem; background: var(--surface); color: var(--text); }
+.form-divider { margin: 0 0 0.9rem; color: var(--muted); font-size: 0.9rem; }
+.form-grid.compact { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; }
+.form-grid.compact label { display: grid; gap: 0.4rem; font-weight: 600; color: var(--text); }
+.form-grid.compact input { border: 1px solid var(--line); border-radius: 0.7rem; padding: 0.7rem 0.8rem; background: var(--surface); color: var(--text); }
+.primary-btn, .secondary-btn { border: none; border-radius: 0.7rem; cursor: pointer; font-weight: 700; }
+.primary-btn { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; padding: 0.7rem 1rem; }
+.secondary-btn { background: #eef2ff; color: #1e3a8a; padding: 0.55rem 0.8rem; }
+.patient-record-panel { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+.patient-record-panel h3 { margin: 0; font-size: 1.1rem; }
+.record-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.7rem; margin-bottom: 0.9rem; }
+.record-summary span { display: block; border: 1px solid var(--line); border-radius: 0.7rem; padding: 0.7rem; color: var(--text); }
+.record-summary strong { display: block; margin-top: 0.2rem; }
+.record-history { margin: 0; padding-left: 1.2rem; color: var(--muted); }
+.doctor-record-view { padding: 1.5rem; }
+.doctor-record-view h3 { margin: 1.2rem 0 0.5rem; }
+.record-empty { color: var(--muted); }
+.doctor-record-chart { width: 100%; min-height: 170px; margin-top: 0.7rem; }

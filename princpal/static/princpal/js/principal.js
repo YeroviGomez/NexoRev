@@ -101,6 +101,150 @@ const bindFavoriteButtons = () => {
 };
 bindFavoriteButtons();
 
+const toggleAddPatientFormButton = document.getElementById('toggleAddPatientForm');
+const doctorAddPatientForm = document.getElementById('doctorAddPatientForm');
+if (toggleAddPatientFormButton && doctorAddPatientForm) {
+  toggleAddPatientFormButton.addEventListener('click', () => {
+    const isHidden = doctorAddPatientForm.hasAttribute('hidden');
+    if (isHidden) {
+      doctorAddPatientForm.removeAttribute('hidden');
+      toggleAddPatientFormButton.textContent = 'Cerrar formulario';
+      return;
+    }
+    doctorAddPatientForm.setAttribute('hidden', 'hidden');
+    toggleAddPatientFormButton.textContent = 'Añadir paciente';
+  });
+}
+
+const applyDoctorPatientFilters = () => {
+  const filterSelect = document.getElementById('doctorPatientFilter');
+  const sortSelect = document.getElementById('doctorPatientSort');
+  const patientsList = document.querySelector('.patients-list');
+  if (!filterSelect || !sortSelect || !patientsList) return;
+
+  const rows = Array.from(patientsList.querySelectorAll('.patient-row[data-state]'));
+  const filterValue = filterSelect.value;
+  const sortValue = sortSelect.value;
+  const filterStatus = document.getElementById('doctorFilterStatus');
+  const filterLabels = {
+    all: 'todos los pacientes',
+    inicial: 'pacientes en etapa Inicial',
+    en_proceso: 'pacientes En proceso',
+    avanzado: 'pacientes en etapa Avanzado',
+    finalizado: 'pacientes Finalizados',
+  };
+
+  const filteredRows = rows.filter((row) => filterValue === 'all' || row.dataset.state === filterValue);
+  filteredRows.sort((a, b) => {
+    const descending = sortValue.endsWith('_desc');
+    let comparison = 0;
+    if (sortValue.startsWith('edad')) {
+      comparison = Number(a.dataset.age || 0) - Number(b.dataset.age || 0);
+    } else if (sortValue.startsWith('nombre')) {
+      comparison = String(a.dataset.name || '').localeCompare(String(b.dataset.name || ''));
+    } else {
+      comparison = Number(a.dataset.advance || 0) - Number(b.dataset.advance || 0);
+    }
+    return descending ? -comparison : comparison;
+  });
+
+  rows.forEach((row) => {
+    const isVisible = filterValue === 'all' || row.dataset.state === filterValue;
+    row.hidden = !isVisible;
+    row.style.display = isVisible ? '' : 'none';
+  });
+  filteredRows.forEach((row) => patientsList.appendChild(row));
+  rows.filter((row) => !filteredRows.includes(row)).forEach((row) => patientsList.appendChild(row));
+
+  const emptyState = document.getElementById('doctorPatientsEmpty');
+  if (emptyState) {
+    emptyState.hidden = filteredRows.length > 0;
+  }
+  if (filterStatus) {
+    filterStatus.textContent = filteredRows.length
+      ? `Mostrando ${filterLabels[filterValue] || filterLabels.all}`
+      : 'No hay pacientes en la etapa seleccionada';
+  }
+};
+
+const doctorPatientFilter = document.getElementById('doctorPatientFilter');
+const doctorPatientSort = document.getElementById('doctorPatientSort');
+if (doctorPatientFilter) {
+  doctorPatientFilter.addEventListener('change', applyDoctorPatientFilters);
+}
+if (doctorPatientSort) {
+  doctorPatientSort.addEventListener('change', applyDoctorPatientFilters);
+}
+
+if (doctorPatientFilter && doctorPatientSort) {
+  applyDoctorPatientFilters();
+}
+
+const doctorRecordView = document.getElementById('doctorRecordView');
+const escapeRecordText = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#039;',
+}[character]));
+
+const loadPatientRecord = async (patientId) => {
+  if (!doctorRecordView) return;
+  try {
+    const response = await fetch(`/principal/pacientes/${patientId}/`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'No se pudo cargar el expediente.');
+    const patient = data.paciente;
+    doctorRecordView.innerHTML = `
+      <div class="section-head">
+        <h2>${escapeRecordText(patient.nombre)}</h2>
+        <span class="patient-state" style="--state-color: ${escapeRecordText(patient.color_estado)}">${escapeRecordText(patient.estado_display)}</span>
+      </div>
+      <div class="record-summary">
+        <span>Edad<strong>${escapeRecordText(patient.edad)} años</strong></span>
+        <span>Progreso<strong>${escapeRecordText(patient.avance)}%</strong></span>
+        <span>Zona afectada<strong>${escapeRecordText(patient.zona_afectada || 'Sin registrar')}</strong></span>
+      </div>
+      <p><strong>Correo:</strong> ${escapeRecordText(patient.email)}</p>
+      <h3>Notas de diagnóstico</h3>
+      <p class="record-empty">No hay notas de diagnóstico asociadas a este paciente.</p>
+      <h3>Gráfica de progreso</h3>
+      <svg class="doctor-record-chart" viewBox="0 0 320 150" preserveAspectRatio="none" aria-label="Gráfica de progreso">
+        <polyline points="${(patient.historial_avance || []).map((item, index, values) => `${16 + index * ((320 - 32) / Math.max(values.length - 1, 1))},${134 - (Number(item.avance) || 0) * 1.18}`).join(' ')}" fill="none" stroke="${escapeRecordText(patient.color_estado)}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+      </svg>
+      <h3>Historial de progreso</h3>
+      <ul class="record-history">
+        ${(patient.historial_avance || []).map((item) => `<li>${escapeRecordText(item.fecha)} · ${escapeRecordText(item.avance)}%</li>`).join('') || '<li>Sin historial registrado.</li>'}
+      </ul>
+      <h3>Sesiones</h3>
+      <ul class="record-history">
+        ${(patient.sesiones || []).map((session) => `<li>${escapeRecordText(session.fecha)} · ${escapeRecordText(session.objetivo)}${session.avance ? ` · ${escapeRecordText(session.avance)}` : ''}</li>`).join('') || '<li>Sin sesiones registradas.</li>'}
+      </ul>
+    `;
+    showView('diagnostico');
+    history.replaceState(null, "", '#diagnostico');
+    doctorRecordView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+document.querySelectorAll('.patient-card[data-patient-id]').forEach((card) => {
+  const openRecord = () => loadPatientRecord(card.dataset.patientId);
+  card.addEventListener('click', openRecord);
+  card.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openRecord();
+    }
+  });
+});
+
+/* Keep compatibility with cards rendered by older cached templates. */
+document.querySelectorAll('.patient-record-btn[data-patient-id]').forEach((button) => {
+  button.addEventListener('click', () => loadPatientRecord(button.dataset.patientId));
+});
 document.getElementById('clearFavorites')?.addEventListener('click', () => {
   saveFavorites([]);
   updateFavoriteButtons();
@@ -122,14 +266,14 @@ const getCompletedRoutines = () => {
 
 const renderProgress = () => {
   const routines = getCompletedRoutines();
-  const count = routines.length;
   const completedRoutines = document.getElementById('completedRoutines');
   const homeProgressText = document.getElementById('homeProgressText');
   const homeProgressBar = document.getElementById('homeProgressBar');
   const serverCount = Number(completedRoutines?.dataset.serverCount || 0);
-  if (completedRoutines) completedRoutines.textContent = serverCount + count;
-  if (homeProgressText) homeProgressText.textContent = `${count} rutinas completadas`;
-  if (homeProgressBar) homeProgressBar.style.width = `${Math.min(count * 16.67, 100)}%`;
+  const totalCount = serverCount + routines.length;
+  if (completedRoutines) completedRoutines.textContent = String(totalCount);
+  if (homeProgressText) homeProgressText.textContent = `${totalCount} rutinas completadas`;
+  if (homeProgressBar) homeProgressBar.style.width = `${Math.min((totalCount / 6) * 100, 100)}%`;
   const historyList = document.getElementById('historyList');
   if (historyList && !historyList.dataset.serverHistory) {
     historyList.innerHTML = routines.length
@@ -146,8 +290,9 @@ const loadHistory = async () => {
     const response = await fetch('/principal/api/history/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
     if (!response.ok) return;
     const data = await response.json();
-    completedRoutines.dataset.serverCount = String(data.count);
-    completedRoutines.textContent = String(data.count);
+    const mergedCount = Number(data.count || 0) + getCompletedRoutines().length;
+    completedRoutines.dataset.serverCount = String(data.count || 0);
+    completedRoutines.textContent = String(mergedCount);
     sessionStorage.removeItem('nexorev_history_dirty');
     document.querySelectorAll('.routine-button[data-video-id]').forEach((button) => {
       const completed = data.items.some((item) => item.video_id === button.dataset.videoId);
@@ -157,6 +302,10 @@ const loadHistory = async () => {
     historyList.innerHTML = data.items.length
       ? data.items.map((item) => `<li><span>${item.title}</span><time>${item.completed_at} · Completado</time></li>`).join('')
       : '<li>Aún no has completado rutinas.</li>';
+    const homeProgressText = document.getElementById('homeProgressText');
+    const homeProgressBar = document.getElementById('homeProgressBar');
+    if (homeProgressText) homeProgressText.textContent = `${mergedCount} rutinas completadas`;
+    if (homeProgressBar) homeProgressBar.style.width = `${Math.min((mergedCount / 6) * 100, 100)}%`;
   } catch (error) {
     console.warn('No se pudo actualizar el historial', error);
   }
@@ -233,6 +382,7 @@ const bindRoutineButtons = () => {
           button.classList.toggle('is-completed', data.completed);
           button.textContent = data.completed ? '✓ Completada' : 'Marcar rutina completada';
           button.disabled = false;
+          renderProgress();
           await loadHistory();
         } catch (error) {
           button.disabled = false;

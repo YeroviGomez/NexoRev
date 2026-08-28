@@ -23,6 +23,44 @@ $env:DEFAULT_FROM_EMAIL = $env:EMAIL_HOST_USER
 
 No uses la contraseña normal de Gmail ni guardes estas variables en el código.
 
+## Funcionalidades incorporadas
+
+### Roles de paciente y médico
+
+La aplicación diferencia entre cuentas de paciente y médico. Cada rol recibe
+una experiencia adaptada y el acceso se protege mediante middleware.
+
+### Dashboard médico y pacientes asignados
+
+El médico puede consultar sus pacientes asignados y añadir pacientes ya
+registrados o crear nuevos desde un formulario integrado. La asignación se
+guarda mediante la relación `doctor_id`. Las tarjetas muestran nombre, edad,
+zona afectada, estado y porcentaje de avance.
+
+### Expediente del paciente
+
+Al seleccionar una tarjeta, el médico consulta el expediente dentro del
+apartado **Diagnóstico**, con datos, progreso, gráfica, historial de avance y
+sesiones. El formulario de diagnóstico no se muestra a médicos.
+
+### Filtros y ordenamiento
+
+El dashboard permite mostrar únicamente pacientes de una etapa: Inicial
+(0–30 %), En proceso (31–70 %), Avanzado (71–99 %) o Finalizado (100 %).
+También permite ordenar por progreso, edad o nombre, de mayor a menor o de
+menor a mayor. La opción **Todos** muestra nuevamente la lista completa.
+
+### Progreso y estados visuales
+
+El modelo `Paciente` recalcula automáticamente el estado según el avance y
+conserva el historial de cambios. Los estados utilizan colores rojo, naranja,
+amarillo y verde intenso.
+
+### Mejoras de modo oscuro
+
+Se ampliaron los estilos del modo oscuro para paneles, tarjetas, formularios,
+selectores, botones, expedientes y estados, manteniendo contraste y legibilidad.
+
 ## Conexión a PostgreSQL
 
 Para conectar la aplicación a PostgreSQL, consulta `POSTGRESQL_SETUP.md`.

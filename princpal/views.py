@@ -18,7 +18,7 @@ import shutil
 import subprocess
 from urllib.parse import parse_qs, urlparse
 from .forms import DiagnosticoForm, FotoPerfilForm, VideoUploadForm
-from .models import Diagnostico, Video, VideoView
+from .models import Diagnostico, Paciente, Video, VideoView
 
 from crear_cuenta.models import Usuario
 
@@ -290,6 +290,10 @@ def principal_view(request):
     show_security_tips = request.session.pop('show_security_tips', False)
     current_user_email = request.session.get('current_user', '')
     usuario = None
+    paciente = None
+    doctor_patients = []
+    available_patients = []
+    patient_progress_series = []
     diagnostico_id = request.session.get('diagnostico_id')
     diagnostico = None
     active_view = 'inicio'
@@ -316,6 +320,27 @@ def principal_view(request):
             usuario = Usuario.objects.get(email=current_user_email)
         except Usuario.DoesNotExist:
             usuario = None
+        else:
+            request.session['current_user_role'] = usuario.role
+            paciente = Paciente.objects.filter(usuario=usuario).select_related('doctor').first()
+            if usuario.is_doctor:
+                doctor_patients = list(Paciente.objects.filter(doctor=usuario).select_related('usuario').order_by('-avance'))
+                available_patients = Paciente.objects.filter(
+                    doctor__isnull=True,
+                ).select_related('usuario').order_by('nombre')
+            if usuario.is_paciente and paciente is None:
+                paciente = Paciente.objects.get_or_create(
+                    email=current_user_email,
+                    defaults={
+                        'nombre': usuario.nombre,
+                        'usuario': usuario,
+                        'doctor': None,
+                        'avance': 0,
+                        'estado': Paciente.ESTADO_INICIAL,
+                    },
+                )[0]
+            if paciente:
+                patient_progress_series = paciente.get_progress_series()
 
     videos = []
     categories = ['Todas', 'Rodilla', 'Hombro', 'Espalda', 'Cuello', 'Tobillo', 'Cadera']
@@ -334,6 +359,10 @@ def principal_view(request):
         'show_tutorial': show_tutorial,
         'show_security_tips': show_security_tips,
         'usuario': usuario,
+        'paciente': paciente,
+        'doctor_patients': doctor_patients,
+        'available_patients': available_patients,
+        'patient_progress_series': patient_progress_series,
         'current_user_email': current_user_email,
         'videos': videos_page,
         'videos_total': len(videos),
@@ -345,6 +374,163 @@ def principal_view(request):
         'active_view': active_view,
         'completed_history': completed_history,
     })
+
+
+@require_login
+@require_POST
+def add_paciente_view(request):
+    current_user_email = request.session.get('current_user', '')
+    usuario = get_object_or_404(Usuario, email=current_user_email)
+    if not usuario.is_doctor:
+        messages.error(request, 'Solo un especialista puede añadir pacientes.')
+        return redirect('principal')
+
+    existing_patient_id = (request.POST.get('existing_patient_id') or '').strip()
+    if existing_patient_id:
+        try:
+            paciente = Paciente.objects.select_related('usuario').get(
+                pk=int(existing_patient_id),
+                doctor__isnull=True,
+            )
+        except (Paciente.DoesNotExist, ValueError):
+            messages.error(request, 'El paciente seleccionado no está disponible para asignación.')
+            return redirect('principal')
+
+        paciente.doctor = usuario
+        paciente.save(update_fields=['doctor'])
+        messages.success(request, f'Paciente {paciente.nombre} asignado correctamente.')
+        return redirect('principal')
+
+    nombre = (request.POST.get('nombre') or '').strip()
+    email = (request.POST.get('email') or '').strip()
+    edad = (request.POST.get('edad') or '').strip()
+    zona_afectada = (request.POST.get('zona_afectada') or '').strip()
+    avance = (request.POST.get('avance') or '0').strip()
+
+    if not nombre or not email:
+        messages.error(request, 'Completa al menos el nombre y el correo del paciente.')
+        return redirect('principal')
+
+    try:
+        paciente, created = Paciente.objects.get_or_create(
+            email=email,
+            defaults={
+                'nombre': nombre,
+                'doctor': usuario,
+                'usuario': None,
+                'edad': int(edad) if edad else 0,
+                'zona_afectada': zona_afectada,
+                'avance': int(avance) if avance else 0,
+                'estado': Paciente.ESTADO_INICIAL,
+            },
+        )
+    except ValueError:
+        messages.error(request, 'La edad y el avance deben ser valores numéricos válidos.')
+        return redirect('principal')
+
+    paciente.nombre = nombre
+    paciente.doctor = usuario
+    paciente.email = email
+    if edad:
+        paciente.edad = int(edad)
+    if zona_afectada:
+        paciente.zona_afectada = zona_afectada
+    if avance:
+        paciente.avance = min(100, max(0, int(avance)))
+    paciente.recalcular_estado()
+    paciente.save(update_fields=['nombre', 'doctor', 'email', 'edad', 'zona_afectada', 'avance', 'estado'])
+
+    if created:
+        messages.success(request, f'Paciente {nombre} añadido correctamente.')
+    else:
+        messages.success(request, f'Paciente {nombre} actualizado correctamente.')
+    return redirect('principal')
+
+
+@require_login
+def doctor_patients_api(request, doctor_id):
+    doctor = get_object_or_404(Usuario, pk=doctor_id, role='doctor')
+    current_doctor = get_object_or_404(
+        Usuario,
+        email=request.session.get('current_user', ''),
+        role='doctor',
+    )
+    if current_doctor.pk != doctor.pk:
+        return JsonResponse({'error': 'No tienes permiso para consultar estos pacientes.'}, status=403)
+    if request.method == 'POST':
+        nombre = (request.POST.get('nombre') or '').strip()
+        email = (request.POST.get('email') or '').strip()
+        if not nombre or not email:
+            return JsonResponse({'ok': False, 'error': 'Faltan nombre o correo.'}, status=400)
+        edad = request.POST.get('edad') or 0
+        zona_afectada = request.POST.get('zona_afectada') or ''
+        avance = request.POST.get('avance') or 0
+        try:
+            paciente, created = Paciente.objects.get_or_create(
+                email=email,
+                defaults={
+                    'nombre': nombre,
+                    'doctor': doctor,
+                    'edad': int(edad),
+                    'zona_afectada': zona_afectada,
+                    'avance': min(100, max(0, int(avance))),
+                },
+            )
+        except ValueError:
+            return JsonResponse({'ok': False, 'error': 'Edad o avance inválidos.'}, status=400)
+        paciente.nombre = nombre
+        paciente.doctor = doctor
+        paciente.edad = int(edad)
+        paciente.zona_afectada = zona_afectada
+        paciente.avance = min(100, max(0, int(avance)))
+        paciente.recalcular_estado()
+        paciente.save()
+        return JsonResponse({'ok': True, 'created': created, 'paciente': paciente_detail_payload(paciente)})
+
+    pacientes = Paciente.objects.filter(doctor=doctor).select_related('usuario').order_by('-avance', 'nombre')
+    return JsonResponse({
+        'doctor_id': doctor.pk,
+        'items': [paciente_detail_payload(paciente) for paciente in pacientes],
+    })
+
+
+@require_login
+def paciente_detail_api(request, paciente_id):
+    paciente = get_object_or_404(Paciente, pk=paciente_id)
+    current_doctor = get_object_or_404(
+        Usuario,
+        email=request.session.get('current_user', ''),
+        role='doctor',
+    )
+    if paciente.doctor_id != current_doctor.pk:
+        return JsonResponse({'error': 'No tienes permiso para consultar este expediente.'}, status=403)
+    return JsonResponse({'paciente': paciente_detail_payload(paciente)})
+
+
+def paciente_detail_payload(paciente):
+    return {
+        'id': paciente.pk,
+        'nombre': paciente.nombre,
+        'email': paciente.email,
+        'edad': paciente.edad,
+        'zona_afectada': paciente.zona_afectada,
+        'avance': paciente.avance,
+        'estado': paciente.estado,
+        'estado_display': paciente.get_estado_display(),
+        'color_estado': paciente.color_estado,
+        'doctor_id': paciente.doctor_id,
+        'historial_avance': paciente.get_progress_series(),
+        'sesiones': [
+            {
+                'fecha': sesion.fecha.isoformat(),
+                'objetivo': sesion.objetivo,
+                'avance': sesion.avance,
+                'activo': sesion.activo,
+            }
+            for sesion in paciente.sesiones.all()
+        ],
+    }
+
 
 @require_login
 @cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
@@ -495,12 +681,17 @@ def complete_video_view(request, video_index):
             category=video['category'], completed=True, completed_at=completed_at,
         )
 
+    usuario = Usuario.objects.filter(email=email).first()
+    paciente = Paciente.objects.filter(usuario=usuario).first() if usuario else None
+    if paciente:
+        paciente.registrar_avance(min(100, paciente.avance + 10))
+
     return JsonResponse({'success': True, 'completed': True, 'title': video['title'], 'completed_at': completed_at.isoformat(), 'message': random.choice([
         '¡Gran trabajo hoy!',
         '¡Estás más cerca de tu recuperación!',
         '¡Cada rutina cuenta, sigue así!',
         '¡Tu constancia está dando frutos!',
-    ])})
+    ]), 'progress': getattr(paciente, 'avance', 0)})
 
 
 @require_login

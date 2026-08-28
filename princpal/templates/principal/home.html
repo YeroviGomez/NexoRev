@@ -5,20 +5,24 @@
   </header>
 
   <div class="home-grid">
-    <article class="panel body-panel">
-      <h2>Selecciona la zona afectada</h2>
-      <p>Haz clic en la parte del cuerpo que requiere rehabilitación</p>
+    {% if not usuario or usuario.role != 'doctor' %}
+      <article class="panel body-panel">
+        <h2>Selecciona la zona afectada</h2>
+        <p>Haz clic en la parte del cuerpo que requiere rehabilitación</p>
 
-      <div class="body-placeholder" aria-label="Espacio reservado para personaje interactivo">
-        <span>Próximamente</span>
-      </div>
-    </article>
+        <div class="body-placeholder" aria-label="Espacio reservado para personaje interactivo">
+          <span>Próximamente</span>
+        </div>
+      </article>
+    {% endif %}
 
     <div class="home-side">
-      <article class="panel selected-panel">
-        <h2>Zona seleccionada</h2>
-        <p>No has seleccionado ninguna zona todavía</p>
-      </article>
+      {% if not usuario or usuario.role != 'doctor' %}
+        <article class="panel selected-panel">
+          <h2>Zona seleccionada</h2>
+          <p>No has seleccionado ninguna zona todavía</p>
+        </article>
+      {% endif %}
 
       <article class="panel quick-panel">
         <h2>Acceso rápido</h2>
@@ -35,11 +39,160 @@
           <span>Ver mi historial</span>
         </button>
       </article>
-      <article class="panel routine-panel">
-        <h2>Tu progreso de hoy</h2>
-        <div class="progress-track"><span id="homeProgressBar"></span></div>
-        <p id="homeProgressText">0 rutinas completadas</p>
-      </article>
+      {% if usuario and usuario.role == 'doctor' %}
+        <article class="panel patients-panel">
+          <div class="section-head">
+            <h2>Pacientes asignados</h2>
+            <div class="doctor-filters">
+              <label>
+                <span>Progreso</span>
+                <select id="doctorPatientFilter" aria-label="Filtrar pacientes por estado">
+                <option value="all">Todos</option>
+                <option value="inicial">Inicial</option>
+                <option value="en_proceso">En proceso</option>
+                <option value="avanzado">Avanzado</option>
+                <option value="finalizado">Finalizado</option>
+                </select>
+              </label>
+              <label>
+                <span>Ordenar por</span>
+                <select id="doctorPatientSort" aria-label="Ordenar pacientes">
+                  <option value="avance_desc">Progreso: mayor a menor</option>
+                  <option value="avance_asc">Progreso: menor a mayor</option>
+                  <option value="edad_desc">Edad: mayor a menor</option>
+                  <option value="edad_asc">Edad: menor a mayor</option>
+                  <option value="nombre_asc">Nombre: A-Z</option>
+                  <option value="nombre_desc">Nombre: Z-A</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <p class="doctor-filter-status" id="doctorFilterStatus" aria-live="polite">Mostrando todos los pacientes</p>
+          <div class="doctor-patient-actions">
+            <button type="button" class="primary-btn" id="toggleAddPatientForm">Añadir paciente</button>
+          </div>
+          <form id="doctorAddPatientForm" method="post" action="{% url 'agregar_paciente' %}" class="doctor-add-patient-form" hidden>
+            {% csrf_token %}
+            <label class="existing-patient-field">
+              <span>Asignar paciente registrado</span>
+              <select name="existing_patient_id">
+                <option value="">Selecciona un paciente sin especialista</option>
+                {% for available_patient in available_patients %}
+                  <option value="{{ available_patient.id }}">{{ available_patient.nombre }} · {{ available_patient.email }}</option>
+                {% empty %}
+                  <option value="" disabled>No hay pacientes registrados disponibles</option>
+                {% endfor %}
+              </select>
+            </label>
+            <p class="form-divider">O registra un paciente nuevo</p>
+            <div class="form-grid compact">
+              <label>
+                <span>Nombre</span>
+                <input type="text" name="nombre">
+              </label>
+              <label>
+                <span>Correo</span>
+                <input type="email" name="email">
+              </label>
+              <label>
+                <span>Edad</span>
+                <input type="number" name="edad" min="0" max="120" value="0">
+              </label>
+              <label>
+                <span>Zona afectada</span>
+                <input type="text" name="zona_afectada" placeholder="Rodilla, hombro...">
+              </label>
+              <label>
+                <span>Progreso inicial</span>
+                <input type="number" name="avance" min="0" max="100" value="0">
+              </label>
+            </div>
+            <button type="submit" class="primary-btn">Guardar paciente</button>
+          </form>
+          <div class="patients-list">
+            {% for patient in doctor_patients %}
+              <div class="patient-row patient-card" role="button" tabindex="0" data-patient-id="{{ patient.id }}" data-state="{{ patient.estado }}" data-advance="{{ patient.avance }}" data-age="{{ patient.edad }}" data-name="{{ patient.nombre|lower }}">
+                <div class="patient-main">
+                  <div>
+                    <strong>{{ patient.nombre }}</strong>
+                    <small>{{ patient.edad }} años · {{ patient.zona_afectada|default:'Sin zona registrada' }}</small>
+                  </div>
+                  <div class="patient-meta">
+                    <span class="patient-state" style="--state-color: {{ patient.color_estado }};">{{ patient.get_estado_display }}</span>
+                    <span class="patient-percent">{{ patient.avance }}%</span>
+                  </div>
+                </div>
+                <div class="patient-actions"><span class="secondary-btn">Ver expediente</span></div>
+              </div>
+            {% empty %}
+              <p class="empty-state" id="doctorPatientsEmpty">Todavía no tienes pacientes asignados.</p>
+            {% endfor %}
+          </div>
+        </article>
+      {% elif paciente %}
+        <article class="panel progress-panel">
+          <h2>Mi progreso</h2>
+          <div class="stage-scale" aria-label="Escala de progreso">
+            <span class="stage-step initial">Inicial</span>
+            <span class="stage-step process">Proceso</span>
+            <span class="stage-step advanced">Avanzado</span>
+            <span class="stage-step final">Finalizado</span>
+          </div>
+          <div class="patient-progress-chart" aria-label="Gráfica de progreso">
+            <svg id="patientProgressChart" viewBox="0 0 320 180" preserveAspectRatio="none"></svg>
+          </div>
+          <p class="progress-summary">{{ paciente.avance }}% de avance · {{ paciente.get_estado_display }}</p>
+          <script>
+            const progressData = {{ patient_progress_series|safe }};
+            const svg = document.getElementById('patientProgressChart');
+            if (svg && progressData && progressData.length) {
+              const width = 320;
+              const height = 180;
+              const padding = 16;
+              const min = 0;
+              const max = 100;
+              const latestProgress = Number(progressData[progressData.length - 1]?.avance ?? 0);
+              const stageColors = [
+                { max: 30, color: '#a78bfa' },
+                { max: 70, color: '#fbbf24' },
+                { max: 99, color: '#38bdf8' },
+                { max: Infinity, color: '#22c55e' },
+              ];
+              const progressColor = stageColors.find((stage) => latestProgress <= stage.max)?.color || '#22c55e';
+              const xStep = (width - padding * 2) / Math.max(progressData.length - 1, 1);
+              const points = progressData.map((point, index) => {
+                const x = padding + index * xStep;
+                const y = height - padding - ((Number(point.avance) || 0) - min) / Math.max(max - min, 1) * (height - padding * 2);
+                return `${x},${y}`;
+              }).join(' ');
+              const area = `0,${height - padding} ${points} ${width},${height - padding}`;
+              svg.innerHTML = `
+                <defs>
+                  <linearGradient id="progressFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="${progressColor}" stop-opacity="0.45" />
+                    <stop offset="100%" stop-color="${progressColor}" stop-opacity="0.02" />
+                  </linearGradient>
+                </defs>
+                <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#475569" stroke-width="1" stroke-dasharray="4 4" />
+                <polyline points="${points}" fill="none" stroke="${progressColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                <polygon points="${area}" fill="url(#progressFill)" opacity="0.9" />
+                ${progressData.map((point, index) => {
+                  const x = padding + index * xStep;
+                  const y = height - padding - ((Number(point.avance) || 0) - min) / Math.max(max - min, 1) * (height - padding * 2);
+                  return `<circle cx="${x}" cy="${y}" r="4" fill="${progressColor}" />`;
+                }).join('')}
+              `;
+            }
+          </script>
+        </article>
+      {% endif %}
+      {% if not usuario or usuario.role != 'doctor' %}
+        <article class="panel routine-panel">
+          <h2>Tu progreso de hoy</h2>
+          <div class="progress-track"><span id="homeProgressBar"></span></div>
+          <p id="homeProgressText">0 rutinas completadas</p>
+        </article>
+      {% endif %}
     </div>
   </div>
 </section>

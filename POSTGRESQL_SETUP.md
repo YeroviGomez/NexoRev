@@ -23,6 +23,7 @@ CREATE TABLE usuarios (
     password VARCHAR(128) NOT NULL,
     nombre VARCHAR(150),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    modo_oscuro BOOLEAN NOT NULL DEFAULT FALSE,
     fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```

@@ -41,6 +41,9 @@
       document.documentElement.classList.toggle('dark-mode', theme === 'dark');
       document.documentElement.setAttribute('data-theme', theme);
       document.documentElement.setAttribute('data-font-size', fontSize);
+      document.addEventListener('DOMContentLoaded', () => {
+        document.body.classList.toggle('dark-mode', theme === 'dark');
+      }, { once: true });
     })();
 
     window.addEventListener('pageshow', (event) => {

@@ -8,7 +8,52 @@ html.dark-mode .mini-switch span, body.dark-mode .mini-switch span { background:
 html.dark-mode .mini-switch input:checked + span, body.dark-mode .mini-switch input:checked + span { background: #009688; }
 html.dark-mode button, body.dark-mode button, html.dark-mode a, body.dark-mode a { color: #f8fafc; }
 html.dark-mode input, body.dark-mode input, html.dark-mode textarea, body.dark-mode textarea, html.dark-mode select, body.dark-mode select { background: #23232d; color: #f8fafc; border-color: #3a3a4e; }
+html.dark-mode .patients-panel,
+body.dark-mode .patients-panel,
+html.dark-mode .patient-card,
+body.dark-mode .patient-card,
+html.dark-mode .doctor-add-patient-form,
+body.dark-mode .doctor-add-patient-form,
+html.dark-mode .doctor-record-view,
+body.dark-mode .doctor-record-view,
+html.dark-mode .doctor-filters select,
+body.dark-mode .doctor-filters select {
+  background: #171b2b;
+  color: #f8fafc;
+  border-color: #39435d;
+}
+html.dark-mode .patient-card:hover,
+body.dark-mode .patient-card:hover,
+html.dark-mode .patient-card:focus-visible,
+body.dark-mode .patient-card:focus-visible {
+  border-color: #5eead4;
+  background: #1d263b;
+}
+html.dark-mode .patient-card small,
+body.dark-mode .patient-card small,
+html.dark-mode .form-divider,
+body.dark-mode .form-divider,
+html.dark-mode .doctor-filters label span,
+body.dark-mode .doctor-filters label span,
+html.dark-mode .record-empty,
+body.dark-mode .record-empty,
+html.dark-mode .record-history,
+body.dark-mode .record-history {
+  color: #c5cede;
+}
+html.dark-mode .secondary-btn,
+body.dark-mode .secondary-btn {
+  background: #26365b;
+  color: #dbeafe;
+  border: 1px solid #4b6391;
+}
 html.dark-mode .outline-button, body.dark-mode .outline-button, html.dark-mode .wide-outline-button, body.dark-mode .wide-outline-button, html.dark-mode .profile-card .outline-button, html.dark-mode .primary-btn, body.dark-mode .primary-btn, html.dark-mode .primary-action-btn, body.dark-mode .primary-action-btn, html.dark-mode .save-button, body.dark-mode .save-button, html.dark-mode .favorite-btn, body.dark-mode .favorite-btn { background: #2b2b36; color: #ffffff; border-color: #3a3a4e; }
+html.dark-mode .favorite-btn.is-favorite, body.dark-mode .favorite-btn.is-favorite {
+  background: linear-gradient(135deg, #14b8a6, #34d399);
+  color: #ffffff;
+  border-color: rgba(52, 211, 153, 0.75);
+  box-shadow: 0 0.5rem 1.25rem rgba(20, 184, 166, 0.35);
+}
 html.dark-mode .quick-link, body.dark-mode .quick-link { background: #1f1f28; color: #f8fafc; border-color: #2e2e3a; }
 html.dark-mode .tutorial-step-badge, body.dark-mode .tutorial-step-badge { background: #000000; color: #ffffff; }
 html.dark-mode .tutorial-info, body.dark-mode .tutorial-info { background: #0b0b0c; border-color: #262626; color: #ffffff; }
@@ -26,3 +71,537 @@ html.dark-mode .body-placeholder, body.dark-mode .body-placeholder { color: #c6d
 html.dark-mode .body-placeholder span, body.dark-mode .body-placeholder span { background: #0f1113; color: #dbe9ef; border: 2px dashed #2a2a33; }
 html.dark-mode .video-copy, body.dark-mode .video-copy { color: #e6eef0; }
 html.dark-mode .video-copy p, body.dark-mode .video-copy p { color: #cbd6de; }
+html.dark-mode .security-modal, body.dark-mode .security-modal,
+html.dark-mode .video-safety-modal, body.dark-mode .video-safety-modal,
+html.dark-mode .video-upload-panel, body.dark-mode .video-upload-panel,
+html.dark-mode .video-toolbar, body.dark-mode .video-toolbar,
+html.dark-mode .featured-video-zone, body.dark-mode .featured-video-zone,
+html.dark-mode .video-card, body.dark-mode .video-card,
+html.dark-mode .videos-empty, body.dark-mode .videos-empty,
+html.dark-mode .routine-completion, body.dark-mode .routine-completion,
+html.dark-mode .motivation-modal-card, body.dark-mode .motivation-modal-card {
+  background: #121827;
+  border-color: #2a3348;
+  color: #f8fafc;
+  box-shadow: 0 1rem 2.5rem rgba(2, 6, 23, 0.5);
+}
+html.dark-mode .security-modal h2, body.dark-mode .security-modal h2,
+html.dark-mode .security-modal p, body.dark-mode .security-modal p,
+html.dark-mode .security-modal li, body.dark-mode .security-modal li,
+html.dark-mode .security-modal label, body.dark-mode .security-modal label,
+html.dark-mode .security-modal strong, body.dark-mode .security-modal strong,
+html.dark-mode .video-safety-modal h2, body.dark-mode .video-safety-modal h2,
+html.dark-mode .video-safety-modal li, body.dark-mode .video-safety-modal li,
+html.dark-mode .video-safety-modal p, body.dark-mode .video-safety-modal p,
+html.dark-mode .video-safety-modal strong, body.dark-mode .video-safety-modal strong,
+html.dark-mode .video-safety-close, body.dark-mode .video-safety-close,
+html.dark-mode .video-upload-field label, body.dark-mode .video-upload-field label,
+html.dark-mode .video-upload-form input, body.dark-mode .video-upload-form input,
+html.dark-mode .video-upload-form select, body.dark-mode .video-upload-form select,
+html.dark-mode .video-upload-form textarea, body.dark-mode .video-upload-form textarea,
+html.dark-mode .video-file-name, body.dark-mode .video-file-name,
+html.dark-mode .thumbnail-file-name, body.dark-mode .thumbnail-file-name,
+html.dark-mode .upload-preview-heading > span, body.dark-mode .upload-preview-heading > span,
+html.dark-mode .featured-copy h2, body.dark-mode .featured-copy h2,
+html.dark-mode .featured-copy p, body.dark-mode .featured-copy p,
+html.dark-mode .video-copy h2, body.dark-mode .video-copy h2,
+html.dark-mode .video-copy p, body.dark-mode .video-copy p,
+html.dark-mode .video-count, body.dark-mode .video-count,
+html.dark-mode .difficulty-filter, body.dark-mode .difficulty-filter,
+html.dark-mode .filter-label, body.dark-mode .filter-label,
+html.dark-mode .filter-chip, body.dark-mode .filter-chip,
+html.dark-mode .video-detail-heading h1, body.dark-mode .video-detail-heading h1,
+html.dark-mode .video-detail-heading p, body.dark-mode .video-detail-heading p,
+html.dark-mode .video-detail-kicker, body.dark-mode .video-detail-kicker,
+html.dark-mode .routine-completion h2, body.dark-mode .routine-completion h2,
+html.dark-mode .routine-completion p, body.dark-mode .routine-completion p,
+html.dark-mode .motivation-modal-card h2, body.dark-mode .motivation-modal-card h2,
+html.dark-mode .motivation-modal-card p, body.dark-mode .motivation-modal-card p,
+html.dark-mode .recommendations-empty, body.dark-mode .recommendations-empty,
+html.dark-mode .recommendations-position, body.dark-mode .recommendations-position,
+html.dark-mode .video-player-frame p, body.dark-mode .video-player-frame p,
+html.dark-mode .video-player-frame .video-quality-status, body.dark-mode .video-player-frame .video-quality-status {
+  color: #f8fafc;
+}
+html.dark-mode .video-player-frame,
+body.dark-mode .video-player-frame,
+html.dark-mode .video-player-frame iframe,
+body.dark-mode .video-player-frame iframe,
+html.dark-mode .video-player-frame video,
+body.dark-mode .video-player-frame video,
+html.dark-mode .featured-video-zone,
+body.dark-mode .featured-video-zone,
+html.dark-mode .featured-video-card,
+body.dark-mode .featured-video-card,
+html.dark-mode .video-card,
+body.dark-mode .video-card,
+html.dark-mode .video-thumb,
+body.dark-mode .video-thumb,
+html.dark-mode .featured-thumb,
+body.dark-mode .featured-thumb {
+  background: #020817;
+  border-color: #2a3348;
+}
+html.dark-mode .video-detail-page,
+body.dark-mode .video-detail-page,
+html.dark-mode .video-detail-shell,
+body.dark-mode .video-detail-shell {
+  background: #050b18;
+  color: #f8fafc;
+}
+html.dark-mode .video-detail-page .video-player-frame,
+body.dark-mode .video-detail-page .video-player-frame,
+html.dark-mode .video-detail-page .routine-completion,
+body.dark-mode .video-detail-page .routine-completion,
+html.dark-mode .video-detail-page .motivation-modal-card,
+body.dark-mode .video-detail-page .motivation-modal-card {
+  background: #111827;
+  border-color: #334155;
+}
+html.dark-mode .security-critical, body.dark-mode .security-critical { color: #fbbf24; }
+html.dark-mode .security-check input, body.dark-mode .security-check input,
+html.dark-mode .video-safety-trigger, body.dark-mode .video-safety-trigger,
+html.dark-mode .filter-chip, body.dark-mode .filter-chip,
+html.dark-mode .thumbnail-file-picker, body.dark-mode .thumbnail-file-picker,
+html.dark-mode .video-file-picker, body.dark-mode .video-file-picker,
+html.dark-mode .video-upload-form input, body.dark-mode .video-upload-form input,
+html.dark-mode .video-upload-form select, body.dark-mode .video-upload-form select,
+html.dark-mode .video-upload-form textarea, body.dark-mode .video-upload-form textarea,
+html.dark-mode .difficulty-filter select, body.dark-mode .difficulty-filter select,
+html.dark-mode .search-box, body.dark-mode .search-box,
+html.dark-mode .video-safety-modal ul, body.dark-mode .video-safety-modal ul { border-color: #334155; }
+html.dark-mode .video-upload-form input, body.dark-mode .video-upload-form input,
+html.dark-mode .video-upload-form select, body.dark-mode .video-upload-form select,
+html.dark-mode .video-upload-form textarea, body.dark-mode .video-upload-form textarea,
+html.dark-mode .difficulty-filter select, body.dark-mode .difficulty-filter select,
+html.dark-mode .search-box, body.dark-mode .search-box,
+html.dark-mode .thumbnail-file-picker, body.dark-mode .thumbnail-file-picker,
+html.dark-mode .video-file-picker, body.dark-mode .video-file-picker,
+html.dark-mode .filter-chip, body.dark-mode .filter-chip,
+html.dark-mode .video-upload-form option, body.dark-mode .video-upload-form option,
+html.dark-mode .difficulty-filter option, body.dark-mode .difficulty-filter option {
+  background: #0f172a;
+  color: #f8fafc;
+}
+html.dark-mode .difficulty-filter select,
+body.dark-mode .difficulty-filter select,
+html.dark-mode .video-upload-form select,
+body.dark-mode .video-upload-form select,
+html.dark-mode .search-box,
+body.dark-mode .search-box {
+  color-scheme: dark;
+}
+html.dark-mode .video-safety-trigger, body.dark-mode .video-safety-trigger {
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.8);
+  color: #fde68a;
+}
+html.dark-mode .video-safety-trigger .video-safety-icon,
+html.dark-mode .video-player-frame, body.dark-mode .video-player-frame,
+html.dark-mode .featured-thumb, body.dark-mode .featured-thumb,
+html.dark-mode .video-thumb, body.dark-mode .video-thumb,
+html.dark-mode .video-load-error, body.dark-mode .video-load-error {
+  background: #020817;
+}
+html.dark-mode .video-player-frame, body.dark-mode .video-player-frame {
+  border: 1px solid #2a3348;
+  box-shadow: 0 1rem 2.4rem rgba(2, 6, 23, 0.52);
+}
+html.dark-mode .page-head h1, body.dark-mode .page-head h1,
+html.dark-mode .page-head p, body.dark-mode .page-head p,
+html.dark-mode .video-player-frame p, body.dark-mode .video-player-frame p,
+html.dark-mode .video-detail-shell, body.dark-mode .video-detail-shell,
+html.dark-mode .video-detail-page, body.dark-mode .video-detail-page {
+  color: #f8fafc;
+}
+html.dark-mode .video-detail-page, body.dark-mode .video-detail-page {
+  background: #050b18;
+}
+html.dark-mode .video-back-link, body.dark-mode .video-back-link,
+html.dark-mode .history-link, body.dark-mode .history-link,
+html.dark-mode .video-open-link, body.dark-mode .video-open-link,
+html.dark-mode .featured-link, body.dark-mode .featured-link {
+  color: #5eead4;
+}
+html.dark-mode .category, body.dark-mode .category,
+html.dark-mode .detail-category, body.dark-mode .detail-category {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: #334155;
+  color: #f8fafc;
+}
+html.dark-mode .featured-zone-heading h2, body.dark-mode .featured-zone-heading h2,
+html.dark-mode .recommendations-heading h2, body.dark-mode .recommendations-heading h2 {
+  color: #f8fafc;
+}
+html.dark-mode .recommendation-card, body.dark-mode .recommendation-card {
+  background: #121827;
+  border-color: #2a3348;
+}
+html.dark-mode .recommendation-copy h3, body.dark-mode .recommendation-copy h3,
+html.dark-mode .recommendation-copy span, body.dark-mode .recommendation-copy span {
+  color: #f8fafc;
+}
+html.dark-mode .video-upload-message, body.dark-mode .video-upload-message { color: #fca5a5; }
+
+html.dark-mode,
+body.dark-mode {
+  background: #050b18;
+  color: #f8fafc;
+}
+
+html.dark-mode .app-shell,
+body.dark-mode .app-shell {
+  background: #050b18;
+}
+
+html.dark-mode .app-sidebar,
+body.dark-mode .app-sidebar,
+html.dark-mode .panel,
+body.dark-mode .panel,
+html.dark-mode .profile-card,
+body.dark-mode .profile-card,
+html.dark-mode .quick-link,
+body.dark-mode .quick-link,
+html.dark-mode .video-card,
+body.dark-mode .video-card,
+html.dark-mode .featured-video-zone,
+body.dark-mode .featured-video-zone,
+html.dark-mode .featured-video-card,
+body.dark-mode .featured-video-card,
+html.dark-mode .recommendation-card,
+body.dark-mode .recommendation-card,
+html.dark-mode .routine-completion,
+body.dark-mode .routine-completion,
+html.dark-mode .security-modal,
+body.dark-mode .security-modal,
+html.dark-mode .video-safety-modal,
+body.dark-mode .video-safety-modal,
+html.dark-mode .motivation-modal-card,
+body.dark-mode .motivation-modal-card,
+html.dark-mode .video-upload-panel,
+body.dark-mode .video-upload-panel,
+html.dark-mode .video-toolbar,
+body.dark-mode .video-toolbar {
+  background: #111827;
+  border-color: #334155;
+  box-shadow: 0 0.85rem 2rem rgba(2, 6, 23, 0.4);
+}
+
+html.dark-mode .brand-lockup,
+body.dark-mode .brand-lockup,
+html.dark-mode .sidebar-link,
+body.dark-mode .sidebar-link,
+html.dark-mode .quick-link,
+body.dark-mode .quick-link,
+html.dark-mode .page-head h1,
+body.dark-mode .page-head h1,
+html.dark-mode .page-head p,
+body.dark-mode .page-head p,
+html.dark-mode .panel > p,
+body.dark-mode .panel > p,
+html.dark-mode .profile-card h2,
+body.dark-mode .profile-card h2,
+html.dark-mode .profile-card > p,
+body.dark-mode .profile-card > p,
+html.dark-mode .preference-row h3,
+body.dark-mode .preference-row h3,
+html.dark-mode .preference-row p,
+body.dark-mode .preference-row p,
+html.dark-mode .video-copy h2,
+body.dark-mode .video-copy h2,
+html.dark-mode .video-copy p,
+body.dark-mode .video-copy p,
+html.dark-mode .featured-copy h2,
+body.dark-mode .featured-copy h2,
+html.dark-mode .featured-copy p,
+body.dark-mode .featured-copy p,
+html.dark-mode .recommendation-copy h3,
+body.dark-mode .recommendation-copy h3,
+html.dark-mode .recommendation-copy span,
+body.dark-mode .recommendation-copy span,
+html.dark-mode .video-detail-heading h1,
+body.dark-mode .video-detail-heading h1,
+html.dark-mode .video-detail-heading p,
+body.dark-mode .video-detail-heading p,
+html.dark-mode .routine-completion h2,
+body.dark-mode .routine-completion h2,
+html.dark-mode .routine-completion p,
+body.dark-mode .routine-completion p,
+html.dark-mode .featured-zone-heading h2,
+body.dark-mode .featured-zone-heading h2,
+html.dark-mode .recommendations-heading h2,
+body.dark-mode .recommendations-heading h2,
+html.dark-mode .recommendations-empty,
+body.dark-mode .recommendations-empty,
+html.dark-mode .recommendations-position,
+body.dark-mode .recommendations-position,
+html.dark-mode .security-modal h2,
+body.dark-mode .security-modal h2,
+html.dark-mode .security-modal p,
+body.dark-mode .security-modal p,
+html.dark-mode .security-modal li,
+body.dark-mode .security-modal li,
+html.dark-mode .video-safety-modal h2,
+body.dark-mode .video-safety-modal h2,
+html.dark-mode .video-safety-modal p,
+body.dark-mode .video-safety-modal p,
+html.dark-mode .video-safety-modal li,
+body.dark-mode .video-safety-modal li,
+html.dark-mode .motivation-modal-card h2,
+body.dark-mode .motivation-modal-card h2,
+html.dark-mode .motivation-modal-card p,
+body.dark-mode .motivation-modal-card p,
+html.dark-mode .video-detail-kicker,
+body.dark-mode .video-detail-kicker,
+html.dark-mode .video-count,
+body.dark-mode .video-count,
+html.dark-mode .filter-label,
+body.dark-mode .filter-label,
+html.dark-mode .difficulty-filter,
+body.dark-mode .difficulty-filter {
+  color: #f8fafc;
+}
+
+html.dark-mode .sidebar-link,
+body.dark-mode .sidebar-link {
+  color: #dbeafe;
+}
+
+html.dark-mode .sidebar-link:hover,
+body.dark-mode .sidebar-link:hover,
+html.dark-mode .sidebar-link.active,
+body.dark-mode .sidebar-link.active {
+  background: rgba(13, 148, 136, 0.22);
+  color: #f0fdfa;
+}
+
+html.dark-mode .sidebar-toggle,
+body.dark-mode .sidebar-toggle,
+html.dark-mode .save-button,
+body.dark-mode .save-button,
+html.dark-mode .motivation-close,
+body.dark-mode .motivation-close,
+html.dark-mode .video-safety-close,
+body.dark-mode .video-safety-close,
+html.dark-mode .tutotial-close,
+body.dark-mode .tutorial-close,
+html.dark-mode .remove-upload-file,
+body.dark-mode .remove-upload-file,
+html.dark-mode .favorite-btn,
+body.dark-mode .favorite-btn {
+  color: #e2e8f0;
+}
+
+html.dark-mode .body-placeholder,
+body.dark-mode .body-placeholder {
+  color: #cbd5e1;
+}
+
+html.dark-mode .body-placeholder span,
+body.dark-mode .body-placeholder span {
+  background: #0f172a;
+  border-color: #475569;
+  color: #e2e8f0;
+}
+
+html.dark-mode .profile-fields input,
+body.dark-mode .profile-fields input,
+html.dark-mode .password-fields input,
+body.dark-mode .password-fields input,
+html.dark-mode .font-size-select,
+body.dark-mode .font-size-select,
+html.dark-mode .search-box,
+body.dark-mode .search-box,
+html.dark-mode .video-upload-form input,
+body.dark-mode .video-upload-form input,
+html.dark-mode .video-upload-form select,
+body.dark-mode .video-upload-form select,
+html.dark-mode .video-upload-form textarea,
+body.dark-mode .video-upload-form textarea,
+html.dark-mode .difficulty-filter select,
+body.dark-mode .difficulty-filter select,
+html.dark-mode .filter-chip,
+body.dark-mode .filter-chip,
+html.dark-mode .outline-button,
+body.dark-mode .outline-button,
+html.dark-mode .wide-outline-button,
+body.dark-mode .wide-outline-button,
+html.dark-mode .favorite-btn,
+body.dark-mode .favorite-btn,
+html.dark-mode .video-safety-trigger,
+body.dark-mode .video-safety-trigger {
+  background: #0f172a;
+  border-color: #475569;
+  color: #f8fafc;
+}
+
+html.dark-mode .search-box input,
+body.dark-mode .search-box input,
+html.dark-mode .video-upload-form input,
+body.dark-mode .video-upload-form input,
+html.dark-mode .video-upload-form select,
+body.dark-mode .video-upload-form select,
+html.dark-mode .video-upload-form textarea,
+body.dark-mode .video-upload-form textarea,
+html.dark-mode .difficulty-filter select,
+body.dark-mode .difficulty-filter select {
+  background: transparent;
+  color: #f8fafc;
+}
+
+html.dark-mode .search-box input::placeholder,
+body.dark-mode .search-box input::placeholder,
+html.dark-mode .video-file-name,
+body.dark-mode .video-file-name,
+html.dark-mode .thumbnail-file-name,
+body.dark-mode .thumbnail-file-name,
+html.dark-mode .upload-preview-heading > span,
+body.dark-mode .upload-preview-heading > span,
+html.dark-mode .video-upload-message,
+body.dark-mode .video-upload-message,
+html.dark-mode .filter-label,
+body.dark-mode .filter-label,
+html.dark-mode .featured-copy p,
+body.dark-mode .featured-copy p,
+html.dark-mode .video-copy p,
+body.dark-mode .video-copy p,
+html.dark-mode .preference-row p,
+body.dark-mode .preference-row p {
+  color: #cbd5e1;
+}
+
+html.dark-mode .security-critical,
+body.dark-mode .security-critical {
+  color: #fbbf24;
+}
+
+html.dark-mode .video-safety-trigger,
+body.dark-mode .video-safety-trigger {
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.8);
+  color: #fde68a;
+}
+
+html.dark-mode .video-player-frame,
+body.dark-mode .video-player-frame,
+html.dark-mode .featured-thumb,
+body.dark-mode .featured-thumb,
+html.dark-mode .video-thumb,
+body.dark-mode .video-thumb,
+html.dark-mode .video-player-frame video,
+body.dark-mode .video-player-frame video,
+html.dark-mode .video-player-frame iframe,
+body.dark-mode .video-player-frame iframe,
+html.dark-mode .motivation-icon,
+body.dark-mode .motivation-icon {
+  background: #020817;
+}
+
+html.dark-mode .video-player-frame,
+body.dark-mode .video-player-frame {
+  border: 1px solid #334155;
+  box-shadow: 0 1rem 2.4rem rgba(2, 6, 23, 0.55);
+}
+
+html.dark-mode .video-detail-page,
+body.dark-mode .video-detail-page {
+  background: #050b18;
+}
+
+html.dark-mode .video-detail-shell .video-back-link,
+body.dark-mode .video-detail-shell .video-back-link,
+html.dark-mode .video-detail-shell .history-link,
+body.dark-mode .video-detail-shell .history-link,
+html.dark-mode .video-detail-shell .video-open-link,
+body.dark-mode .video-detail-shell .video-open-link,
+html.dark-mode .featured-link,
+body.dark-mode .featured-link,
+html.dark-mode .recommendation-play,
+body.dark-mode .recommendation-play {
+  color: #5eead4;
+}
+
+html.dark-mode .category,
+body.dark-mode .category,
+html.dark-mode .detail-category,
+body.dark-mode .detail-category {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: #475569;
+  color: #f8fafc;
+}
+
+html.dark-mode .difficulty.easy,
+body.dark-mode .difficulty.easy {
+  color: #86efac;
+  background: rgba(16, 185, 129, 0.18);
+}
+
+html.dark-mode .difficulty.medium,
+body.dark-mode .difficulty.medium {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.17);
+}
+
+html.dark-mode .difficulty.hard,
+body.dark-mode .difficulty.hard {
+  color: #fda4af;
+  background: rgba(244, 63, 94, 0.17);
+}
+
+html.dark-mode .tutorial-modal,
+body.dark-mode .tutorial-modal,
+html.dark-mode .tutorial-info,
+body.dark-mode .tutorial-info,
+html.dark-mode .tutorial-tip,
+body.dark-mode .tutorial-tip {
+  background: #111827;
+  border-color: #334155;
+  color: #f8fafc;
+}
+
+html.dark-mode .tutorial-info h3,
+body.dark-mode .tutorial-info h3,
+html.dark-mode .tutorial-heading h2,
+body.dark-mode .tutorial-heading h2,
+html.dark-mode .tutorial-heading p,
+body.dark-mode .tutorial-heading p,
+html.dark-mode .tutorial-skip,
+body.dark-mode .tutorial-skip,
+html.dark-mode .tutorial-close,
+body.dark-mode .tutorial-close,
+html.dark-mode .tutorial-step-badge,
+body.dark-mode .tutorial-step-badge {
+  color: #f8fafc;
+}
+
+html.dark-mode .tutorial-info,
+body.dark-mode .tutorial-info,
+html.dark-mode .tutorial-tip,
+body.dark-mode .tutorial-tip,
+html.dark-mode .tutorial-nav-btn,
+body.dark-mode .tutorial-nav-btn {
+  border-color: #475569;
+}
+
+html.dark-mode .tutorial-next-btn,
+body.dark-mode .tutorial-next-btn,
+html.dark-mode .filter-chip.active,
+body.dark-mode .filter-chip.active,
+html.dark-mode .primary-btn,
+body.dark-mode .primary-btn,
+html.dark-mode .primary-action-btn,
+body.dark-mode .primary-action-btn,
+html.dark-mode .complete-routine-button,
+body.dark-mode .complete-routine-button,
+html.dark-mode .motivation-action,
+body.dark-mode .motivation-action {
+  background: #0f766e;
+  color: #f8fafc;
+}
+
+html.dark-mode .notification,
+body.dark-mode .notification {
+  background: #0f172a;
+  border-color: #334155;
+  color: #f8fafc;
+}

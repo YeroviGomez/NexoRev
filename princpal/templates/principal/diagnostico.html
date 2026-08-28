@@ -1,4 +1,13 @@
 <section class="app-view" id="diagnosticoView" data-view="diagnostico">
+  {% if usuario and usuario.role == 'doctor' %}
+    <header class="page-head compact">
+      <h1>Expediente del paciente</h1>
+      <p>Consulta el progreso, estado, notas y sesiones del paciente seleccionado.</p>
+    </header>
+    <div class="doctor-record-view panel" id="doctorRecordView">
+      <p>Selecciona un paciente desde el inicio para consultar su expediente.</p>
+    </div>
+  {% else %}
   <header class="page-head compact">
     <h1>Formulario de Diagnostico</h1>
     <p>Completa tu evaluacion para registrar como va tu recuperacion.</p>
@@ -58,6 +67,7 @@
         <li class="{{ message.tags }}">{{ message }}</li>
       {% endfor %}
     </ul>
+  {% endif %}
   {% endif %}
 
   <script>

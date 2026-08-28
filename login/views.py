@@ -8,8 +8,17 @@ from django.views.decorators.cache import cache_control
 from datetime import timedelta
 from crear_cuenta.models import Usuario
 from .models import LoginAttempt, TwoFactorCode
+import logging
 import random
 import string
+
+logger = logging.getLogger('nexorev.auth')
+
+
+def log_verification_code(label, email, code):
+    message = f'[Nexo ReV] {label} para {email}: {code}'
+    print(message, flush=True)
+    logger.warning(message)
 
 
 @cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
@@ -55,8 +64,7 @@ def login_view(request):
                 email=usuario.email,
                 code=TwoFactorCode.generate_code(),
             )
-            if settings.DEBUG:
-                print(f'[Nexo ReV] Código 2FA para {usuario.email}: {verification.code}')
+            log_verification_code('Código 2FA', usuario.email, verification.code)
             request.session['pending_2fa_email'] = usuario.email
             request.session['pending_2fa_id'] = verification.pk
             request.session.set_expiry(600)
@@ -106,7 +114,9 @@ def verify_2fa_view(request):
         verification.is_used = True
         verification.save(update_fields=['is_used'])
         request.session.flush()
+        usuario = Usuario.objects.filter(email=email).first()
         request.session['current_user'] = email
+        request.session['current_user_role'] = usuario.role if usuario else 'paciente'
         request.session['show_tutorial'] = True
         request.session['show_security_tips'] = True
         return redirect('principal')
@@ -155,9 +165,8 @@ def forgot_password_view(request):
         
         # Generar código de 6 dígitos
         code = ''.join(random.choices(string.digits, k=6))
-        if settings.DEBUG:
-            print(f'[Nexo ReV] Código de recuperación para {email}: {code}')
-        
+        log_verification_code('Código de recuperación', email, code)
+
         # Guardar en sesión con timestamp
         request.session['recovery_email'] = email
         request.session['recovery_code'] = code

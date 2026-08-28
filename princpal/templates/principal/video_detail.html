@@ -5,6 +5,30 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ video.title }} | Nexo ReV</title>
+  <script>
+    (() => {
+      const currentUser = "{{ current_user_email|default:''|escapejs }}".trim().toLowerCase();
+      const themePreferenceStorageKey = 'nexorev_theme_preferences';
+      const getPreferenceMap = (storageKey) => {
+        try {
+          const raw = localStorage.getItem(storageKey);
+          const parsed = raw ? JSON.parse(raw) : {};
+          return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch {
+          return {};
+        }
+      };
+      const themePreferences = getPreferenceMap(themePreferenceStorageKey);
+      const theme = currentUser && themePreferences[currentUser] === 'dark'
+        ? 'dark'
+        : localStorage.getItem('nexorev_dark_mode') === 'true' ? 'dark' : 'light';
+      document.documentElement.classList.toggle('dark-mode', theme === 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+      document.addEventListener('DOMContentLoaded', () => {
+        document.body.classList.toggle('dark-mode', theme === 'dark');
+      }, { once: true });
+    })();
+  </script>
   <link rel="stylesheet" href="{% static 'estilo.css' %}?v=8">
   {% if video.is_local %}<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css">{% endif %}
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
