@@ -1,12 +1,12 @@
 /* Punto de entrada de estilos de la aplicación principal. */
-@import url("base.css");
+@import url("base.css?v=3");
 @import url("layout.css");
 @import url("home.css");
-@import url("videos.css?v=8");
-@import url("historial.css");
-@import url("perfil.css");
+@import url("videos.css?v=10");
+@import url("historial.css?v=4");
+@import url("perfil.css?v=8");
 @import url("diagnostico.css");
 @import url("seguridad.css");
-@import url("tutorial.css");
+@import url("tutorial.css?v=3");
 @import url("responsive.css");
-@import url("dark-mode.css");
+@import url("dark-mode.css?v=10");

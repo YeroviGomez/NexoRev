@@ -1,10 +1,20 @@
 <section class="app-view" id="perfilView" data-view="perfil">
-  <header class="page-head compact profile-head">
-    <h1>Perfil de Usuario</h1>
-    <p>Administra tu información personal y preferencias</p>
+  <header class="page-head compact profile-head section-guide-head">
+    <div>
+      <h1>Perfil de Usuario</h1>
+      <p>Administra tu información personal y preferencias</p>
+    </div>
+    <button class="section-guide-trigger" type="button" data-tutorial-view="perfil">Guía de uso</button>
   </header>
 
-  <form class="profile-page">
+  <div class="profile-page">
+    <div class="profile-feedback" id="profileFeedback" role="status" aria-live="polite" hidden>
+      <span class="profile-feedback-icon" aria-hidden="true">✓</span>
+      <span class="profile-feedback-message" id="profileFeedbackMessage"></span>
+      <button class="profile-feedback-close" id="profileFeedbackClose" type="button" aria-label="Cerrar notificación">×</button>
+    </div>
+
+    <form class="profile-form" id="profileForm">
     <section class="profile-card">
       <h2>Información Personal</h2>
       <p>Actualiza tus datos personales</p>
@@ -20,28 +30,39 @@
           {% endif %}
         </div>
         <button class="outline-button" id="cambiarFotoButton" type="button">Cambiar foto</button>
+        <button class="outline-button" id="resetAvatarButton" type="button" {% if not usuario.foto_perfil %}disabled{% endif %}>Restablecer</button>
         <input id="fotoInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden>
       </div>
+      <p class="avatar-sync-help">La foto y su encuadre se guardan en tu cuenta y estarán disponibles en tus otros dispositivos.</p>
 
       <div class="profile-fields">
         <label>
           <span>Nombre completo</span>
-          <input type="text" value="{{ usuario.nombre|default:'Juan Pérez' }}">
+          <input id="profileName" type="text" value="{{ usuario.nombre|default:'' }}" required minlength="3" maxlength="150">
         </label>
         <label>
           <span>Correo electrónico</span>
-          <input type="email" value="{{ usuario.email|default:current_user_email|default:'juan@ejemplo.com' }}">
+          <input id="profileEmail" type="email" value="{{ usuario.email|default:current_user_email }}" required maxlength="254">
         </label>
         <label>
           <span>Teléfono</span>
-          <input type="tel" value="+503 1234-5678">
+          <input id="profilePhone" type="tel" value="{{ paciente.telefono|default:usuario.telefono|default:'' }}" maxlength="20">
         </label>
         <label>
           <span>Edad</span>
-          <input type="number" value="35">
+          <input type="number" value="35" disabled>
         </label>
       </div>
+
+      <button class="save-button" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+          <path d="M17 21v-8H7v8M7 3v5h8" />
+        </svg>
+        Guardar cambios
+      </button>
     </section>
+    </form>
 
     <section class="profile-card">
       <h2>Preferencias</h2>
@@ -50,7 +71,7 @@
       <div class="preference-row">
         <div>
           <h3>Modo oscuro</h3>
-          <p>Activa el modo oscuro para reducir la fatiga visual</p>
+          <p>Activa el modo oscuro para reducir la fatiga visual. Se aplica al instante.</p>
         </div>
         <label class="mini-switch" aria-label="Modo oscuro">
           <input type="checkbox">
@@ -67,6 +88,16 @@
           <option value="large">Grande</option>
           <option value="xlarge">Muy grande</option>
         </select>
+      </div>
+      <div class="preference-row">
+        <div>
+          <h3 id="motionPreferenceLabel">Animaciones</h3>
+          <p>Desactiva los movimientos y las transiciones de la interfaz.</p>
+        </div>
+        <label class="mini-switch" aria-label="Desactivar animaciones">
+          <input id="motionPreferenceToggle" type="checkbox" aria-labelledby="motionPreferenceLabel">
+          <span></span>
+        </label>
       </div>
       <div class="preference-row">
         <div>
@@ -105,19 +136,19 @@
       <div class="password-fields">
         <label>
           <span>Contraseña actual</span>
-          <input type="password">
+          <input id="currentPassword" type="password" autocomplete="current-password">
         </label>
         <label>
           <span>Nueva contraseña</span>
-          <input type="password">
+          <input id="newPassword" type="password" autocomplete="new-password">
         </label>
         <label>
           <span>Confirmar nueva contraseña</span>
-          <input type="password">
+          <input id="confirmPassword" type="password" autocomplete="new-password">
         </label>
       </div>
 
-      <button class="wide-outline-button" type="button">
+      <button class="wide-outline-button" id="changePasswordButton" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <rect x="5" y="11" width="14" height="10" rx="2" />
           <path d="M8 11V8a4 4 0 0 1 8 0v3" />
@@ -126,12 +157,33 @@
       </button>
     </section>
 
-    <button class="save-button" type="button">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
-        <path d="M17 21v-8H7v8M7 3v5h8" />
-      </svg>
-      Guardar cambios
-    </button>
-  </form>
+  </div>
+
+  <section class="avatar-editor-overlay" id="avatarEditor" role="dialog" aria-modal="true" aria-labelledby="avatarEditorTitle" hidden>
+    <div class="avatar-editor">
+      <header class="avatar-editor-header">
+        <div>
+          <h2 id="avatarEditorTitle">Ajustar foto de perfil</h2>
+          <p>Arrastra la imagen para encuadrarla y ajusta el zoom.</p>
+        </div>
+        <button class="avatar-editor-close" id="cancelAvatarEdit" type="button" aria-label="Cancelar">×</button>
+      </header>
+
+      <div class="avatar-crop-frame" id="avatarCropFrame">
+        <img id="avatarCropImage" alt="Vista previa para recortar" draggable="false">
+        <span class="avatar-crop-guide" aria-hidden="true"></span>
+      </div>
+
+      <label class="avatar-zoom-control" for="avatarZoom">
+        <span>Zoom</span>
+        <input id="avatarZoom" type="range" min="1" max="3" step="0.01" value="1">
+      </label>
+
+      <p class="avatar-editor-error" id="avatarEditorError" role="alert" hidden></p>
+      <footer class="avatar-editor-actions">
+        <button class="outline-button" id="cancelAvatarEditButton" type="button">Cancelar</button>
+        <button class="outline-button" id="acceptAvatarEdit" type="button">Aceptar</button>
+      </footer>
+    </div>
+  </section>
 </section>

@@ -9,19 +9,6 @@
     (() => {
       const currentUser = "{{ current_user_email|default:''|escapejs }}".trim().toLowerCase();
       const currentUserStorageKey = 'nexorev_current_user';
-      const themePreferenceStorageKey = 'nexorev_theme_preferences';
-      const fontSizePreferenceStorageKey = 'nexorev_font_size_preferences';
-      const allowedFontSizes = new Set(['normal', 'large', 'xlarge']);
-
-      const getPreferenceMap = (storageKey) => {
-        try {
-          const raw = localStorage.getItem(storageKey);
-          const parsed = raw ? JSON.parse(raw) : {};
-          return parsed && typeof parsed === 'object' ? parsed : {};
-        } catch {
-          return {};
-        }
-      };
 
       if (currentUser) {
         try {
@@ -29,18 +16,14 @@
         } catch {}
       }
 
-      const themePreferences = getPreferenceMap(themePreferenceStorageKey);
-      const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
-      const theme = currentUser && themePreferences[currentUser] === 'dark'
-        ? 'dark'
-        : localStorage.getItem('nexorev_dark_mode') === 'true' ? 'dark' : 'light';
-      const fontSize = currentUser && allowedFontSizes.has(fontSizePreferences[currentUser])
-        ? fontSizePreferences[currentUser]
-        : 'normal';
+      const theme = "{{ usuario.modo_oscuro|yesno:'dark,light' }}";
+      const fontSize = "{{ usuario.tamano_letra|default:'normal'|escapejs }}";
+      const animationsDisabled = {{ usuario.desactivar_animaciones|yesno:"true,false" }};
 
       document.documentElement.classList.toggle('dark-mode', theme === 'dark');
       document.documentElement.setAttribute('data-theme', theme);
       document.documentElement.setAttribute('data-font-size', fontSize);
+      document.documentElement.setAttribute('data-motion', animationsDisabled ? 'off' : 'on');
       document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.toggle('dark-mode', theme === 'dark');
       }, { once: true });
@@ -55,11 +38,11 @@
       }
     });
   </script>
-  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=7">
+  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=35">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
-<body class="{% if show_tutorial %}tutorial-open{% endif %}" data-current-user="{{ current_user_email|default:''|escapejs }}" data-initial-view="{{ active_view|default:'inicio' }}">
+<body class="{% if usuario.modo_oscuro %}dark-mode{% endif %}" data-current-user="{{ current_user_email|default:''|escapejs }}" data-current-user-role="{{ usuario.role|default:''|escapejs }}" data-user-theme="{{ usuario.modo_oscuro|yesno:'dark,light' }}" data-user-font-size="{{ usuario.tamano_letra|default:'normal' }}" data-user-motion-disabled="{{ usuario.desactivar_animaciones|yesno:'true,false' }}" data-initial-view="{{ active_view|default:'inicio' }}">
   {% include "principal/sidebar.html" %}
 
   <main class="app-shell">
@@ -74,6 +57,8 @@
   {% include "principal/tutorial.html" %}
   {% include "principal/security_tips.html" %}
 
-  <script src="{% static 'princpal/js/principal.js' %}?v=5" defer></script>
+  {% include "principal/scroll_to_top.html" %}
+
+  <script src="{% static 'princpal/js/principal.js' %}?v=31" defer></script>
 </body>
 </html>

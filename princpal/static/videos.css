@@ -97,7 +97,26 @@
 .video-open-link:hover { text-decoration: underline; }
 
 .video-detail-shell { width: min(1180px, calc(100% - 2rem)); margin: 0 auto; padding: 2rem 0 4rem; }
+.video-detail-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .video-back-link { color: var(--teal); font-weight: 700; text-decoration: none; }
+.video-guide-trigger { min-height: 2.5rem; padding: 0.45rem 0.9rem; border: 1px solid var(--teal); border-radius: 0.55rem; color: var(--teal); background: var(--surface); font: inherit; font-weight: 700; cursor: pointer; }
+.video-guide-trigger:hover { color: #ffffff; background: var(--teal); }
+.video-guide-dialog:not([open]) { display: none !important; }
+.video-guide-dialog { width: min(520px, calc(100vw - 2rem)); max-width: none; max-height: calc(100vh - 2rem); margin: auto; padding: 0; overflow: visible; border: 0; background: transparent; color: inherit; }
+.video-guide-dialog::backdrop { background: rgba(3, 10, 24, 0.68); }
+.video-guide-card { padding: 1.5rem; border: 1px solid #c8e9e4; border-radius: 1rem; background: var(--surface); color: var(--ink); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32); }
+.video-guide-header { display: flex; align-items: center; justify-content: space-between; }
+.video-guide-card h2 { margin: 1rem 0 0; font-size: 1.45rem; }
+.video-guide-card > p { min-height: 4.5rem; margin: 0.65rem 0 0; color: var(--muted); line-height: 1.55; }
+.video-guide-actions { display: flex; justify-content: space-between; gap: 0.75rem; margin-top: 1.25rem; }
+.video-guide-actions button { min-height: 2.7rem; padding: 0.45rem 1rem; border-radius: 0.6rem; font: inherit; font-weight: 700; cursor: pointer; }
+.video-guide-actions .tutorial-nav-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.video-guide-actions .tutorial-next-btn { border: 0; background: var(--dark); color: #ffffff; }
+.video-guide-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 560px) {
+  .video-guide-actions { flex-wrap: wrap; }
+  .video-guide-actions button { flex: 1 1 8rem; }
+}
 .video-detail-heading { max-width: 960px; margin: 2rem auto 1.25rem; display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
 .video-detail-kicker { color: var(--teal); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
 .video-detail-heading h1, .recommendations-heading h2 { margin: 0.35rem 0 0; color: var(--ink); }
@@ -158,6 +177,8 @@
 	.video-upload-form textarea { grid-column: 1; }
 	.video-detail-shell { padding-top: 1.25rem; }
 	.video-detail-heading, .recommendations-heading { align-items: flex-start; flex-direction: column; }
+	.video-detail-actions { align-items: flex-start; flex-direction: column; }
+	.video-guide-dialog { width: calc(100vw - 2rem); }
 	.recommendations-carousel { padding-right: 2rem; }
 	.recommendation-card { flex-basis: min(300px, 82vw); }
 	.featured-zone-heading, .featured-video-card { display: flex; align-items: stretch; flex-direction: column; }

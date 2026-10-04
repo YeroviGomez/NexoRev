@@ -1,11 +1,75 @@
 <section class="app-view" id="historialView" data-view="historial">
   <div class="history-panel">
-    <header class="page-head compact"><h1>Historial</h1><p>Tu progreso de rehabilitación</p></header>
-    <div class="progress-summary"><strong id="completedRoutines" data-server-count="{{ completed_history|length }}">{{ completed_history|length }}</strong><span>rutinas completadas</span></div>
-    <ul class="history-list" id="historyList" data-server-history="true">
+    <header class="page-head compact section-guide-head">
+      <div><h1>Historial</h1><p>Consulta tus videos vistos y completados</p></div>
+      <button class="section-guide-trigger" type="button" data-tutorial-view="historial">Guía de uso</button>
+    </header>
+    <div class="history-tabs" role="tablist" aria-label="Tipo de historial">
+      <button class="history-tab is-active" id="viewedVideosTab" type="button" role="tab" aria-selected="true" aria-controls="viewedVideosPanel" data-history-tab="viewed">Videos vistos</button>
+      <button class="history-tab" id="completedVideosTab" type="button" role="tab" aria-selected="false" aria-controls="completedVideosPanel" data-history-tab="completed">Rutinas completadas</button>
+    </div>
+    <section class="history-section" id="viewedVideosPanel" role="tabpanel" aria-labelledby="viewedVideosTab" data-history-panel="viewed">
+      <h2 id="recentVideosTitle">Últimos videos vistos</h2>
+      <ul class="history-list recent-videos-list" id="recentVideosList">
+        {% for item in recent_videos %}
+          <li class="history-video-item">
+            <a class="history-video-thumbnail" href="{% url 'video_detail' item.catalog_index %}" aria-label="Volver a ver {{ item.title }}">
+              {% if item.preview_image %}
+                <img src="{{ item.preview_image }}" alt="Miniatura de {{ item.title }}" loading="lazy">
+              {% else %}
+                <span aria-hidden="true">▶</span>
+              {% endif %}
+            </a>
+            <div class="history-video-copy">
+              <a class="history-video-title" href="{% url 'video_detail' item.catalog_index %}">{{ item.title }}</a>
+              <time datetime="{{ item.viewed_at|date:'c' }}">Visto el {{ item.viewed_at|date:"d/m/Y H:i" }}</time>
+            </div>
+            <a class="history-replay-link" href="{% url 'video_detail' item.catalog_index %}">Volver a ver</a>
+          </li>
+        {% empty %}
+          <li class="history-empty">Aún no has visto videos.</li>
+        {% endfor %}
+      </ul>
+      <nav class="history-pagination" aria-label="Páginas de videos vistos" data-history-pagination="viewed" data-page="{{ recent_history_pagination.page }}" data-has-previous="{{ recent_history_pagination.has_previous|yesno:'true,false' }}" data-has-next="{{ recent_history_pagination.has_next|yesno:'true,false' }}">
+        <button class="history-page-button" type="button" data-page-direction="-1" {% if not recent_history_pagination.has_previous %}disabled{% endif %}>Anterior</button>
+        <span class="history-page-number">Página {{ recent_history_pagination.page }}</span>
+        <button class="history-page-button" type="button" data-page-direction="1" {% if not recent_history_pagination.has_next %}disabled{% endif %}>Siguiente</button>
+      </nav>
+    </section>
+    <section class="history-section" id="completedVideosPanel" role="tabpanel" aria-labelledby="completedVideosTab" data-history-panel="completed" hidden>
+      <h2 id="completedRoutinesTitle">Rutinas completadas</h2>
+      <div class="progress-summary"><strong id="completedRoutines" data-server-count="{{ completed_event_count }}">{{ completed_event_count }}</strong><span>rutinas completadas</span></div>
+      <ul class="history-list" id="historyList" data-server-history="true">
       {% for item in completed_history %}
-        <li><span>{{ item.title }}</span><time>{{ item.completed_at|date:"d/m/Y H:i" }} · Completado</time></li>
-      {% empty %}<li>Aún no has completado rutinas.</li>{% endfor %}
-    </ul>
+        <li class="history-video-item">
+          {% if item.catalog_index != None %}
+            <a class="history-video-thumbnail" href="{% url 'video_detail' item.catalog_index %}" aria-label="Volver a ver {{ item.title }}">
+          {% else %}
+            <span class="history-video-thumbnail" aria-hidden="true">
+          {% endif %}
+            {% if item.preview_image %}
+              <img src="{{ item.preview_image }}" alt="Miniatura de {{ item.title }}" loading="lazy">
+            {% else %}
+              <span aria-hidden="true">▶</span>
+            {% endif %}
+          {% if item.catalog_index != None %}</a>{% else %}</span>{% endif %}
+          <div class="history-video-copy">
+            {% if item.catalog_index != None %}
+              <a class="history-video-title" href="{% url 'video_detail' item.catalog_index %}">{{ item.title }}</a>
+            {% else %}
+              <span class="history-video-title">{{ item.title }}</span>
+            {% endif %}
+            <time>{{ item.completed_at|date:"d/m/Y H:i" }} · Completado</time>
+          </div>
+          {% if item.catalog_index != None %}<a class="history-replay-link" href="{% url 'video_detail' item.catalog_index %}">Volver a ver</a>{% endif %}
+        </li>
+        {% empty %}<li class="history-empty">Aún no has completado videos.</li>{% endfor %}
+      </ul>
+      <nav class="history-pagination" aria-label="Páginas de videos completados" data-history-pagination="completed" data-page="{{ completed_history_pagination.page }}" data-has-previous="{{ completed_history_pagination.has_previous|yesno:'true,false' }}" data-has-next="{{ completed_history_pagination.has_next|yesno:'true,false' }}">
+        <button class="history-page-button" type="button" data-page-direction="-1" {% if not completed_history_pagination.has_previous %}disabled{% endif %}>Anterior</button>
+        <span class="history-page-number">Página {{ completed_history_pagination.page }}</span>
+        <button class="history-page-button" type="button" data-page-direction="1" {% if not completed_history_pagination.has_next %}disabled{% endif %}>Siguiente</button>
+      </nav>
+    </section>
   </div>
 </section>

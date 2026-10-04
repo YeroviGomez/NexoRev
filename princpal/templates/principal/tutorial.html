@@ -1,7 +1,24 @@
-<section class="tutorial-overlay {% if not show_tutorial %}hidden{% endif %}" id="tutorialOverlay" aria-modal="true" role="dialog" aria-labelledby="tutorialTitle">
+<dialog class="tutorial-prompt-dialog hidden" id="tutorialPrompt" aria-labelledby="tutorialPromptTitle">
+  <article class="tutorial-prompt">
+    <div class="tutorial-icon" aria-hidden="true">
+      <svg viewBox="0 0 64 64"><path d="M10 34h12l7-24 11 44 7-24h7" /></svg>
+    </div>
+    <header class="tutorial-heading">
+      <h2 id="tutorialPromptTitle">¿Qué guía quieres consultar?</h2>
+      <p id="tutorialPromptDescription">Elige una guía para conocer las secciones y funciones de Nexo ReV. Puedes volver a abrirla en cualquier momento desde “Guía de uso”.</p>
+    </header>
+    <footer class="tutorial-prompt-actions">
+      <button class="tutorial-nav-btn" id="tutorialPromptSkip" type="button">Ahora no</button>
+      <button class="tutorial-nav-btn" id="tutorialPromptBasic" type="button">Guía rápida</button>
+      <button class="tutorial-next-btn" id="tutorialPromptPro" type="button">Guía completa</button>
+    </footer>
+  </article>
+</dialog>
+
+<dialog class="tutorial-overlay tutorial-basic-dialog hidden" id="tutorialOverlay" aria-labelledby="tutorialTitle">
   <article class="tutorial-modal">
     <div class="tutorial-topbar">
-      <span class="tutorial-step-badge" id="tutorialStepBadge">Paso 1 de 6</span>
+      <span class="tutorial-step-badge" id="tutorialStepBadge">Paso 1 de 7</span>
       <button class="tutorial-skip" id="tutorialSkip" type="button">Saltar tutorial</button>
       <button class="tutorial-close" id="tutorialClose" type="button" aria-label="Cerrar tutorial">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -50,4 +67,27 @@
       </button>
     </footer>
   </article>
-</section>
+</dialog>
+
+<dialog class="pro-tour hidden" id="proTour" aria-labelledby="proTourTitle">
+  <div class="pro-tour-shield" aria-hidden="true"></div>
+  <svg class="pro-tour-shade" id="proTourShade" aria-hidden="true">
+    <defs>
+      <mask id="proTourMask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse">
+        <rect id="proTourMaskBackground" fill="white" />
+        <rect id="proTourHole" x="0" y="0" width="0" height="0" rx="14" fill="black" />
+      </mask>
+    </defs>
+    <rect width="100%" height="100%" fill="rgba(3, 10, 24, 0.76)" mask="url(#proTourMask)" />
+  </svg>
+  <article class="pro-tour-card">
+    <span class="tutorial-step-badge" id="proTourStepBadge">Paso 1 de 6</span>
+    <h2 id="proTourTitle" aria-live="polite"></h2>
+    <p id="proTourDescription"></p>
+    <footer class="pro-tour-actions">
+      <button class="tutorial-nav-btn" id="proTourClose" type="button">Salir</button>
+      <button class="tutorial-nav-btn" id="proTourPrev" type="button">Anterior</button>
+      <button class="tutorial-next-btn" id="proTourNext" type="button">Siguiente</button>
+    </footer>
+  </article>
+</dialog>

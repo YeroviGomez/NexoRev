@@ -4,23 +4,65 @@ from django.http import Http404, StreamingHttpResponse
 from django.conf import settings
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import cache_control
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
-from django.db.models import Count
+from django.db import transaction
+from django.db.models import Count, Max
 from django.utils import timezone
+from django.urls import reverse
 from functools import wraps
 from pathlib import Path
 import random
 import re
 import mimetypes
+import logging
 import os
 import json
 import shutil
 import subprocess
 from urllib.parse import parse_qs, urlparse
-from .forms import DiagnosticoForm, FotoPerfilForm, VideoUploadForm
+from .forms import DiagnosticoForm, FotoPerfilForm, ProfileUpdateForm, VideoUploadForm
 from .models import Diagnostico, Paciente, Video, VideoView
 
 from crear_cuenta.models import Usuario
+
+VIDEO_PAGE_SIZE = 8
+
+logger = logging.getLogger(__name__)
+
+
+def get_page_number(value):
+    try:
+        return max(int(value), 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def build_video_history_page(queryset, videos_by_id, date_field, page_number):
+    page_number = get_page_number(page_number)
+    total = queryset.count()
+    page_count = max((total + VIDEO_PAGE_SIZE - 1) // VIDEO_PAGE_SIZE, 1)
+    page_number = min(page_number, page_count)
+    start = (page_number - 1) * VIDEO_PAGE_SIZE
+    items = []
+
+    for item in queryset[start:start + VIDEO_PAGE_SIZE]:
+        video_index, video = videos_by_id[item['video_id']]
+        items.append({
+            'title': video['title'],
+            'video_id': item['video_id'],
+            'preview_image': video.get('preview_image', ''),
+            date_field: item['last_activity'],
+            'catalog_index': video_index,
+        })
+
+    return {
+        'items': items,
+        'count': total,
+        'page': page_number,
+        'has_previous': page_number > 1,
+        'has_next': start + VIDEO_PAGE_SIZE < total,
+    }
 
 
 def load_external_videos():
@@ -108,6 +150,44 @@ def load_videos():
     for index, video in enumerate(videos):
         video['catalog_index'] = index
     return videos
+
+
+def recent_video_history(videos, email, page_number=1):
+    videos_by_id = {
+        video['video_id']: (index, video)
+        for index, video in enumerate(videos)
+    }
+    recent_views = VideoView.objects.filter(
+        user_email=email,
+        video_id__in=videos_by_id,
+    ).values('video_id').annotate(
+        last_activity=Max('viewed_at'),
+    ).order_by('-last_activity', 'video_id')
+
+    return build_video_history_page(
+        recent_views,
+        videos_by_id,
+        'viewed_at',
+        page_number,
+    )
+
+
+def completed_video_history(videos_by_id, email, page_number=1):
+    completed_views = VideoView.objects.filter(
+        user_email=email,
+        completed=True,
+        completed_at__isnull=False,
+        video_id__in=videos_by_id,
+    ).values('video_id').annotate(
+        last_activity=Max('completed_at'),
+    ).order_by('-last_activity', 'video_id')
+
+    return build_video_history_page(
+        completed_views,
+        videos_by_id,
+        'completed_at',
+        page_number,
+    )
 
 
 def normalize_youtube_url(url):
@@ -285,8 +365,8 @@ def generate_hls(video):
 
 @require_login
 @cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
+@ensure_csrf_cookie
 def principal_view(request):
-    show_tutorial = request.session.pop('show_tutorial', False)
     show_security_tips = request.session.pop('show_security_tips', False)
     current_user_email = request.session.get('current_user', '')
     usuario = None
@@ -346,17 +426,26 @@ def principal_view(request):
     categories = ['Todas', 'Rodilla', 'Hombro', 'Espalda', 'Cuello', 'Tobillo', 'Cadera']
     videos.extend(load_videos())
     categories = ['Todas'] + list(dict.fromkeys(video['category'] for video in videos))
-    page_size = 6
+    page_size = VIDEO_PAGE_SIZE
     videos_page = videos[:page_size]
-    completed_videos = VideoView.objects.filter(user_email=current_user_email, completed=True, completed_at__isnull=False).order_by('-completed_at')[:20]
-    video_titles = {video['video_id']: video['title'] for video in videos}
-    completed_history = [
-        {'title': video_titles.get(item.video_id, 'Video de rehabilitación'), 'completed_at': item.completed_at}
-        for item in completed_videos
-    ]
+    videos_by_id = {video['video_id']: (index, video) for index, video in enumerate(videos)}
+    recent_history = recent_video_history(
+        videos,
+        current_user_email,
+        request.GET.get('viewed_page', 1),
+    )
+    completed_history = completed_video_history(
+        videos_by_id,
+        current_user_email,
+        request.GET.get('completed_page', 1),
+    )
+    completed_event_count = VideoView.objects.filter(
+        user_email=current_user_email,
+        completed=True,
+        completed_at__isnull=False,
+    ).count()
 
     return render(request, 'principal.html', {
-        'show_tutorial': show_tutorial,
         'show_security_tips': show_security_tips,
         'usuario': usuario,
         'paciente': paciente,
@@ -372,8 +461,42 @@ def principal_view(request):
         'form': form,
         'is_diagnostic_update': diagnostico is not None,
         'active_view': active_view,
-        'completed_history': completed_history,
+        'completed_history': completed_history['items'],
+        'completed_history_pagination': completed_history,
+        'completed_event_count': completed_event_count,
+        'recent_videos': recent_history['items'],
+        'recent_history_pagination': recent_history,
     })
+
+
+@require_login
+@require_POST
+def update_appearance_preference(request):
+    usuario = Usuario.objects.filter(email=request.session.get('current_user')).first()
+    if not usuario:
+        return JsonResponse({'success': False, 'error': 'Usuario no encontrado.'}, status=404)
+
+    try:
+        data = json.loads(request.body or b'{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'success': False, 'error': 'La solicitud no contiene datos válidos.'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'success': False, 'error': 'La solicitud no contiene datos válidos.'}, status=400)
+
+    preference = data.get('preference')
+    value = data.get('value')
+    if preference == 'modo_oscuro' and isinstance(value, bool):
+        field_name = 'modo_oscuro'
+    elif preference == 'tamano_letra' and isinstance(value, str) and value in {'normal', 'large', 'xlarge'}:
+        field_name = 'tamano_letra'
+    elif preference == 'desactivar_animaciones' and isinstance(value, bool):
+        field_name = 'desactivar_animaciones'
+    else:
+        return JsonResponse({'success': False, 'error': 'La preferencia no es válida.'}, status=400)
+
+    setattr(usuario, field_name, value)
+    usuario.save(update_fields=[field_name])
+    return JsonResponse({'success': True, 'preference': field_name, 'value': value})
 
 
 @require_login
@@ -560,8 +683,8 @@ def diagnostico_view(request, pk=None):
 def videos_page_view(request):
     videos = load_videos()
     page_number = max(int(request.GET.get('page', 1)), 1)
-    start = (page_number - 1) * 6
-    end = start + 6
+    start = (page_number - 1) * VIDEO_PAGE_SIZE
+    end = start + VIDEO_PAGE_SIZE
     return render(request, 'principal/partials/video_results.html', {
         'videos': videos[start:end],
         'videos_has_next': end < len(videos),
@@ -572,22 +695,52 @@ def videos_page_view(request):
 @require_login
 def history_view(request):
     videos = load_videos()
-    video_titles = {video['video_id']: video['title'] for video in videos}
-    completed_videos = VideoView.objects.filter(
-        user_email=request.session.get('current_user', ''),
+    videos_by_id = {video['video_id']: (index, video) for index, video in enumerate(videos)}
+    email = request.session.get('current_user', '')
+    completed_events = VideoView.objects.filter(
+        user_email=email,
         completed=True,
         completed_at__isnull=False,
-    ).order_by('-completed_at')[:20]
-    return JsonResponse({
-        'count': completed_videos.count(),
-        'items': [
+    )
+    completed_history = completed_video_history(
+        videos_by_id,
+        email,
+        request.GET.get('completed_page', 1),
+    )
+    recent_history = recent_video_history(
+        videos,
+        email,
+        request.GET.get('viewed_page', 1),
+    )
+    completed_video_ids = list(completed_events.values_list('video_id', flat=True).distinct())
+
+    def serialize_history_page(history_page, date_field):
+        serialized_items = [
             {
-                'title': video_titles.get(item.video_id, 'Video de rehabilitación'),
-                'video_id': item.video_id,
-                'completed_at': item.completed_at.strftime('%d/%m/%Y %H:%M'),
+                **item,
+                date_field: timezone.localtime(item[date_field]).strftime('%d/%m/%Y %H:%M'),
+                'replay_url': reverse('video_detail', args=[item['catalog_index']]),
             }
-            for item in completed_videos
-        ],
+            for item in history_page['items']
+        ]
+        return {
+            'items': serialized_items,
+            'count': history_page['count'],
+            'page': history_page['page'],
+            'has_previous': history_page['has_previous'],
+            'has_next': history_page['has_next'],
+        }
+
+    serialized_completed = serialize_history_page(completed_history, 'completed_at')
+    serialized_recent = serialize_history_page(recent_history, 'viewed_at')
+
+    return JsonResponse({
+        'count': completed_events.count(),
+        'completed_count': completed_history['count'],
+        'completed_video_ids': completed_video_ids,
+        'items': serialized_completed['items'],
+        'completed_videos': serialized_completed,
+        'recent_videos': serialized_recent,
     })
 
 
@@ -621,6 +774,7 @@ def video_detail_view(request, video_index):
         return redirect('principal')
 
     video = videos[video_index]
+    usuario = Usuario.objects.filter(email=request.session.get('current_user', '')).first()
     completed_today = VideoView.objects.filter(
         user_email=request.session.get('current_user', ''), video_id=video['video_id'],
         completed=True, completed_at__date=timezone.localdate(),
@@ -643,6 +797,7 @@ def video_detail_view(request, video_index):
         'video': video,
         'recommendations': recommendations,
         'current_user_email': request.session.get('current_user', ''),
+        'usuario': usuario,
         'completed_today': completed_today,
     })
 
@@ -696,6 +851,90 @@ def complete_video_view(request, video_index):
 
 @require_login
 @require_POST
+def update_profile_view(request):
+    usuario = Usuario.objects.filter(email=request.session.get('current_user')).first()
+    if not usuario:
+        return JsonResponse({'success': False, 'error': 'Usuario no encontrado.'}, status=404)
+
+    try:
+        data = json.loads(request.body or b'{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'success': False, 'error': 'La solicitud no contiene datos válidos.'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'success': False, 'error': 'La solicitud no contiene datos válidos.'}, status=400)
+
+    form = ProfileUpdateForm(data)
+    if not form.is_valid():
+        error = next(iter(form.errors.values()))[0]
+        return JsonResponse({'success': False, 'error': error}, status=400)
+
+    nombre = form.cleaned_data['nombre']
+    email = form.cleaned_data['email']
+    telefono = form.cleaned_data['telefono']
+    if Usuario.objects.exclude(pk=usuario.pk).filter(email=email).exists():
+        return JsonResponse({'success': False, 'error': 'Ya existe una cuenta con ese correo.'}, status=400)
+
+    correo_anterior = usuario.email
+    paciente = Paciente.objects.filter(usuario=usuario).first()
+    if paciente is None:
+        paciente = Paciente.objects.filter(email=correo_anterior).first()
+    if paciente and email != correo_anterior and Paciente.objects.exclude(pk=paciente.pk).filter(email=email).exists():
+        return JsonResponse({'success': False, 'error': 'Ese correo ya está asociado a otro paciente.'}, status=400)
+
+    with transaction.atomic():
+        usuario.nombre = nombre
+        usuario.email = email
+        usuario.telefono = telefono
+        usuario.save(update_fields=['nombre', 'email', 'telefono'])
+
+        if paciente:
+            paciente.nombre = nombre
+            paciente.email = email
+            paciente.telefono = telefono
+            paciente.save(update_fields=['nombre', 'email', 'telefono'])
+
+        if email != correo_anterior:
+            VideoView.objects.filter(user_email=correo_anterior).update(user_email=email)
+            request.session['current_user'] = email
+
+    return JsonResponse({'success': True, 'email': email})
+
+
+@require_login
+@require_POST
+def change_password_view(request):
+    usuario = Usuario.objects.filter(email=request.session.get('current_user')).first()
+    if not usuario:
+        return JsonResponse({'success': False, 'error': 'Usuario no encontrado.'}, status=404)
+
+    try:
+        data = json.loads(request.body or b'{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'success': False, 'error': 'La solicitud no contiene datos válidos.'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'success': False, 'error': 'La solicitud no contiene datos válidos.'}, status=400)
+
+    current_password = data.get('currentPassword')
+    new_password = data.get('newPassword')
+    confirm_password = data.get('confirmPassword')
+    if not all(isinstance(value, str) and value for value in (current_password, new_password, confirm_password)):
+        return JsonResponse({'success': False, 'error': 'Completa todos los campos de contraseña.'}, status=400)
+    if not usuario.check_password(current_password):
+        return JsonResponse({'success': False, 'error': 'La contraseña actual es incorrecta.'}, status=400)
+    if new_password != confirm_password:
+        return JsonResponse({'success': False, 'error': 'Las nuevas contraseñas no coinciden.'}, status=400)
+    if len(new_password) < 8:
+        return JsonResponse({'success': False, 'error': 'La nueva contraseña debe tener al menos 8 caracteres.'}, status=400)
+    if new_password == current_password:
+        return JsonResponse({'success': False, 'error': 'La nueva contraseña debe ser distinta de la actual.'}, status=400)
+
+    usuario.set_password(new_password)
+    usuario.save(update_fields=['password'])
+    return JsonResponse({'success': True})
+
+
+@require_login
+@require_POST
 def upload_profile_photo(request):
     usuario = Usuario.objects.filter(email=request.session.get('current_user')).first()
     if not usuario:
@@ -707,12 +946,43 @@ def upload_profile_photo(request):
         return JsonResponse({'success': False, 'error': error}, status=400)
 
     foto_anterior = usuario.foto_perfil
-    usuario.foto_perfil = form.cleaned_data['foto']
-    usuario.save(update_fields=['foto_perfil'])
-    if foto_anterior and foto_anterior.name != usuario.foto_perfil.name:
-        foto_anterior.delete(save=False)
+    try:
+        usuario.foto_perfil = form.cleaned_data['foto']
+        usuario.save(update_fields=['foto_perfil'])
+        foto_url = usuario.foto_perfil.url
+        if foto_anterior and foto_anterior.name != usuario.foto_perfil.name:
+            foto_anterior.delete(save=False)
+    except Exception:
+        logger.exception('No se pudo guardar la foto de perfil del usuario %s', usuario.pk)
+        return JsonResponse(
+            {'success': False, 'error': 'No se pudo guardar la foto. Inténtalo nuevamente.'},
+            status=500,
+        )
 
-    return JsonResponse({'success': True, 'foto_url': usuario.foto_perfil.url})
+    return JsonResponse({'success': True, 'foto_url': foto_url})
+
+
+@require_login
+@require_POST
+def reset_profile_photo(request):
+    usuario = Usuario.objects.filter(email=request.session.get('current_user')).first()
+    if not usuario:
+        return JsonResponse({'success': False, 'error': 'Usuario no encontrado.'}, status=404)
+
+    foto_anterior = usuario.foto_perfil
+    try:
+        usuario.foto_perfil = None
+        usuario.save(update_fields=['foto_perfil'])
+        if foto_anterior:
+            foto_anterior.delete(save=False)
+    except Exception:
+        logger.exception('No se pudo restablecer la foto de perfil del usuario %s', usuario.pk)
+        return JsonResponse(
+            {'success': False, 'error': 'No se pudo restablecer la foto. Inténtalo nuevamente.'},
+            status=500,
+        )
+
+    return JsonResponse({'success': True})
 
 
 @require_login

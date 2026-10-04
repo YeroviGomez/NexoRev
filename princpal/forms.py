@@ -4,6 +4,24 @@ from pathlib import Path
 from .models import Diagnostico, Video
 
 
+class ProfileUpdateForm(forms.Form):
+    nombre = forms.CharField(max_length=150, min_length=3, label='Nombre completo')
+    email = forms.EmailField(max_length=254, label='Correo electrónico')
+    telefono = forms.CharField(max_length=20, required=False, label='Teléfono')
+
+    def clean_nombre(self):
+        nombre = self.cleaned_data['nombre'].strip()
+        if len(nombre) < 3:
+            raise forms.ValidationError('Ingresa un nombre completo válido.')
+        return nombre
+
+    def clean_email(self):
+        return self.cleaned_data['email'].strip().lower()
+
+    def clean_telefono(self):
+        return self.cleaned_data['telefono'].strip()
+
+
 class FotoPerfilForm(forms.Form):
     foto = forms.ImageField(label='Foto de perfil')
 

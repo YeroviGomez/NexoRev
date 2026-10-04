@@ -21,6 +21,23 @@ def log_verification_code(label, email, code):
     logger.warning(message)
 
 
+def send_login_notification(usuario):
+    send_mail(
+        'Nuevo inicio de sesión - Nexo ReV',
+        (
+            f'Hola {usuario.nombre},\n\n'
+            'Se inició sesión en tu cuenta de Nexo ReV.\n\n'
+            'Si no reconoces esta actividad, te recomendamos cambiar tu '
+            'contraseña y contactar al equipo de soporte.\n\n'
+            'Saludos,\n'
+            'El equipo de Nexo ReV'
+        ),
+        settings.DEFAULT_FROM_EMAIL,
+        [usuario.email],
+        fail_silently=False,
+    )
+
+
 @cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
 def login_view(request):
     if request.session.get('current_user'):
@@ -117,8 +134,15 @@ def verify_2fa_view(request):
         usuario = Usuario.objects.filter(email=email).first()
         request.session['current_user'] = email
         request.session['current_user_role'] = usuario.role if usuario else 'paciente'
-        request.session['show_tutorial'] = True
         request.session['show_security_tips'] = True
+        if usuario:
+            try:
+                send_login_notification(usuario)
+            except Exception:
+                logger.exception(
+                    'No se pudo enviar la notificación de inicio de sesión a %s',
+                    email,
+                )
         return redirect('principal')
 
     return render(request, 'login/verify_2fa.html', context)
@@ -291,4 +315,3 @@ def verify_recovery_code(request):
             return render(request, 'login/verify_recovery_code.html', context)
     
     return render(request, 'login/verify_recovery_code.html', context)
-

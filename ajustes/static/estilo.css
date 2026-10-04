@@ -117,6 +117,15 @@ html {
   box-sizing: border-box;
 }
 
+html[data-motion="off"],
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;

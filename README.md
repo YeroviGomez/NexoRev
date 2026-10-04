@@ -7,13 +7,16 @@ crear entorno y activarlo
 instalar django, psycopg2-binary y Pillow
 clonar repositorio con git clone: url
 
-## Configuración del correo 2FA
+## Configuración del correo
 
-En desarrollo, si no se configura un correo, Django mostrará el código 2FA en
-la terminal donde se ejecuta el servidor.
+En desarrollo, si no se configuran credenciales de correo, Django usa el
+backend de consola: el código 2FA y el aviso de inicio de sesión se muestran
+como correos en la terminal donde se ejecuta el servidor. El aviso se envía
+únicamente después de completar correctamente la verificación 2FA.
 
-Para enviar códigos reales por Gmail, usa una contraseña de aplicación y define
-estas variables en PowerShell antes de iniciar Django:
+Para enviar correos reales por Gmail, usa una contraseña de aplicación y define
+estas variables en PowerShell antes de iniciar Django. Al detectar ambas
+credenciales, Django usa SMTP automáticamente:
 
 ```powershell
 $env:EMAIL_HOST_USER = 'tu-correo@gmail.com'

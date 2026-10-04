@@ -1,9 +1,22 @@
 html.dark-mode, body.dark-mode { background: #050510; color: #f8fafc; }
+html.dark-mode .profile-feedback, body.dark-mode .profile-feedback { background: #15803d; border-color: #86efac; color: #ffffff; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.65); }
+html.dark-mode .profile-feedback-icon, body.dark-mode .profile-feedback-icon { background: rgba(255, 255, 255, 0.18); color: #ffffff; }
+html.dark-mode .profile-feedback-close, body.dark-mode .profile-feedback-close { color: #ffffff; }
+html.dark-mode .profile-feedback-close:hover, body.dark-mode .profile-feedback-close:hover { background: rgba(255, 255, 255, 0.18); }
+html.dark-mode .profile-fields label, body.dark-mode .profile-fields label, html.dark-mode .password-fields label, body.dark-mode .password-fields label { color: #e2e8f0; }
+html.dark-mode .profile-fields input, body.dark-mode .profile-fields input, html.dark-mode .password-fields input, body.dark-mode .password-fields input { background: #292936; border: 1px solid #55556b; color: #f8fafc; }
+html.dark-mode .profile-fields input::placeholder, body.dark-mode .profile-fields input::placeholder, html.dark-mode .password-fields input::placeholder, body.dark-mode .password-fields input::placeholder { color: #a1a1b5; }
+html.dark-mode .profile-fields input:focus-visible, body.dark-mode .profile-fields input:focus-visible, html.dark-mode .password-fields input:focus-visible, body.dark-mode .password-fields input:focus-visible { outline: 2px solid #2dd4bf; outline-offset: 2px; border-color: #2dd4bf; }
+html.dark-mode .avatar-editor, body.dark-mode .avatar-editor { background: #1a1a24; border-color: #3a3a4e; color: #f8fafc; }
+html.dark-mode .avatar-editor-header p, body.dark-mode .avatar-editor-header p { color: #cbd5e1; }
+html.dark-mode .avatar-editor-close, body.dark-mode .avatar-editor-close { background: #292936; border-color: #55556b; color: #f8fafc; }
+html.dark-mode .avatar-zoom-control, body.dark-mode .avatar-zoom-control { color: #f8fafc; }
+html.dark-mode .avatar-editor-error, body.dark-mode .avatar-editor-error { color: #fca5a5; }
 html.dark-mode, body.dark-mode, html.dark-mode button, body.dark-mode button, html.dark-mode input, body.dark-mode input, html.dark-mode textarea, body.dark-mode textarea, html.dark-mode select, body.dark-mode select, html.dark-mode label, body.dark-mode label, html.dark-mode span, body.dark-mode span, html.dark-mode a, body.dark-mode a { color: #f8fafc; }
 html.dark-mode .app-shell, body.dark-mode .app-shell, html.dark-mode .panel, body.dark-mode .panel, html.dark-mode .profile-card, body.dark-mode .profile-card, html.dark-mode .video-card, body.dark-mode .video-card, html.dark-mode .quick-link, body.dark-mode .quick-link { background: #1a1a24; border-color: #2a2a3e; }
 html.dark-mode .app-sidebar, body.dark-mode .app-sidebar { background: #1a1a24; border-right-color: #2a2a3e; }
 html.dark-mode .sidebar-link:hover, body.dark-mode .sidebar-link:hover, html.dark-mode .sidebar-link.active, body.dark-mode .sidebar-link.active { background: #007f77; color: #f8fafc; }
-html.dark-mode .tutorial-modal, body.dark-mode .tutorial-modal { background: #1a1a24; border-color: #2a2a3e; color: #f8fafc; }
+html.dark-mode .tutorial-modal, body.dark-mode .tutorial-modal, html.dark-mode .tutorial-prompt, body.dark-mode .tutorial-prompt { background: #1a1a24; border-color: #2a2a3e; color: #f8fafc; }
 html.dark-mode .mini-switch span, body.dark-mode .mini-switch span { background: #2a2a3e; }
 html.dark-mode .mini-switch input:checked + span, body.dark-mode .mini-switch input:checked + span { background: #009688; }
 html.dark-mode button, body.dark-mode button, html.dark-mode a, body.dark-mode a { color: #f8fafc; }
@@ -510,6 +523,10 @@ body.dark-mode .video-detail-page {
 
 html.dark-mode .video-detail-shell .video-back-link,
 body.dark-mode .video-detail-shell .video-back-link,
+html.dark-mode .video-guide-trigger,
+body.dark-mode .video-guide-trigger,
+html.dark-mode .video-detail-actions .video-guide-trigger,
+body.dark-mode .video-detail-actions .video-guide-trigger,
 html.dark-mode .video-detail-shell .history-link,
 body.dark-mode .video-detail-shell .history-link,
 html.dark-mode .video-detail-shell .video-open-link,
@@ -519,6 +536,33 @@ body.dark-mode .featured-link,
 html.dark-mode .recommendation-play,
 body.dark-mode .recommendation-play {
   color: #5eead4;
+}
+
+html.dark-mode .video-detail-actions .video-guide-trigger,
+body.dark-mode .video-detail-actions .video-guide-trigger {
+  background: #111827;
+  border-color: #0f766e;
+}
+
+html.dark-mode .video-detail-shell .carousel-button,
+body.dark-mode .video-detail-shell .carousel-button {
+  border-color: #2dd4bf;
+  color: #f8fafc;
+  background: #0f766e;
+}
+
+html.dark-mode .video-detail-shell .carousel-button:hover:not(:disabled),
+body.dark-mode .video-detail-shell .carousel-button:hover:not(:disabled) {
+  border-color: #5eead4;
+  color: #ffffff;
+  background: #115e59;
+}
+
+html.dark-mode .video-detail-shell .carousel-button:disabled,
+body.dark-mode .video-detail-shell .carousel-button:disabled {
+  color: #cbd5e1;
+  background: #334155;
+  opacity: 0.65;
 }
 
 html.dark-mode .category,
@@ -550,6 +594,10 @@ body.dark-mode .difficulty.hard {
 
 html.dark-mode .tutorial-modal,
 body.dark-mode .tutorial-modal,
+html.dark-mode .tutorial-prompt,
+body.dark-mode .tutorial-prompt,
+html.dark-mode .pro-tour-card,
+body.dark-mode .pro-tour-card,
 html.dark-mode .tutorial-info,
 body.dark-mode .tutorial-info,
 html.dark-mode .tutorial-tip,
@@ -561,6 +609,8 @@ body.dark-mode .tutorial-tip {
 
 html.dark-mode .tutorial-info h3,
 body.dark-mode .tutorial-info h3,
+html.dark-mode .pro-tour-card h2,
+body.dark-mode .pro-tour-card h2,
 html.dark-mode .tutorial-heading h2,
 body.dark-mode .tutorial-heading h2,
 html.dark-mode .tutorial-heading p,
@@ -576,10 +626,14 @@ body.dark-mode .tutorial-step-badge {
 
 html.dark-mode .tutorial-info,
 body.dark-mode .tutorial-info,
+html.dark-mode .pro-tour-card p,
+body.dark-mode .pro-tour-card p,
 html.dark-mode .tutorial-tip,
 body.dark-mode .tutorial-tip,
 html.dark-mode .tutorial-nav-btn,
-body.dark-mode .tutorial-nav-btn {
+body.dark-mode .tutorial-nav-btn,
+html.dark-mode .pro-tour-actions .tutorial-nav-btn,
+body.dark-mode .pro-tour-actions .tutorial-nav-btn {
   border-color: #475569;
 }
 
@@ -604,4 +658,39 @@ body.dark-mode .notification {
   background: #0f172a;
   border-color: #334155;
   color: #f8fafc;
+}
+
+html.dark-mode .load-more-videos,
+body.dark-mode .load-more-videos {
+  border-color: #2dd4bf;
+  color: #f8fafc;
+  background: #0f766e;
+}
+
+html.dark-mode .load-more-videos:hover,
+body.dark-mode .load-more-videos:hover {
+  border-color: #5eead4;
+  color: #ffffff;
+  background: #115e59;
+}
+
+html.dark-mode .history-tab,
+body.dark-mode .history-tab,
+html.dark-mode .history-page-button,
+body.dark-mode .history-page-button {
+  border-color: #2dd4bf;
+  color: #f8fafc;
+  background: #0f172a;
+}
+
+html.dark-mode .history-tab.is-active,
+body.dark-mode .history-tab.is-active {
+  color: #ffffff;
+  background: #0f766e;
+}
+
+html.dark-mode .history-page-button:hover:not(:disabled),
+body.dark-mode .history-page-button:hover:not(:disabled) {
+  color: #ffffff;
+  background: #115e59;
 }

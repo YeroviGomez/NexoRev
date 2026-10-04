@@ -12,6 +12,10 @@ urlpatterns = [
     path('api/videos/page/', views.videos_page_view, name='videos_page'),
     path('api/history/', views.history_view, name='history'),
     path('api/videos/surprise/', views.surprise_video_view, name='surprise_video'),
+    path('api/update-profile/', views.update_profile_view, name='update_profile'),
+    path('api/update-appearance-preference/', views.update_appearance_preference, name='update_appearance_preference'),
+    path('api/change-password/', views.change_password_view, name='change_password'),
     path('api/upload-photo/', views.upload_profile_photo, name='upload_profile_photo'),
+    path('api/reset-photo/', views.reset_profile_photo, name='reset_profile_photo'),
     path('api/upload-video/', views.upload_video_view, name='upload_video'),
 ]

@@ -12,6 +12,7 @@ class Usuario(models.Model):
 
     email = models.EmailField('correo electrónico', unique=True)
     nombre = models.CharField('nombre completo', max_length=150)
+    telefono = models.CharField('teléfono', max_length=20, blank=True)
     foto_perfil = models.ImageField('foto de perfil', upload_to='perfiles/', null=True, blank=True)
     password = models.CharField('contraseña', max_length=128)
     is_active = models.BooleanField('activo', default=True)
@@ -19,6 +20,17 @@ class Usuario(models.Model):
     especialidad = models.CharField('especialidad', max_length=150, blank=True)
     colegiado = models.CharField('número de colegiado', max_length=80, blank=True)
     modo_oscuro = models.BooleanField('modo oscuro', default=False)
+    tamano_letra = models.CharField(
+        'tamaño de letra',
+        max_length=10,
+        choices=[
+            ('normal', 'Normal'),
+            ('large', 'Grande'),
+            ('xlarge', 'Muy grande'),
+        ],
+        default='normal',
+    )
+    desactivar_animaciones = models.BooleanField('animaciones desactivadas', default=False)
     fecha_creacion = models.DateTimeField('fecha de creación', auto_now_add=True)
 
     class Meta:

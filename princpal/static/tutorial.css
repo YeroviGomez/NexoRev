@@ -1,6 +1,21 @@
 .tutorial-open { overflow: hidden; }
-.tutorial-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 1rem; background: rgba(0, 0, 0, 0.5); }
-.tutorial-overlay.hidden { display: none; }
+.page-head.section-guide-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.section-guide-trigger { flex: 0 0 auto; min-height: 2.5rem; padding: 0.45rem 0.85rem; border: 1px solid var(--teal); border-radius: 0.55rem; color: var(--teal); background: var(--surface); font: inherit; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
+.section-guide-trigger:hover { color: #ffffff; background: var(--teal); }
+.tutorial-prompt-dialog:not([open]), .tutorial-basic-dialog:not([open]), .pro-tour:not([open]) { display: none !important; }
+dialog.tutorial-prompt-dialog, dialog.tutorial-basic-dialog, dialog.pro-tour { border: 0 !important; background: transparent !important; box-shadow: none !important; color: inherit; }
+.tutorial-prompt-dialog { position: fixed; inset: 0; width: min(560px, calc(100vw - 2rem)); max-width: none; max-height: calc(100vh - 2rem); margin: auto; padding: 0; overflow: visible; }
+.tutorial-prompt-dialog::backdrop, .tutorial-basic-dialog::backdrop { background: rgba(0, 0, 0, 0.58); }
+.tutorial-prompt-dialog.hidden { display: none; }
+.tutorial-prompt { position: relative; width: 100%; border: 1px solid #c8e9e4; border-radius: 1rem; background: linear-gradient(145deg, #ffffff 48%, #edfffd 100%); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28); color: #101014; padding: 1.75rem; display: grid; gap: 1.25rem; }
+.tutorial-prompt .tutorial-icon { margin: 0; }
+.tutorial-prompt .tutorial-heading p { margin-top: 0.75rem; }
+.tutorial-prompt-actions { display: flex; justify-content: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+.tutorial-prompt-actions button { min-height: 2.85rem; padding: 0.5rem 1rem; }
+.tutorial-prompt-actions #tutorialPromptPro { background: var(--teal); }
+.tutorial-prompt-actions #tutorialPromptBasic { background: #ffffff; color: #172033; }
+.tutorial-basic-dialog { position: fixed; inset: 0; display: grid; place-items: center; width: 100vw; max-width: none; height: 100vh; max-height: none; margin: auto; padding: 1rem; overflow: auto; }
+.tutorial-basic-dialog.hidden { display: none; }
 .tutorial-modal { width: min(640px, calc(100vw - 2rem)); min-height: min(766px, calc(100vh - 2rem)); max-height: calc(100vh - 2rem); border: 1px solid #d7dce4; border-radius: 0.55rem; background: #ffffff; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28); color: #101014; padding: 1.6rem 1.75rem 1.25rem; display: grid; grid-template-rows: auto auto auto 1fr auto auto; gap: 1.1rem; overflow: auto; }
 .tutorial-topbar { min-height: 1.9rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; position: relative; }
 .tutorial-step-badge { border-radius: 0.55rem; background: #eceff5; color: #111827; padding: 0.34rem 0.62rem; font-size: 0.9rem; font-weight: 700; line-height: 1; }
@@ -29,3 +44,16 @@
 .tutorial-dots button { width: 0.62rem; height: 0.62rem; border: 0; border-radius: 999px; background: #cfd5de; padding: 0; cursor: pointer; }
 .tutorial-dots button.active { width: 1.85rem; background: var(--teal); }
 .tutorial-dots button.passed { background: #39d8cc; }
+.pro-tour.hidden { display: none; }
+.pro-tour { position: fixed; inset: 0; width: 100vw; max-width: none; height: 100vh; max-height: none; margin: 0; padding: 0; overflow: visible; border: 0; background: transparent; color: inherit; pointer-events: none; }
+.pro-tour::backdrop { background: transparent; }
+.pro-tour-shield { position: fixed; inset: 0; z-index: 0; pointer-events: auto; }
+.pro-tour-shade { position: fixed; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.pro-tour-card { position: fixed; z-index: 1; width: min(390px, calc(100vw - 2rem)); padding: 1.25rem; border: 1px solid #c8e9e4; border-radius: 1rem; background: #ffffff; color: #101014; box-shadow: 0 20px 56px rgba(0, 0, 0, 0.32); pointer-events: auto; }
+.pro-tour-card h2 { margin: 0.9rem 0 0; font-size: 1.25rem; line-height: 1.25; }
+.pro-tour-card p { margin: 0.6rem 0 0; color: #596579; font-size: 1rem; line-height: 1.5; }
+.pro-tour-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.1rem; }
+.pro-tour-actions button { min-height: 2.5rem; padding: 0.4rem 0.75rem; font-size: 0.9rem; }
+.pro-tour-actions .tutorial-nav-btn:first-child { margin-right: auto; }
+.pro-tour-actions .tutorial-nav-btn:disabled { opacity: 0.5; }
+html.dark-mode .section-guide-trigger, body.dark-mode .section-guide-trigger { background: #111827; color: #5eead4; border-color: #0f766e; }

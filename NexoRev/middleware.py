@@ -1,4 +1,5 @@
 from django.shortcuts import redirect
+from django.http import JsonResponse
 
 
 class RoleAccessMiddleware:
@@ -12,6 +13,11 @@ class RoleAccessMiddleware:
         role = request.session.get('current_user_role')
         if not request.session.get('current_user'):
             if request.path.startswith('/principal'):
+                if request.path.startswith('/principal/api/'):
+                    return JsonResponse(
+                        {'success': False, 'error': 'Tu sesión expiró. Inicia sesión nuevamente.'},
+                        status=401,
+                    )
                 return redirect('login')
             return self.get_response(request)
 

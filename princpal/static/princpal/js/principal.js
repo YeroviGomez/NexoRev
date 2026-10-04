@@ -224,7 +224,10 @@ const loadPatientRecord = async (patientId) => {
     `;
     showView('diagnostico');
     history.replaceState(null, "", '#diagnostico');
-    doctorRecordView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    doctorRecordView.scrollIntoView({
+      behavior: document.documentElement.dataset.motion === 'off' ? 'auto' : 'smooth',
+      block: 'start',
+    });
   } catch (error) {
     console.error(error);
   }
@@ -282,12 +285,93 @@ const renderProgress = () => {
   }
 };
 
-const loadHistory = async () => {
+const renderHistoryItems = (list, items, kind) => {
+  if (!list) return;
+  list.replaceChildren();
+  if (!items.length) {
+    const emptyState = document.createElement('li');
+    emptyState.className = 'history-empty';
+    emptyState.textContent = kind === 'completed'
+      ? 'Aún no has completado rutinas.'
+      : 'Aún no has visto videos.';
+    list.append(emptyState);
+    return;
+  }
+
+  items.forEach((item) => {
+    const row = document.createElement('li');
+    row.className = 'history-video-item';
+    const thumbnail = document.createElement(item.replay_url ? 'a' : 'span');
+    thumbnail.className = 'history-video-thumbnail';
+    if (item.replay_url) {
+      thumbnail.href = item.replay_url;
+      thumbnail.setAttribute('aria-label', `Volver a ver ${item.title}`);
+    } else {
+      thumbnail.setAttribute('aria-hidden', 'true');
+    }
+    if (item.preview_image) {
+      const image = document.createElement('img');
+      image.src = item.preview_image;
+      image.alt = `Miniatura de ${item.title}`;
+      image.loading = 'lazy';
+      thumbnail.append(image);
+    } else {
+      const placeholder = document.createElement('span');
+      placeholder.setAttribute('aria-hidden', 'true');
+      placeholder.textContent = '▶';
+      thumbnail.append(placeholder);
+    }
+
+    const copy = document.createElement('div');
+    copy.className = 'history-video-copy';
+    const title = document.createElement(item.replay_url ? 'a' : 'span');
+    title.className = 'history-video-title';
+    title.textContent = item.title;
+    if (item.replay_url) title.href = item.replay_url;
+    const date = document.createElement('time');
+    date.textContent = kind === 'completed'
+      ? `${item.completed_at} · Completado`
+      : `Visto el ${item.viewed_at}`;
+    copy.append(title, date);
+    row.append(thumbnail, copy);
+
+    if (item.replay_url) {
+      const replay = document.createElement('a');
+      replay.className = 'history-replay-link';
+      replay.href = item.replay_url;
+      replay.textContent = 'Volver a ver';
+      row.append(replay);
+    }
+    list.append(row);
+  });
+};
+
+const updateHistoryPagination = (kind, pagination) => {
+  const controls = document.querySelector(`[data-history-pagination="${kind}"]`);
+  if (!controls) return;
+  controls.dataset.page = String(pagination.page);
+  controls.dataset.hasPrevious = String(pagination.has_previous);
+  controls.dataset.hasNext = String(pagination.has_next);
+  controls.querySelector('[data-page-direction="-1"]').disabled = !pagination.has_previous;
+  controls.querySelector('[data-page-direction="1"]').disabled = !pagination.has_next;
+  controls.querySelector('.history-page-number').textContent = `Página ${pagination.page}`;
+};
+
+const loadHistory = async (pages = {}) => {
   const historyList = document.getElementById('historyList');
+  const recentVideosList = document.getElementById('recentVideosList');
   const completedRoutines = document.getElementById('completedRoutines');
   if (!historyList || !completedRoutines) return;
   try {
-    const response = await fetch('/principal/api/history/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const viewedControls = document.querySelector('[data-history-pagination="viewed"]');
+    const completedControls = document.querySelector('[data-history-pagination="completed"]');
+    const viewedPage = pages.viewedPage || viewedControls?.dataset.page || '1';
+    const completedPage = pages.completedPage || completedControls?.dataset.page || '1';
+    const params = new URLSearchParams({
+      viewed_page: viewedPage,
+      completed_page: completedPage,
+    });
+    const response = await fetch(`/principal/api/history/?${params}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
     if (!response.ok) return;
     const data = await response.json();
     const mergedCount = Number(data.count || 0) + getCompletedRoutines().length;
@@ -295,13 +379,14 @@ const loadHistory = async () => {
     completedRoutines.textContent = String(mergedCount);
     sessionStorage.removeItem('nexorev_history_dirty');
     document.querySelectorAll('.routine-button[data-video-id]').forEach((button) => {
-      const completed = data.items.some((item) => item.video_id === button.dataset.videoId);
+      const completed = data.completed_video_ids.includes(button.dataset.videoId);
       button.classList.toggle('is-completed', completed);
       button.textContent = completed ? '✓ Completada' : 'Marcar rutina completada';
     });
-    historyList.innerHTML = data.items.length
-      ? data.items.map((item) => `<li><span>${item.title}</span><time>${item.completed_at} · Completado</time></li>`).join('')
-      : '<li>Aún no has completado rutinas.</li>';
+    renderHistoryItems(historyList, data.completed_videos.items, 'completed');
+    renderHistoryItems(recentVideosList, data.recent_videos.items, 'viewed');
+    updateHistoryPagination('completed', data.completed_videos);
+    updateHistoryPagination('viewed', data.recent_videos);
     const homeProgressText = document.getElementById('homeProgressText');
     const homeProgressBar = document.getElementById('homeProgressBar');
     if (homeProgressText) homeProgressText.textContent = `${mergedCount} rutinas completadas`;
@@ -310,6 +395,30 @@ const loadHistory = async () => {
     console.warn('No se pudo actualizar el historial', error);
   }
 };
+
+document.querySelectorAll('[data-history-tab]').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    const selectedTab = tab.dataset.historyTab;
+    document.querySelectorAll('[data-history-tab]').forEach((candidate) => {
+      const isActive = candidate === tab;
+      candidate.classList.toggle('is-active', isActive);
+      candidate.setAttribute('aria-selected', String(isActive));
+    });
+    document.querySelectorAll('[data-history-panel]').forEach((panel) => {
+      panel.hidden = panel.dataset.historyPanel !== selectedTab;
+    });
+  });
+});
+
+document.querySelectorAll('[data-history-pagination] .history-page-button').forEach((button) => {
+  button.addEventListener('click', () => {
+    if (button.disabled) return;
+    const controls = button.closest('[data-history-pagination]');
+    const nextPage = Number(controls.dataset.page) + Number(button.dataset.pageDirection);
+    const pageKey = controls.dataset.historyPagination === 'viewed' ? 'viewedPage' : 'completedPage';
+    loadHistory({ [pageKey]: String(nextPage) });
+  });
+});
 
 document.querySelectorAll('[data-nav="historial"]').forEach((trigger) => {
   trigger.addEventListener('click', loadHistory);
@@ -442,7 +551,6 @@ function showView(viewName) {
   appViews.forEach((view) => {
     view.classList.toggle("active", view.dataset.view === viewName);
   });
-
   sidebarLinks.forEach((link) => {
     const isActive = link.dataset.nav === viewName;
     link.classList.toggle("active", isActive);
@@ -478,6 +586,12 @@ if (validViews.includes(initialView)) {
 }
 
 const tutorialOverlay = document.getElementById("tutorialOverlay");
+const tutorialPrompt = document.getElementById("tutorialPrompt");
+const tutorialPromptTitle = document.getElementById("tutorialPromptTitle");
+const tutorialPromptDescription = document.getElementById("tutorialPromptDescription");
+const tutorialPromptBasic = document.getElementById("tutorialPromptBasic");
+const tutorialPromptPro = document.getElementById("tutorialPromptPro");
+const tutorialPromptSkip = document.getElementById("tutorialPromptSkip");
 const tutorialStepBadge = document.getElementById("tutorialStepBadge");
 const tutorialSkip = document.getElementById("tutorialSkip");
 const tutorialClose = document.getElementById("tutorialClose");
@@ -491,6 +605,55 @@ const tutorialPrev = document.getElementById("tutorialPrev");
 const tutorialNext = document.getElementById("tutorialNext");
 const tutorialDots = document.getElementById("tutorialDots");
 const openTutorial = document.getElementById("openTutorial");
+const proTour = document.getElementById("proTour");
+const proTourShade = document.getElementById("proTourShade");
+const proTourMaskBackground = document.getElementById("proTourMaskBackground");
+const proTourHole = document.getElementById("proTourHole");
+const proTourStepBadge = document.getElementById("proTourStepBadge");
+const proTourTitle = document.getElementById("proTourTitle");
+const proTourDescription = document.getElementById("proTourDescription");
+const proTourClose = document.getElementById("proTourClose");
+const proTourPrev = document.getElementById("proTourPrev");
+const proTourNext = document.getElementById("proTourNext");
+
+function closeTutorialPrompt() {
+  if (tutorialPrompt) {
+    tutorialPrompt.classList.add("hidden");
+    if (tutorialPrompt.open) tutorialPrompt.close();
+  }
+  document.body.classList.remove("tutorial-open");
+}
+
+let tutorialScope = null;
+
+function openTutorialPrompt(scope = null) {
+  if (!tutorialPrompt) return;
+  closeTutorial();
+  closeProTour();
+  tutorialScope = scope;
+  if (tutorialPromptTitle) {
+    const sectionNames = {
+      inicio: "Inicio",
+      diagnostico: "Diagnóstico",
+      videos: "Videos",
+      favoritos: "Favoritos",
+      historial: "Historial",
+      perfil: "Perfil",
+    };
+    tutorialPromptTitle.textContent = scope
+      ? `Guía de uso: ${sectionNames[scope] || "esta sección"}`
+      : "¿Qué guía quieres consultar?";
+  }
+  if (tutorialPromptDescription) {
+    tutorialPromptDescription.textContent = scope
+      ? "Elige el nivel de detalle para recorrer únicamente esta sección. Puedes cerrar la guía o repetirla cuando quieras."
+      : "Elige una guía para conocer las secciones y funciones de Nexo ReV. Puedes volver a abrirla en cualquier momento desde “Guía de uso”.";
+  }
+  tutorialPrompt.classList.remove("hidden");
+  if (!tutorialPrompt.open) tutorialPrompt.showModal();
+  document.body.classList.add("tutorial-open");
+  tutorialPromptPro?.focus();
+}
 
 const tutorialSteps = [
   {
@@ -499,75 +662,104 @@ const tutorialSteps = [
     subtitle: "Tu plataforma de rehabilitación domiciliaria",
     boxTitle: "¿Qué puedes hacer?",
     items: [
-      "Realiza ejercicios desde la comodidad de tu hogar",
-      "Sigue tu progreso y evolución",
-      "Accede a videos especializados para cada zona del cuerpo",
-      "Recibe recomendaciones personalizadas",
+      "Usa el menú lateral para cambiar de sección.",
+      "Explora ejercicios y consulta tus videos vistos o completados.",
+      "Configura tus datos y preferencias desde Perfil.",
+      "Abre “Guía de uso” en cualquier momento para repetir este recorrido.",
     ],
     tip: true,
   },
   {
+    view: "inicio",
     icon: "home",
-    title: "Inicio - Selección de zona",
-    subtitle: "Identifica la parte del cuerpo que necesita atención",
+    title: document.body.dataset.currentUserRole === "doctor" ? "Inicio - Panel de pacientes" : "Inicio - Tu espacio de rehabilitación",
+    subtitle: document.body.dataset.currentUserRole === "doctor"
+      ? "Organiza tus pacientes y accede a sus expedientes."
+      : "Consulta tu avance y accede rápidamente a ejercicios e historial.",
     boxTitle: "Cómo funciona:",
-    items: [
-      "Haz clic en el área del cuerpo que te molesta",
-      "Puedes seleccionar múltiples zonas en diferentes sesiones",
-      "La zona seleccionada se ilumina en color teal",
-      'Presiona "Continuar" para ir al diagnóstico',
-    ],
+    items: document.body.dataset.currentUserRole === "doctor"
+      ? [
+        "Filtra los pacientes por etapa y ordénalos con las listas desplegables.",
+        "Selecciona un paciente para abrir su expediente.",
+        "Usa “Añadir paciente” para asignar o registrar a una persona.",
+        "Los accesos rápidos llevan a Videos y al Historial.",
+      ]
+      : [
+        "Elige la zona afectada cuando el selector corporal esté habilitado; por ahora aparece como “Próximamente”.",
+        "Consulta tu progreso, la gráfica de avance y las rutinas completadas hoy.",
+        "Los accesos rápidos llevan a Videos y al Historial.",
+      ],
   },
   {
+    view: "diagnostico",
     icon: "pulse",
-    title: "Diagnóstico - Tu evaluación",
-    subtitle: "Completa información sobre tu condición",
+    title: document.body.dataset.currentUserRole === "doctor" ? "Diagnóstico - Expediente del paciente" : "Diagnóstico - Tu evaluación",
+    subtitle: document.body.dataset.currentUserRole === "doctor"
+      ? "Consulta el expediente del paciente seleccionado desde Inicio."
+      : "Registra cómo te sientes y guarda los datos de tu evaluación.",
     boxTitle: "Cómo funciona:",
-    items: [
-      "Indica tu nivel de dolor del 1 al 10",
-      "Describe cuánto tiempo has tenido el malestar",
-      "Especifica la frecuencia del dolor",
-      "Puedes guardar borradores y continuar después",
-      "Al enviar, recibirás videos recomendados",
-    ],
+    items: document.body.dataset.currentUserRole === "doctor"
+      ? [
+        "Selecciona un paciente desde Inicio para consultar su expediente.",
+        "El expediente muestra información y progreso del paciente.",
+      ]
+      : [
+        "Indica tu nivel de dolor del 1 al 10 y responde las preguntas obligatorias.",
+        "Agrega un comentario si necesitas compartir más información.",
+        "Pulsa “Guardar” para registrar la evaluación o “Actualizar” para editarla.",
+        "“Cancelar” limpia los datos que todavía no hayas guardado.",
+      ],
   },
   {
+    view: "videos",
     icon: "video",
     title: "Videos - Biblioteca de ejercicios",
-    subtitle: "Explora y realiza rutinas de rehabilitación",
+    subtitle: "Encuentra ejercicios y revisa sus detalles antes de comenzar.",
     boxTitle: "Cómo funciona:",
     items: [
-      "Usa la barra de búsqueda para encontrar ejercicios específicos",
-      "Filtra por categorías (Rodilla, Hombro, Espalda, etc.)",
-      "Marca tus favoritos con el corazón 💗",
-      "Revisa la dificultad: Principiante, Intermedio o Avanzado",
-      "Consulta la duración antes de comenzar",
+      "Busca ejercicios por nombre y filtra por zona o dificultad.",
+      "Abre un video para ver la rutina y sus detalles.",
+      "Pulsa el corazón de una tarjeta para guardar o quitar un favorito.",
+      "Usa “Sorpréndeme” para cargar una sugerencia y consulta los tips de seguridad.",
+      "Si vas a cargar un video, completa sus datos y pulsa “Subir video”.",
     ],
   },
   {
+    view: "favoritos",
+    icon: "heart",
+    title: "Favoritos - Tus rutinas guardadas",
+    subtitle: "Ten a mano los videos que quieras volver a consultar.",
+    boxTitle: "Cómo funciona:",
+    items: [
+      "Guarda un ejercicio con el botón del corazón en Videos.",
+      "Abre Favoritos desde el menú lateral para ver los videos guardados.",
+      "Usa las flechas de cada tarjeta para cambiar su orden.",
+      "Pulsa “Quitar todos” para vaciar la lista de favoritos.",
+    ],
+  },
+  {
+    view: "historial",
     icon: "history",
     title: "Historial - Tu progreso",
-    subtitle: "Visualiza tu evolución y estadísticas",
+    subtitle: "Encuentra videos vistos y rutinas que ya completaste.",
     boxTitle: "Cómo funciona:",
     items: [
-      "Ve gráficas de tu evolución de dolor",
-      "Revisa tus sesiones completadas",
-      "Consulta tu racha de días consecutivos",
-      "Descarga reportes semanales en PDF",
-      "Compara tu progreso a lo largo del tiempo",
+      "Cambia entre “Videos vistos” y “Rutinas completadas”.",
+      "Usa “Anterior” y “Siguiente” para recorrer las páginas del historial.",
+      "Pulsa “Volver a ver” para abrir un ejercicio otra vez.",
     ],
   },
   {
+    view: "perfil",
     icon: "user",
     title: "Perfil - Personalización",
-    subtitle: "Configura tu cuenta y preferencias",
+    subtitle: "Administra tus datos, preferencias y seguridad.",
     boxTitle: "Cómo funciona:",
     items: [
-      "Actualiza tus datos personales",
-      "Cambia tu foto de perfil",
-      "Activa/desactiva notificaciones",
-      "Configura el modo oscuro",
-      "Cambia tu contraseña de forma segura",
+      "Edita tu información personal y guarda los cambios.",
+      "Cambia o restablece tu foto de perfil.",
+      "Ajusta el modo oscuro, el tamaño de letra y las animaciones.",
+      "En Seguridad puedes configurar biometría y cambiar tu contraseña.",
     ],
   },
 ];
@@ -576,18 +768,20 @@ const tutorialIcons = {
   pulse: '<svg viewBox="0 0 64 64"><path d="M10 34h12l7-24 11 44 7-24h7" /></svg>',
   home: '<svg viewBox="0 0 64 64"><path d="M14 30 32 14l18 16v22H14V30Z" /><path d="M26 52V36h12v16" /></svg>',
   video: '<svg viewBox="0 0 64 64"><rect x="12" y="20" width="30" height="24" rx="5" /><path d="m42 28 12-7v22l-12-7" /></svg>',
+  heart: '<svg viewBox="0 0 64 64"><path d="M54 24a12 12 0 0 0-20-9l-2 2-2-2a12 12 0 0 0-17 17l19 19 19-19a12 12 0 0 0 3-8Z" /></svg>',
   history: '<svg viewBox="0 0 64 64"><path d="M15 20v-9M15 20h9" /><path d="M15 20a21 21 0 1 1-3 17" /><path d="M32 22v12l9 5" /></svg>',
   user: '<svg viewBox="0 0 64 64"><circle cx="32" cy="18" r="10" /><path d="M16 52v-8c0-8 7-14 16-14s16 6 16 14v8" /></svg>',
 };
 
 let tutorialIndex = 0;
+let activeTutorialSteps = tutorialSteps;
 
 function renderTutorial() {
-  const step = tutorialSteps[tutorialIndex];
+  const step = activeTutorialSteps[tutorialIndex];
   const isFirst = tutorialIndex === 0;
-  const isLast = tutorialIndex === tutorialSteps.length - 1;
+  const isLast = tutorialIndex === activeTutorialSteps.length - 1;
 
-  tutorialStepBadge.textContent = `Paso ${tutorialIndex + 1} de ${tutorialSteps.length}`;
+  tutorialStepBadge.textContent = `Paso ${tutorialIndex + 1} de ${activeTutorialSteps.length}`;
   tutorialIcon.innerHTML = tutorialIcons[step.icon];
   tutorialTitle.textContent = step.title;
   tutorialSubtitle.textContent = step.subtitle;
@@ -599,7 +793,7 @@ function renderTutorial() {
   tutorialNext.innerHTML = isLast
     ? '<span>Finalizar</span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m9 12 2 2 4-5" /></svg>'
     : '<span>Siguiente</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>';
-  tutorialDots.innerHTML = tutorialSteps
+  tutorialDots.innerHTML = activeTutorialSteps
     .map((_, index) => {
       const dotClass = index === tutorialIndex ? "active" : index < tutorialIndex ? "passed" : "";
       return `<button class="${dotClass}" type="button" aria-label="Ir al paso ${index + 1}"></button>`;
@@ -615,16 +809,432 @@ function renderTutorial() {
 }
 
 function openTutorialModal() {
+  activeTutorialSteps = tutorialScope
+    ? tutorialSteps.filter((step) => step.view === tutorialScope)
+    : tutorialSteps;
+  if (!activeTutorialSteps.length) return;
   tutorialIndex = 0;
   renderTutorial();
   tutorialOverlay.classList.remove("hidden");
+  if (!tutorialOverlay.open) tutorialOverlay.showModal();
   document.body.classList.add("tutorial-open");
 }
 
 function closeTutorial() {
-  tutorialOverlay.classList.add("hidden");
+  if (tutorialOverlay) {
+    tutorialOverlay.classList.add("hidden");
+    if (tutorialOverlay.open) tutorialOverlay.close();
+  }
   document.body.classList.remove("tutorial-open");
 }
+
+const proTourSteps = [
+  ...(document.body.dataset.currentUserRole === "doctor" ? [] : [
+    {
+    view: "inicio",
+    selector: ".body-panel",
+    title: "Selecciona la zona afectada",
+    description: "Aquí aparecerá el selector de las partes del cuerpo. Actualmente muestra “Próximamente”, así que todavía no permite elegir una zona ni abre un formulario asociado.",
+    },
+    {
+    view: "inicio",
+    selector: ".selected-panel",
+    title: "Zona seleccionada",
+    description: "Este panel está pensado para mostrar la zona elegida. Como el selector corporal aún no está habilitado, por ahora indica que no hay una zona seleccionada.",
+    },
+  ]),
+  {
+    view: "inicio",
+    selector: document.body.dataset.currentUserRole === "doctor" ? ".patients-panel" : ".progress-panel",
+    fallbackSelector: document.body.dataset.currentUserRole === "doctor" ? ".patients-list" : ".home-side",
+    title: document.body.dataset.currentUserRole === "doctor" ? "Inicio: pacientes asignados" : "Mi progreso y gráfica de avance",
+    description: document.body.dataset.currentUserRole === "doctor"
+    ? "En este panel puedes revisar la lista de pacientes, su etapa y porcentaje de avance."
+    : "La escala muestra las etapas de recuperación y la gráfica representa el porcentaje de avance registrado a lo largo del tiempo.",
+  },
+  ...(document.body.dataset.currentUserRole === "doctor" ? [] : [
+    {
+    view: "inicio",
+    selector: ".progress-summary",
+    title: "Lee tu avance actual",
+    description: "Debajo de la gráfica puedes consultar el porcentaje de avance registrado y la etapa actual de recuperación.",
+    },
+  ]),
+  ...(document.body.dataset.currentUserRole === "doctor" ? [] : [
+    {
+    view: "inicio",
+    selector: ".routine-panel",
+    title: "Tu progreso de hoy",
+    description: "Aquí ves el número de rutinas registradas como completadas y una barra visual que avanza al marcar rutinas en sus videos.",
+    },
+  ]),
+  {
+    view: "inicio",
+    selector: document.body.dataset.currentUserRole === "doctor" ? ".doctor-filters" : ".quick-panel",
+    title: document.body.dataset.currentUserRole === "doctor" ? "Accede a tus pacientes" : "Accesos rápidos",
+    description: document.body.dataset.currentUserRole === "doctor"
+    ? "Desde Inicio puedes filtrar la lista, abrir el expediente de un paciente o añadir uno."
+    : "Estos botones te llevan directamente a la biblioteca de Videos y a tu Historial.",
+  },
+  {
+    view: "inicio",
+    selector: document.body.dataset.currentUserRole === "doctor" ? "#doctorPatientFilter" : ".quick-panel .quick-link",
+    title: document.body.dataset.currentUserRole === "doctor" ? "Filtra pacientes por etapa" : "Abre Videos o Historial",
+    description: document.body.dataset.currentUserRole === "doctor"
+    ? "Filtra la lista según la etapa de progreso del paciente."
+    : "Usa “Explorar videos de ejercicios” para buscar rutinas, o “Ver mi historial” para consultar tu actividad.",
+  },
+  ...(document.body.dataset.currentUserRole === "doctor" ? [
+    {
+      view: "inicio",
+      selector: "#doctorPatientSort",
+      title: "Ordena la lista de pacientes",
+      description: "Elige si quieres ordenar por avance, edad o nombre, de mayor a menor o en orden alfabético.",
+    },
+  ] : []),
+  ...(document.body.dataset.currentUserRole === "doctor" ? [
+    {
+      view: "inicio",
+      selector: "#toggleAddPatientForm",
+      title: "Añade o asigna un paciente",
+      description: "Pulsa “Añadir paciente” para mostrar el formulario. Puedes asignar a un paciente registrado o introducir los datos de uno nuevo.",
+    },
+    {
+      view: "inicio",
+      selector: ".patients-list .patient-row",
+      fallbackSelector: ".patients-list",
+      title: "Abre el expediente de un paciente",
+      description: "Selecciona una fila de paciente para consultar su expediente, progreso, notas y sesiones.",
+    },
+  ] : []),
+  {
+    view: "diagnostico",
+    selector: document.body.dataset.currentUserRole === "doctor" ? "#doctorRecordView" : "#diagnosticForm .pain-scale",
+    title: document.body.dataset.currentUserRole === "doctor" ? "Diagnóstico: consulta el expediente" : "Diagnóstico: registra el nivel de dolor",
+    description: document.body.dataset.currentUserRole === "doctor"
+      ? "Selecciona un paciente desde Inicio para cargar aquí la información de su expediente."
+      : "Mueve la escala para indicar tu nivel de dolor. El valor seleccionado aparece junto a la pregunta.",
+  },
+  ...(document.body.dataset.currentUserRole === "doctor" ? [] : [
+    {
+      view: "diagnostico",
+      selector: "#diagnosticForm .field-row",
+      title: "Responde las preguntas de evaluación",
+      description: "Completa las preguntas obligatorias sobre tu molestia. Puedes añadir información adicional en el campo de comentario.",
+    },
+    {
+      view: "diagnostico",
+      selector: "#diagnosticForm .diagnostic-actions",
+      title: "Guarda tu evaluación",
+      description: "Pulsa “Guardar” para registrar o “Actualizar” para editar la evaluación. “Cancelar” limpia los cambios no guardados.",
+    },
+  ]),
+  {
+    view: "videos",
+    selector: "#videoSearch",
+    title: "Videos: busca ejercicios",
+    description: "Escribe una palabra en el buscador para filtrar la biblioteca por título, descripción, dificultad o zona.",
+  },
+  {
+    view: "videos",
+    selector: "#videosView .filter-chip",
+    title: "Filtra por zona del cuerpo",
+    description: "Elige una categoría para ver ejercicios de esa zona. Selecciona “Todas” para mostrar de nuevo todas las zonas.",
+  },
+  {
+    view: "videos",
+    selector: "#videoDifficulty",
+    title: "Filtra por dificultad",
+    description: "Selecciona principiante, intermedio o avanzado. Este filtro se combina con la búsqueda y la zona elegida.",
+  },
+  {
+    view: "videos",
+    selector: "#videoResults .video-card:not([hidden]) .video-play, #videoResults .video-card:not([hidden]) .video-open-link",
+    fallbackSelector: "#videoResults",
+    title: "Elige y reproduce un video",
+    description: "Cada tarjeta muestra el título, descripción, zona y dificultad. Al continuar, abriremos el primer video disponible para mostrarte el reproductor y sus opciones.",
+    openFirstVideo: true,
+  },
+  {
+    view: "videos",
+    selector: "#videoResults .favorite-btn",
+    fallbackSelector: "#videoResults .video-grid",
+    title: "Guarda un video en Favoritos",
+    description: "Pulsa el corazón de una tarjeta para guardar el ejercicio; vuelve a pulsarlo para quitarlo. Lo encontrarás en la sección Favoritos.",
+  },
+  {
+    view: "videos",
+    selector: "#videoResults .routine-button",
+    fallbackSelector: "#videoResults .video-grid",
+    title: "Marca una rutina como completada",
+    description: "Después de realizar el ejercicio, utiliza “Marcar rutina completada” en su tarjeta para registrarlo en el Historial.",
+  },
+  {
+    view: "videos",
+    selector: ".featured-video-zone",
+    title: "Descubre una recomendación",
+    description: "La zona destacada muestra un ejercicio sugerido. Pulsa “Sorpréndeme” para cargar otra recomendación.",
+  },
+  {
+    view: "videos",
+    selector: "#openVideoSafetyTips",
+    title: "Consulta los tips de seguridad",
+    description: "Antes de comenzar un ejercicio, abre esta opción y revisa las recomendaciones para realizarlo con seguridad.",
+  },
+  {
+    view: "videos",
+    selector: ".video-upload-heading",
+    title: "Carga un video",
+    description: "Completa el título, zona, dificultad y descripción; selecciona el archivo y pulsa “Subir video”. La miniatura es opcional.",
+  },
+  {
+    view: "videos",
+    selector: "#videoResults",
+    title: "Explora más resultados",
+    description: "Si hay más páginas de ejercicios, pulsa “Siguiente página” al final de la lista para cargar más videos.",
+  },
+  {
+    view: "favoritos",
+    selector: "#favoritesGrid .favorite-order-actions",
+    fallbackSelector: "#favoritesGrid",
+    title: "Favoritos: organiza tus ejercicios",
+    description: "Aquí aparecen los videos que guardaste. En cada tarjeta puedes abrir la rutina o usar las flechas para cambiar el orden.",
+  },
+  {
+    view: "favoritos",
+    selector: "#clearFavorites",
+    title: "Quita favoritos",
+    description: "“Quitar todos” elimina todos los videos guardados de esta lista.",
+  },
+  {
+    view: "historial",
+    selector: ".history-tabs",
+    title: "Historial: cambia de pestaña",
+    description: "“Videos vistos” muestra lo que has reproducido; “Rutinas completadas” muestra los ejercicios que marcaste como realizados.",
+  },
+  {
+    view: "historial",
+    selector: "#completedVideosTab",
+    title: "Consulta las rutinas completadas",
+    description: "Pulsa esta pestaña para ver las rutinas que marcaste como realizadas y el total de ejercicios completados.",
+  },
+  {
+    view: "historial",
+    selector: "[data-history-panel='viewed'] .history-pagination",
+    fallbackSelector: ".history-panel",
+    title: "Recorre las páginas del historial",
+    description: "Usa “Anterior” y “Siguiente” para consultar más videos vistos o rutinas completadas.",
+  },
+  {
+    view: "historial",
+    selector: "#viewedVideosPanel .history-replay-link",
+    fallbackSelector: "#viewedVideosPanel .history-list",
+    title: "Vuelve a reproducir un video",
+    description: "Pulsa “Volver a ver” junto a un elemento del historial para abrir de nuevo ese ejercicio.",
+  },
+  {
+    view: "perfil",
+    selector: "#profileForm .profile-fields",
+    title: "Perfil: actualiza tus datos",
+    description: "Edita tu nombre, correo o teléfono. Al terminar, usa el botón “Guardar cambios” para guardar la información.",
+  },
+  {
+    view: "perfil",
+    selector: "#cambiarFotoButton",
+    title: "Cambia tu foto de perfil",
+    description: "Elige una imagen, ajústala en el editor y confirma para actualizar tu foto.",
+  },
+  {
+    view: "perfil",
+    selector: "#profileForm .save-button",
+    title: "Guarda los cambios del perfil",
+    description: "Después de modificar tus datos personales, pulsa “Guardar cambios” para aplicarlos.",
+  },
+  {
+    view: "perfil",
+    selector: "#perfilView .profile-form .preference-row .mini-switch",
+    title: "Activa el modo oscuro",
+    description: "El primer interruptor de Preferencias cambia entre la apariencia clara y el modo oscuro.",
+  },
+  {
+    view: "perfil",
+    selector: ".font-size-select",
+    title: "Ajusta el tamaño del texto",
+    description: "Usa esta lista para elegir un tamaño normal, grande o muy grande según prefieras.",
+  },
+  {
+    view: "perfil",
+    selector: "#motionPreferenceToggle",
+    title: "Configura las animaciones",
+    description: "Activa o desactiva los movimientos y transiciones de la interfaz desde este interruptor.",
+  },
+  {
+    view: "perfil",
+    selector: "#enableBiometric",
+    title: "Seguridad de la cuenta",
+    description: "Pulsa “Configurar” para registrar la validación biométrica si tu dispositivo la admite.",
+  },
+  {
+    view: "perfil",
+    selector: "#changePasswordButton",
+    title: "Cambia tu contraseña",
+    description: "Escribe tu contraseña actual, ingresa y confirma la nueva; luego pulsa “Cambiar contraseña”.",
+  },
+  {
+    view: "perfil",
+    selector: ".scroll-top-button",
+    title: "Volver arriba",
+    description: "Este botón flotante aparece al desplazarte hacia abajo. Púlsalo para regresar suavemente al inicio de la página.",
+    showScrollTopButton: true,
+  },
+];
+
+let proTourIndex = 0;
+let activeProTourSteps = proTourSteps;
+let isGlobalProTour = true;
+
+function updateScrollTopButtonForTour(forceVisible = false) {
+  const button = document.querySelector(".scroll-top-button");
+  if (!button) return;
+
+  const isVisible = forceVisible || window.scrollY > 300;
+  button.classList.toggle("is-visible", isVisible);
+  button.setAttribute("aria-hidden", String(!isVisible));
+  button.tabIndex = isVisible ? 0 : -1;
+}
+
+function positionProTour() {
+  if (!proTour || !proTour.open) return;
+
+  const step = activeProTourSteps[proTourIndex];
+  updateScrollTopButtonForTour(Boolean(step.showScrollTopButton));
+  const target = document.querySelector(step.selector)
+    || (step.fallbackSelector && document.querySelector(step.fallbackSelector))
+    || document.querySelector(`[data-view="${step.view}"] .page-head`);
+  if (!target || !proTourHole || !proTourShade || !proTourMaskBackground) return;
+
+  const bounds = target.getBoundingClientRect();
+  const padding = 8;
+  const x = Math.max(8, bounds.left - padding);
+  const y = Math.max(8, bounds.top - padding);
+  const width = Math.min(window.innerWidth - x - 8, bounds.width + padding * 2);
+  const height = Math.min(window.innerHeight - y - 8, bounds.height + padding * 2);
+  proTourShade.setAttribute("viewBox", `0 0 ${window.innerWidth} ${window.innerHeight}`);
+  proTourMaskBackground.setAttribute("width", String(window.innerWidth));
+  proTourMaskBackground.setAttribute("height", String(window.innerHeight));
+  proTourHole.setAttribute("x", String(x));
+  proTourHole.setAttribute("y", String(y));
+  proTourHole.setAttribute("width", String(Math.max(0, width)));
+  proTourHole.setAttribute("height", String(Math.max(0, height)));
+
+  if (window.innerWidth > 560) {
+    const card = proTour.querySelector(".pro-tour-card");
+    const cardBounds = card.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(16, bounds.left + bounds.width / 2 - cardBounds.width / 2),
+      window.innerWidth - cardBounds.width - 16,
+    );
+    const below = bounds.bottom + 18;
+    const top = below + cardBounds.height <= window.innerHeight - 16
+      ? below
+      : Math.max(16, bounds.top - cardBounds.height - 18);
+    card.style.left = `${left}px`;
+    card.style.top = `${top}px`;
+  }
+}
+
+function renderProTour() {
+  if (!proTour || !proTourStepBadge || !proTourTitle || !proTourDescription) return;
+
+  const step = activeProTourSteps[proTourIndex];
+  showView(step.view);
+  proTourStepBadge.textContent = `Paso ${proTourIndex + 1} de ${activeProTourSteps.length}`;
+  proTourTitle.textContent = step.title;
+  proTourDescription.textContent = step.description;
+  proTourPrev.disabled = proTourIndex === 0;
+  proTourNext.textContent = step.openFirstVideo && isGlobalProTour
+    ? "Ver el primer video"
+    : proTourIndex === activeProTourSteps.length - 1 ? "Finalizar" : "Siguiente";
+  proTour.classList.remove("hidden");
+  if (!proTour.open) proTour.showModal();
+
+  const target = document.querySelector(step.selector)
+    || (step.fallbackSelector && document.querySelector(step.fallbackSelector))
+    || document.querySelector(`[data-view="${step.view}"] .page-head`);
+  target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  window.requestAnimationFrame(positionProTour);
+  proTourNext?.focus();
+}
+
+function closeProTour() {
+  if (proTour) {
+    proTour.classList.add("hidden");
+    if (proTour.open) proTour.close();
+  }
+  updateScrollTopButtonForTour();
+  document.body.classList.remove("tutorial-open");
+}
+
+function startProTour(scope = null, startIndex = 0) {
+  closeTutorialPrompt();
+  closeTutorial();
+  isGlobalProTour = scope === null;
+  activeProTourSteps = scope
+    ? proTourSteps.filter((step) => step.view === scope)
+    : proTourSteps;
+  if (!activeProTourSteps.length || startIndex < 0 || startIndex >= activeProTourSteps.length) return;
+  proTourIndex = startIndex;
+  renderProTour();
+}
+
+function openFirstVideoFromTour() {
+  const firstVideoLink = document.querySelector(
+    "#videoResults .video-card:not([hidden]) .video-play[href], #videoResults .video-card:not([hidden]) .video-open-link[href]",
+  ) || document.querySelector("#videoResults .video-play[href], #videoResults .video-open-link[href]");
+  if (!firstVideoLink) return false;
+
+  const videoUrl = new URL(firstVideoLink.href);
+  videoUrl.searchParams.set("resume_app_tour", "1");
+  videoUrl.searchParams.set("resume_step", String(proTourIndex + 1));
+  window.location.assign(videoUrl);
+  return true;
+}
+
+if (proTourPrev) {
+  proTourPrev.addEventListener("click", () => {
+    if (proTourIndex > 0) {
+      proTourIndex -= 1;
+      renderProTour();
+    }
+  });
+}
+
+if (proTourNext) {
+  proTourNext.addEventListener("click", () => {
+    const step = activeProTourSteps[proTourIndex];
+    if (step.openFirstVideo && isGlobalProTour && openFirstVideoFromTour()) return;
+    if (proTourIndex === activeProTourSteps.length - 1) {
+      closeProTour();
+      return;
+    }
+    proTourIndex += 1;
+    renderProTour();
+  });
+}
+
+proTourClose?.addEventListener("click", closeProTour);
+tutorialPrompt?.addEventListener("close", () => {
+  tutorialPrompt.classList.add("hidden");
+  document.body.classList.remove("tutorial-open");
+});
+tutorialOverlay?.addEventListener("close", () => {
+  tutorialOverlay.classList.add("hidden");
+  document.body.classList.remove("tutorial-open");
+});
+proTour?.addEventListener("close", () => {
+  proTour.classList.add("hidden");
+  document.body.classList.remove("tutorial-open");
+});
 
 if (tutorialPrev) {
   tutorialPrev.addEventListener("click", () => {
@@ -637,7 +1247,7 @@ if (tutorialPrev) {
 
 if (tutorialNext) {
   tutorialNext.addEventListener("click", () => {
-    if (tutorialIndex === tutorialSteps.length - 1) {
+    if (tutorialIndex === activeTutorialSteps.length - 1) {
       closeTutorial();
       return;
     }
@@ -654,16 +1264,51 @@ if (tutorialSkip) {
   tutorialSkip.addEventListener("click", closeTutorial);
 }
 if (openTutorial) {
-  openTutorial.addEventListener("click", openTutorialModal);
+  openTutorial.addEventListener("click", () => openTutorialPrompt());
+}
+document.querySelectorAll("[data-tutorial-view]").forEach((button) => {
+  button.addEventListener("click", () => openTutorialPrompt(button.dataset.tutorialView));
+});
+if (tutorialPromptBasic) {
+  tutorialPromptBasic.addEventListener("click", () => {
+    closeTutorialPrompt();
+    openTutorialModal();
+  });
+}
+if (tutorialPromptPro) {
+  tutorialPromptPro.addEventListener("click", () => {
+    startProTour(tutorialScope);
+  });
+}
+if (tutorialPromptSkip) {
+  tutorialPromptSkip.addEventListener("click", () => {
+    closeTutorialPrompt();
+  });
 }
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !tutorialOverlay.classList.contains("hidden")) {
     closeTutorial();
   }
+  if (event.key === "Escape" && proTour && !proTour.classList.contains("hidden")) {
+    closeProTour();
+  }
 });
 
+window.addEventListener("resize", positionProTour);
+window.addEventListener("scroll", positionProTour, { passive: true });
+
 renderTutorial();
+
+const tourResumeParams = new URLSearchParams(window.location.search);
+if (tourResumeParams.get("resume_app_tour") === "1") {
+  const resumeStep = Number(tourResumeParams.get("resume_step"));
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.searchParams.delete("resume_app_tour");
+  cleanUrl.searchParams.delete("resume_step");
+  window.history.replaceState(null, "", cleanUrl);
+  if (Number.isInteger(resumeStep)) startProTour(null, resumeStep);
+}
 
 // ============== FUNCIONALIDAD DE MODALES PERSONALIZADOS ==============
 const alertModal = document.getElementById("alertModal");
@@ -756,28 +1401,53 @@ document.addEventListener("keydown", (event) => {
 });
 
 // ============== FUNCIONALIDAD DE PERFIL ==============
-const profileForm = document.querySelector(".profile-page");
-const saveButton = document.querySelector(".profile-page .save-button");
-const changePasswordButton = document.querySelector(".wide-outline-button");
+const profileForm = document.getElementById("profileForm");
+const saveButton = document.querySelector(".profile-form .save-button");
+const profileFeedback = document.getElementById("profileFeedback");
+const profileFeedbackMessage = document.getElementById("profileFeedbackMessage");
+const profileFeedbackClose = document.getElementById("profileFeedbackClose");
+const changePasswordButton = document.getElementById("changePasswordButton");
 const cambiarFotoButton = document.getElementById("cambiarFotoButton");
+const resetAvatarButton = document.getElementById("resetAvatarButton");
 const fotoInput = document.getElementById("fotoInput");
 const avatarInitial = document.getElementById("avatarInitial");
 const avatarImage = document.getElementById("avatarImage");
+const avatarEditor = document.getElementById("avatarEditor");
+const avatarCropFrame = document.getElementById("avatarCropFrame");
+const avatarCropImage = document.getElementById("avatarCropImage");
+const avatarZoom = document.getElementById("avatarZoom");
+const acceptAvatarEdit = document.getElementById("acceptAvatarEdit");
+const cancelAvatarEdit = document.getElementById("cancelAvatarEdit");
+const cancelAvatarEditButton = document.getElementById("cancelAvatarEditButton");
+const avatarEditorError = document.getElementById("avatarEditorError");
 
-// Campos del formulario dentro de profile-fields
-const profileFields = document.querySelectorAll(".profile-fields input");
-const nombreInput = profileFields[0];
-const telefonoInput = profileFields[1];
-const edadInput = profileFields[2];
+const nombreInput = document.getElementById("profileName");
+const emailInput = document.getElementById("profileEmail");
+const telefonoInput = document.getElementById("profilePhone");
+const currentPasswordInput = document.getElementById("currentPassword");
+const newPasswordInput = document.getElementById("newPassword");
+const confirmPasswordInput = document.getElementById("confirmPassword");
+let profileFeedbackTimeout;
 
-// Campos de contraseña
-const passwordFields = document.querySelectorAll(".password-fields input");
-const currentPasswordInput = passwordFields[0];
-const newPasswordInput = passwordFields[1];
-const confirmPasswordInput = passwordFields[2];
+function showProfileSuccess(message) {
+  if (!profileFeedback || !profileFeedbackMessage) {
+    console.warn("No se encontró el espacio para confirmar los cambios del perfil");
+    return;
+  }
+  window.clearTimeout(profileFeedbackTimeout);
+  profileFeedbackMessage.textContent = message;
+  profileFeedback.hidden = false;
+  profileFeedbackTimeout = window.setTimeout(() => {
+    profileFeedback.hidden = true;
+  }, 4500);
+}
 
-// Guardar valores originales para comparar
-let originalEmail = null;
+if (profileFeedbackClose && profileFeedback) {
+  profileFeedbackClose.addEventListener("click", () => {
+    window.clearTimeout(profileFeedbackTimeout);
+    profileFeedback.hidden = true;
+  });
+}
 
 // Funcionalidad para cambiar foto
 if (cambiarFotoButton && fotoInput) {
@@ -786,114 +1456,234 @@ if (cambiarFotoButton && fotoInput) {
     fotoInput.click();
   });
 
-  fotoInput.addEventListener("change", (e) => {
-    const archivo = e.target.files[0];
-    if (!archivo) return;
+  if (avatarEditor && avatarCropFrame && avatarCropImage && avatarZoom && acceptAvatarEdit) {
+    let cropImageUrl = '';
+    let imageScale = 1;
+    let imageX = 0;
+    let imageY = 0;
+    let baseScale = 1;
+    let dragState = null;
 
-  // Validar tipo
-  const tiposPermitidos = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  if (!tiposPermitidos.includes(archivo.type)) {
-    showAlert("Error", "Solo se permiten imágenes (JPG, PNG, GIF, WebP)");
-    fotoInput.value = "";
-    return;
-  }
+    const clampImagePosition = () => {
+      const frameSize = avatarCropFrame.clientWidth;
+      const imageWidth = avatarCropImage.clientWidth;
+      const imageHeight = avatarCropImage.clientHeight;
+      imageX = Math.max(frameSize - imageWidth, Math.min(0, imageX));
+      imageY = Math.max(frameSize - imageHeight, Math.min(0, imageY));
+      avatarCropImage.style.left = `${imageX}px`;
+      avatarCropImage.style.top = `${imageY}px`;
+    };
 
-  // Validar tamaño (5MB)
-  if (archivo.size > 5 * 1024 * 1024) {
-    showAlert("Error", "La imagen no debe superar 5MB");
-    fotoInput.value = "";
-    return;
-  }
+    const layoutCropImage = (keepCenter = false) => {
+      const frameSize = avatarCropFrame.clientWidth;
+      const previousScale = imageScale;
+      const centerSourceX = keepCenter ? (frameSize / 2 - imageX) / previousScale : null;
+      const centerSourceY = keepCenter ? (frameSize / 2 - imageY) / previousScale : null;
+      imageScale = baseScale * Number(avatarZoom.value);
+      avatarCropImage.style.width = `${avatarCropImage.naturalWidth * imageScale}px`;
+      avatarCropImage.style.height = `${avatarCropImage.naturalHeight * imageScale}px`;
+      imageX = keepCenter ? frameSize / 2 - centerSourceX * imageScale : (frameSize - avatarCropImage.clientWidth) / 2;
+      imageY = keepCenter ? frameSize / 2 - centerSourceY * imageScale : (frameSize - avatarCropImage.clientHeight) / 2;
+      clampImagePosition();
+    };
 
-  // Mostrar preview
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    avatarInitial.hidden = true;
-    avatarImage.src = event.target.result;
-    avatarImage.hidden = false;
-  };
-  reader.readAsDataURL(archivo);
+    const closeAvatarEditor = () => {
+      avatarEditor.hidden = true;
+      avatarEditorError.hidden = true;
+      avatarEditorError.textContent = '';
+      fotoInput.value = '';
+      if (cropImageUrl) URL.revokeObjectURL(cropImageUrl);
+      cropImageUrl = '';
+    };
 
-  // Enviar al servidor
-  const formData = new FormData();
-  formData.append('foto', archivo);
+    const uploadCroppedImage = async () => {
+      const frameSize = avatarCropFrame.clientWidth;
+      const sourceCropX = -imageX / imageScale;
+      const sourceCropY = -imageY / imageScale;
+      const sourceCropSize = frameSize / imageScale;
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('No se pudo preparar el recorte de la imagen.');
 
-  fetch('/principal/api/upload-photo/', {
-    method: 'POST',
-    headers: {
-      'X-CSRFToken': getCookie('csrftoken'),
-    },
-    body: formData
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      showSuccess("¡Listo!", "Foto actualizada correctamente");
-      // Recargar la foto desde el servidor evitando caché
-      if (data.foto_url) {
-        setTimeout(() => {
-          avatarImage.src = data.foto_url + '?t=' + new Date().getTime();
-          avatarInitial.hidden = true;
-          avatarImage.hidden = false;
-        }, 500);
+      context.drawImage(
+        avatarCropImage,
+        sourceCropX,
+        sourceCropY,
+        sourceCropSize,
+        sourceCropSize,
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((result) => {
+          if (result) resolve(result);
+          else reject(new Error('No se pudo generar la imagen recortada.'));
+        }, 'image/jpeg', 0.92);
+      });
+
+      const formData = new FormData();
+      formData.append('foto', new File([blob], 'foto-perfil.jpg', { type: 'image/jpeg' }));
+      const csrfToken = getCookie('csrftoken')
+        || document.querySelector('meta[name="csrf-token"]')?.content;
+      const response = await fetch('/principal/api/upload-photo/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: formData,
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        if (response.redirected || response.status === 401) {
+          throw new Error('Tu sesión expiró. Inicia sesión nuevamente y vuelve a intentar.');
+        }
+        if (response.status === 403) {
+          throw new Error('La verificación de seguridad rechazó la solicitud. Recarga la página y vuelve a intentar.');
+        }
+        throw new Error(`El servidor respondió con un formato inesperado (HTTP ${response.status}).`);
       }
-      fotoInput.value = "";
-    } else {
-      showAlert("Error", data.error || "No se pudo subir la foto");
-      avatarInitial.hidden = false;
+      const data = await response.json();
+      if (!response.ok || !data.success || !data.foto_url) {
+        throw new Error(data.error || 'No se pudo guardar la foto de perfil.');
+      }
+
+      avatarImage.src = `${data.foto_url}?t=${Date.now()}`;
+      avatarInitial.hidden = true;
+      avatarImage.hidden = false;
+      if (resetAvatarButton) resetAvatarButton.disabled = false;
+      showProfileSuccess('Foto actualizada correctamente.');
+      closeAvatarEditor();
+    };
+
+    fotoInput.addEventListener('change', async () => {
+      const archivo = fotoInput.files[0];
+      if (!archivo) return;
+
+      const tiposPermitidos = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      if (!tiposPermitidos.includes(archivo.type)) {
+        showAlert('Error', 'Solo se permiten imágenes (JPG, PNG, GIF, WebP).');
+        fotoInput.value = '';
+        return;
+      }
+      if (archivo.size > 5 * 1024 * 1024) {
+        showAlert('Error', 'La imagen no debe superar 5 MB.');
+        fotoInput.value = '';
+        return;
+      }
+
+      if (cropImageUrl) URL.revokeObjectURL(cropImageUrl);
+      cropImageUrl = URL.createObjectURL(archivo);
+      avatarCropImage.src = cropImageUrl;
+      avatarZoom.value = '1';
+      avatarEditorError.hidden = true;
+      avatarEditor.hidden = false;
+      try {
+        await avatarCropImage.decode();
+        baseScale = Math.max(
+          avatarCropFrame.clientWidth / avatarCropImage.naturalWidth,
+          avatarCropFrame.clientHeight / avatarCropImage.naturalHeight,
+        );
+        layoutCropImage();
+        acceptAvatarEdit.focus();
+      } catch {
+        closeAvatarEditor();
+        showAlert('Error', 'No se pudo abrir la imagen seleccionada.');
+      }
+    });
+
+    avatarZoom.addEventListener('input', () => layoutCropImage(true));
+    avatarCropFrame.addEventListener('pointerdown', (event) => {
+      dragState = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, imageX, imageY };
+      avatarCropFrame.setPointerCapture(event.pointerId);
+    });
+    avatarCropFrame.addEventListener('pointermove', (event) => {
+      if (!dragState || event.pointerId !== dragState.pointerId) return;
+      imageX = dragState.imageX + event.clientX - dragState.x;
+      imageY = dragState.imageY + event.clientY - dragState.y;
+      clampImagePosition();
+    });
+    avatarCropFrame.addEventListener('pointerup', () => {
+      dragState = null;
+    });
+    avatarCropFrame.addEventListener('pointercancel', () => {
+      dragState = null;
+    });
+
+    [cancelAvatarEdit, cancelAvatarEditButton].forEach((button) => {
+      button.addEventListener('click', closeAvatarEditor);
+    });
+    avatarEditor.addEventListener('click', (event) => {
+      if (event.target === avatarEditor) closeAvatarEditor();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !avatarEditor.hidden) closeAvatarEditor();
+    });
+    acceptAvatarEdit.addEventListener('click', async () => {
+      acceptAvatarEdit.disabled = true;
+      acceptAvatarEdit.textContent = 'Guardando…';
+      avatarEditorError.hidden = true;
+      try {
+        await uploadCroppedImage();
+      } catch (error) {
+        avatarEditorError.textContent = error instanceof Error ? error.message : String(error);
+        avatarEditorError.hidden = false;
+      } finally {
+        acceptAvatarEdit.disabled = false;
+        acceptAvatarEdit.textContent = 'Aceptar';
+      }
+    });
+  }
+}
+
+if (resetAvatarButton) {
+  resetAvatarButton.addEventListener('click', async () => {
+    resetAvatarButton.disabled = true;
+    const buttonText = resetAvatarButton.textContent;
+    resetAvatarButton.textContent = 'Restableciendo…';
+    try {
+      const csrfToken = getCookie('csrftoken')
+        || document.querySelector('meta[name="csrf-token"]')?.content;
+      const response = await fetch('/principal/api/reset-photo/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        if (response.redirected || response.status === 401) {
+          throw new Error('Tu sesión expiró. Inicia sesión nuevamente y vuelve a intentar.');
+        }
+        if (response.status === 403) {
+          throw new Error('La verificación de seguridad rechazó la solicitud. Recarga la página y vuelve a intentar.');
+        }
+        throw new Error(`El servidor respondió con un formato inesperado (HTTP ${response.status}).`);
+      }
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'No se pudo restablecer la foto.');
+      }
+
+      avatarImage.removeAttribute('src');
       avatarImage.hidden = true;
-      fotoInput.value = "";
+      avatarInitial.hidden = false;
+      showProfileSuccess('Foto restablecida al avatar predeterminado.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      showAlert('Error', message);
+    } finally {
+      resetAvatarButton.textContent = buttonText;
+      resetAvatarButton.disabled = !avatarImage.src || avatarImage.hidden;
     }
-  })
-  .catch(error => {
-    showAlert("Error", "Error al subir la foto: " + error);
-    avatarInitial.hidden = false;
-    avatarImage.hidden = true;
-    fotoInput.value = "";
   });
-});
 }
 
 // ============== FUNCIONALIDAD DE MODO OSCURO ==============
 const darkModeSwitch = document.querySelector(".preference-row:first-of-type .mini-switch input");
 const fontSizeSelect = document.querySelector(".font-size-select");
-const themePreferenceStorageKey = 'nexorev_theme_preferences';
-const fontSizePreferenceStorageKey = 'nexorev_font_size_preferences';
+const motionPreferenceToggle = document.getElementById('motionPreferenceToggle');
 const allowedFontSizes = ['normal', 'large', 'xlarge'];
 const currentUser = document.body.dataset.currentUser?.toLowerCase() || '';
-
-const getPreferenceMap = (storageKey) => {
-  try {
-    const rawValue = localStorage.getItem(storageKey);
-    const parsedValue = rawValue ? JSON.parse(rawValue) : {};
-    return parsedValue && typeof parsedValue === 'object' ? parsedValue : {};
-  } catch (e) {
-    console.warn(`No se pudo leer ${storageKey}`, e);
-    return {};
-  }
-};
-
-const savePreferenceMap = (storageKey, preferenceMap) => {
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(preferenceMap));
-  } catch (e) {
-    console.warn(`No se pudo guardar ${storageKey}`, e);
-  }
-};
-
-const getThemeForUser = () => {
-  const themePreferences = getPreferenceMap(themePreferenceStorageKey);
-  if (currentUser && themePreferences[currentUser] === 'dark') {
-    return 'dark';
-  }
-  return localStorage.getItem('nexorev_dark_mode') === 'true' ? 'dark' : 'light';
-};
-
-const getFontSizeForUser = () => {
-  const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
-  const savedValue = currentUser ? fontSizePreferences[currentUser] : null;
-  return allowedFontSizes.includes(savedValue) ? savedValue : 'normal';
-};
 
 const applyDarkMode = (enabled) => {
   document.documentElement.classList.toggle('dark-mode', enabled);
@@ -915,147 +1705,185 @@ const applyFontSize = (size) => {
   }
 };
 
-const currentTheme = getThemeForUser();
-const currentFontSize = getFontSizeForUser();
+const applyMotionPreference = (animationsDisabled) => {
+  document.documentElement.setAttribute('data-motion', animationsDisabled ? 'off' : 'on');
+};
+
+const currentTheme = document.body.dataset.userTheme === 'dark' ? 'dark' : 'light';
+let currentFontSize = allowedFontSizes.includes(document.body.dataset.userFontSize)
+  ? document.body.dataset.userFontSize
+  : 'normal';
+let animationsDisabled = document.body.dataset.userMotionDisabled === 'true';
 applyDarkMode(currentTheme === 'dark');
 applyFontSize(currentFontSize);
+applyMotionPreference(animationsDisabled);
+
+const saveAppearancePreference = async (preference, value) => {
+  const response = await fetch('/principal/api/update-appearance-preference/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': getCookie('csrftoken')
+        || document.querySelector('meta[name="csrf-token"]')?.content,
+    },
+    body: JSON.stringify({ preference, value }),
+  });
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(`El servidor respondió con un formato inesperado (HTTP ${response.status}).`);
+  }
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'No se pudo guardar la preferencia.');
+  }
+};
 
 if (darkModeSwitch) {
   darkModeSwitch.checked = currentTheme === 'dark';
-  darkModeSwitch.addEventListener("change", (e) => {
-    const modoOscuroActivo = e.target.checked;
-    applyDarkMode(modoOscuroActivo);
-
-    if (currentUser) {
-      const themePreferences = getPreferenceMap(themePreferenceStorageKey);
-      themePreferences[currentUser] = modoOscuroActivo ? 'dark' : 'light';
-      savePreferenceMap(themePreferenceStorageKey, themePreferences);
-    } else {
-      try {
-        localStorage.setItem('nexorev_dark_mode', String(modoOscuroActivo));
-      } catch (error) {
-        console.warn('No se pudo guardar modo oscuro en localStorage', error);
-      }
+  darkModeSwitch.addEventListener("change", async (e) => {
+    const enabled = e.currentTarget.checked;
+    applyDarkMode(enabled);
+    darkModeSwitch.disabled = true;
+    try {
+      await saveAppearancePreference('modo_oscuro', enabled);
+    } catch (error) {
+      darkModeSwitch.checked = !enabled;
+      applyDarkMode(!enabled);
+      showAlert('Error al guardar preferencia', error.message);
+    } finally {
+      darkModeSwitch.disabled = false;
     }
   });
 }
 
 if (fontSizeSelect) {
   fontSizeSelect.value = currentFontSize;
-  fontSizeSelect.addEventListener('change', (e) => {
-    const selectedValue = allowedFontSizes.includes(e.target.value) ? e.target.value : 'normal';
+  fontSizeSelect.addEventListener('change', async (e) => {
+    const previousValue = currentFontSize;
+    const selectedValue = allowedFontSizes.includes(e.currentTarget.value) ? e.currentTarget.value : 'normal';
+    fontSizeSelect.value = selectedValue;
     applyFontSize(selectedValue);
-
-    if (currentUser) {
-      const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
-      fontSizePreferences[currentUser] = selectedValue;
-      savePreferenceMap(fontSizePreferenceStorageKey, fontSizePreferences);
+    fontSizeSelect.disabled = true;
+    try {
+      await saveAppearancePreference('tamano_letra', selectedValue);
+      currentFontSize = selectedValue;
+    } catch (error) {
+      fontSizeSelect.value = previousValue;
+      applyFontSize(previousValue);
+      showAlert('Error al guardar preferencia', error.message);
+    } finally {
+      fontSizeSelect.disabled = false;
     }
   });
 }
 
-// Función para cambiar contraseña
+if (motionPreferenceToggle) {
+  motionPreferenceToggle.checked = animationsDisabled;
+  motionPreferenceToggle.addEventListener('change', async () => {
+    const disabled = motionPreferenceToggle.checked;
+    applyMotionPreference(disabled);
+    motionPreferenceToggle.disabled = true;
+    try {
+      await saveAppearancePreference('desactivar_animaciones', disabled);
+      animationsDisabled = disabled;
+    } catch (error) {
+      motionPreferenceToggle.checked = !disabled;
+      applyMotionPreference(!disabled);
+      showAlert('Error al guardar preferencia', error.message);
+    } finally {
+      motionPreferenceToggle.disabled = false;
+    }
+  });
+}
+
 if (changePasswordButton) {
-  changePasswordButton.addEventListener("click", (e) => {
-  e.preventDefault();
+  changePasswordButton.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const currentPassword = currentPasswordInput.value;
+    const newPassword = newPasswordInput.value;
+    const confirmPassword = confirmPasswordInput.value;
 
-  const currentPassword = currentPasswordInput.value.trim();
-  const newPassword = newPasswordInput.value.trim();
-  const confirmPassword = confirmPasswordInput.value.trim();
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      showAlert("Campos incompletos", "Por favor completa todos los campos de contraseña");
+      return;
+    }
 
-  // Validaciones
-  if (!currentPassword || !newPassword || !confirmPassword) {
-    showAlert("Campos incompletos", "Por favor completa todos los campos de contraseña");
-    return;
-  }
+    if (newPassword !== confirmPassword) {
+      showAlert("Error", "Las nuevas contraseñas no coinciden");
+      return;
+    }
 
-  if (newPassword !== confirmPassword) {
-    showAlert("Error", "Las nuevas contraseñas no coinciden");
-    return;
-  }
+    if (newPassword.length < 8) {
+      showAlert("Error", "La nueva contraseña debe tener al menos 8 caracteres");
+      return;
+    }
 
-  if (newPassword.length < 6) {
-    showAlert("Error", "La nueva contraseña debe tener al menos 6 caracteres");
-    return;
-  }
+    if (currentPassword === newPassword) {
+      showAlert("Error", "La nueva contraseña no puede ser igual a la actual");
+      return;
+    }
 
-  if (currentPassword === newPassword) {
-    showAlert("Error", "La nueva contraseña no puede ser igual a la actual");
-    return;
-  }
-
-  // Enviar al servidor
-  fetch('/principal/api/change-password/', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRFToken': getCookie('csrftoken'),
-    },
-    body: JSON.stringify({
-      currentPassword,
-      newPassword,
-      confirmPassword,
-    })
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      showSuccess("¡Listo!", "Contraseña cambiada correctamente");
+    try {
+      const response = await fetch('/principal/api/change-password/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        showAlert("Error", data.error || "No se pudo cambiar la contraseña");
+        return;
+      }
+      showProfileSuccess("Contraseña cambiada correctamente.");
       currentPasswordInput.value = "";
       newPasswordInput.value = "";
       confirmPasswordInput.value = "";
-    } else {
-      showAlert("Error", data.error || "No se pudo cambiar la contraseña");
+    } catch (error) {
+      showAlert("Error", "Error al cambiar la contraseña: " + error);
     }
-  })
-  .catch(error => {
-    showAlert("Error", "Error al cambiar la contraseña: " + error);
-  });
-});
-}
-
-// Función para guardar cambios
-if (saveButton) {
-  saveButton.addEventListener("click", (e) => {
-  e.preventDefault();
-
-  const nuevoNombre = nombreInput.value.trim();
-  const nuevoTelefono = telefonoInput.value.trim();
-  const nuevaEdad = edadInput.value.trim();
-
-  // Validaciones básicas
-  if (!nuevoNombre) {
-    showAlert("Error", "El nombre no puede estar vacío");
-    return;
-  }
-
-  guardarCambios(nuevoNombre, nuevoTelefono, nuevaEdad);
   });
 }
 
-function guardarCambios(nombre, telefono, edad) {
-  fetch('/principal/api/update-profile/', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRFToken': getCookie('csrftoken'),
-    },
-    body: JSON.stringify({
-      nombre,
-      telefono,
-      edad,
-    })
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      showSuccess("¡Listo!", "Cambios guardados correctamente");
-    } else {
-      showAlert("Error", data.error || "No se pudieron guardar los cambios");
+if (profileForm && saveButton) {
+  profileForm.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
+      event.preventDefault();
     }
-  })
-  .catch(error => {
-    showAlert("Error", "Error al guardar los cambios: " + error);
+  });
+
+  saveButton.addEventListener('click', async () => {
+    if (!profileForm.reportValidity()) return;
+    saveButton.disabled = true;
+    try {
+      const response = await fetch('/principal/api/update-profile/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: JSON.stringify({
+          nombre: nombreInput.value.trim(),
+          email: emailInput.value.trim(),
+          telefono: telefonoInput.value.trim(),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        showAlert("Error", data.error || "No se pudieron guardar los cambios");
+        return;
+      }
+      showProfileSuccess("Cambios del perfil guardados correctamente.");
+      if (data.email && data.email.toLowerCase() !== currentUser) {
+        setTimeout(() => window.location.reload(), 2600);
+      }
+    } catch (error) {
+      showAlert("Error", "Error al guardar los cambios: " + error);
+    } finally {
+      saveButton.disabled = false;
+    }
   });
 }
 

@@ -30,6 +30,15 @@ body {
 
 button, input { font: inherit; }
 
+html[data-motion="off"],
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
 .sidebar-toggle svg,
 .sidebar-link svg,
 .quick-link svg,

@@ -1,16 +1,22 @@
 <section class="app-view" id="diagnosticoView" data-view="diagnostico">
   {% if usuario and usuario.role == 'doctor' %}
-    <header class="page-head compact">
-      <h1>Expediente del paciente</h1>
-      <p>Consulta el progreso, estado, notas y sesiones del paciente seleccionado.</p>
+    <header class="page-head compact section-guide-head">
+      <div>
+        <h1>Expediente del paciente</h1>
+        <p>Consulta el progreso, estado, notas y sesiones del paciente seleccionado.</p>
+      </div>
+      <button class="section-guide-trigger" type="button" data-tutorial-view="diagnostico">Guía de uso</button>
     </header>
     <div class="doctor-record-view panel" id="doctorRecordView">
       <p>Selecciona un paciente desde el inicio para consultar su expediente.</p>
     </div>
   {% else %}
-  <header class="page-head compact">
-    <h1>Formulario de Diagnostico</h1>
-    <p>Completa tu evaluacion para registrar como va tu recuperacion.</p>
+  <header class="page-head compact section-guide-head">
+    <div>
+      <h1>Formulario de Diagnostico</h1>
+      <p>Completa tu evaluacion para registrar como va tu recuperacion.</p>
+    </div>
+    <button class="section-guide-trigger" type="button" data-tutorial-view="diagnostico">Guía de uso</button>
   </header>
 
   <form class="diagnostic-form panel" id="diagnosticForm" method="post" novalidate>

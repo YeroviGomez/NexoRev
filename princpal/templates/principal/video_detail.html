@@ -8,36 +8,28 @@
   <script>
     (() => {
       const currentUser = "{{ current_user_email|default:''|escapejs }}".trim().toLowerCase();
-      const themePreferenceStorageKey = 'nexorev_theme_preferences';
-      const getPreferenceMap = (storageKey) => {
-        try {
-          const raw = localStorage.getItem(storageKey);
-          const parsed = raw ? JSON.parse(raw) : {};
-          return parsed && typeof parsed === 'object' ? parsed : {};
-        } catch {
-          return {};
-        }
-      };
-      const themePreferences = getPreferenceMap(themePreferenceStorageKey);
-      const theme = currentUser && themePreferences[currentUser] === 'dark'
-        ? 'dark'
-        : localStorage.getItem('nexorev_dark_mode') === 'true' ? 'dark' : 'light';
+      const theme = "{{ usuario.modo_oscuro|yesno:'dark,light' }}";
+      const animationsDisabled = {{ usuario.desactivar_animaciones|yesno:"true,false" }};
       document.documentElement.classList.toggle('dark-mode', theme === 'dark');
       document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-motion', animationsDisabled ? 'off' : 'on');
       document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.toggle('dark-mode', theme === 'dark');
       }, { once: true });
     })();
   </script>
-  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=8">
+  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=16">
   {% if video.is_local %}<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css">{% endif %}
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   {% if video.hls_url %}<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>{% endif %}
   {% if video.is_local %}<script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.min.js"></script>{% endif %}
 </head>
-<body class="video-detail-page" data-current-user="{{ current_user_email|escapejs }}">
+<body class="video-detail-page{% if usuario.modo_oscuro %} dark-mode{% endif %}" data-current-user="{{ current_user_email|escapejs }}" data-user-theme="{{ usuario.modo_oscuro|yesno:'dark,light' }}" data-user-font-size="{{ usuario.tamano_letra|default:'normal' }}" data-user-motion-disabled="{{ usuario.desactivar_animaciones|yesno:'true,false' }}">
   <main class="video-detail-shell">
-    <a class="video-back-link" href="{% url 'principal' %}#videos">← Volver a videos</a>
+    <div class="video-detail-actions">
+      <a class="video-back-link" href="{% url 'principal' %}#videos">← Volver a videos</a>
+      <button class="video-guide-trigger" id="openVideoGuide" type="button">Guía del video</button>
+    </div>
     <header class="video-detail-heading">
       <div class="video-detail-title">
         <span class="video-detail-kicker">Reproduciendo ahora</span>
@@ -119,7 +111,263 @@
       {% endif %}
     </section>
   </main>
+  <dialog class="video-guide-dialog" id="videoGuidePrompt" aria-labelledby="videoGuidePromptTitle">
+    <article class="video-guide-card">
+      <header class="video-guide-header">
+        <span class="video-detail-kicker">Guía de esta sección</span>
+        <button class="motivation-close" id="closeVideoGuidePrompt" type="button" aria-label="Cerrar guía">&times;</button>
+      </header>
+      <h2 id="videoGuidePromptTitle">¿Qué guía del video quieres consultar?</h2>
+      <p>Elige el nivel de detalle para aprender a usar este reproductor y sus opciones.</p>
+      <footer class="video-guide-actions">
+        <button class="tutorial-nav-btn" id="cancelVideoGuide" type="button">Ahora no</button>
+        <button class="tutorial-nav-btn" id="startQuickVideoGuide" type="button">Guía rápida</button>
+        <button class="tutorial-next-btn" id="startCompleteVideoGuide" type="button">Guía completa</button>
+      </footer>
+    </article>
+  </dialog>
+  <dialog class="video-guide-dialog" id="videoGuide" aria-labelledby="videoGuideTitle">
+    <article class="video-guide-card">
+      <header class="video-guide-header">
+        <span class="video-detail-kicker" id="videoGuideProgress">Paso 1 de 5</span>
+        <button class="motivation-close" id="closeVideoGuide" type="button" aria-label="Cerrar guía">&times;</button>
+      </header>
+      <h2 id="videoGuideTitle"></h2>
+      <p id="videoGuideDescription"></p>
+      <footer class="video-guide-actions">
+        <button class="tutorial-nav-btn" id="videoGuidePrevious" type="button">Anterior</button>
+        <button class="tutorial-next-btn" id="videoGuideNext" type="button">Siguiente</button>
+      </footer>
+    </article>
+  </dialog>
+  <dialog class="pro-tour hidden" id="videoGuideTour" aria-labelledby="videoGuideTourTitle">
+    <div class="pro-tour-shield" aria-hidden="true"></div>
+    <svg class="pro-tour-shade" id="videoGuideTourShade" aria-hidden="true">
+      <defs>
+        <mask id="videoGuideTourMask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse">
+          <rect id="videoGuideTourMaskBackground" fill="white" />
+          <rect id="videoGuideTourHole" x="0" y="0" width="0" height="0" rx="14" fill="black" />
+        </mask>
+      </defs>
+      <rect width="100%" height="100%" fill="rgba(3, 10, 24, 0.76)" mask="url(#videoGuideTourMask)" />
+    </svg>
+    <article class="pro-tour-card">
+      <span class="tutorial-step-badge" id="videoGuideTourProgress">Paso 1 de 5</span>
+      <h2 id="videoGuideTourTitle" aria-live="polite"></h2>
+      <p id="videoGuideTourDescription"></p>
+      <footer class="pro-tour-actions">
+        <button class="tutorial-nav-btn" id="exitVideoGuideTour" type="button">Salir</button>
+        <button class="tutorial-nav-btn" id="previousVideoGuideTour" type="button">Anterior</button>
+        <button class="tutorial-next-btn" id="nextVideoGuideTour" type="button">Siguiente</button>
+      </footer>
+    </article>
+  </dialog>
   <script>
+    const videoGuidePrompt = document.getElementById('videoGuidePrompt');
+    const videoGuide = document.getElementById('videoGuide');
+    const videoGuideTour = document.getElementById('videoGuideTour');
+    const guideResumeParams = new URLSearchParams(window.location.search);
+    let resumesAppGuide = guideResumeParams.get('resume_app_tour') === '1';
+    let resumeAppGuideStep = Number(guideResumeParams.get('resume_step'));
+    const videoGuideCompleteSteps = [
+      {
+        selector: '.video-detail-heading',
+        title: 'Detalles de la rutina',
+        description: 'Aquí puedes revisar el nombre, la descripción y la zona corporal del ejercicio que vas a realizar.',
+      },
+      {
+        selector: '.video-player-frame',
+        title: 'Usa el reproductor',
+        description: 'Pulsa reproducir y utiliza los controles para pausar, cambiar el volumen, avanzar en la barra o activar pantalla completa. En videos locales también puedes ajustar la velocidad y la calidad cuando estén disponibles; los controles de videos externos dependen de su reproductor.',
+      },
+      {
+        selector: '.routine-completion',
+        title: 'Registra tu progreso',
+        description: 'Al terminar el ejercicio, pulsa “Marcar rutina como completada”. Si se marcó por error, puedes desmarcarla desde el mismo botón.',
+      },
+      {
+        selector: '.history-link',
+        title: 'Consulta tu historial',
+        description: '“Ver historial” te lleva a la aplicación para revisar los videos que viste y las rutinas que completaste.',
+      },
+      {
+        selector: '.recommendations-section',
+        title: 'Explora más ejercicios',
+        description: 'Al final de la página encontrarás ejercicios recomendados de esta zona. Usa las flechas o desplázate para ver más opciones.',
+      },
+    ];
+    const videoGuideSteps = [
+      {
+        quick: true,
+        title: 'Reproductor del ejercicio',
+        description: 'Este es el video de la rutina. Pulsa reproducir para empezar; puedes pausar, avanzar o retroceder desde los controles del reproductor.',
+      },
+      {
+        quick: false,
+        title: 'Ajusta la reproducción',
+        description: 'Usa los controles para cambiar el volumen, la velocidad, la calidad disponible o activar pantalla completa. En videos externos, algunos controles dependen del reproductor de origen.',
+      },
+      {
+        quick: true,
+        title: 'Registra la rutina',
+        description: 'Cuando termines los ejercicios, pulsa “Marcar rutina como completada” para guardar tu avance. Si ya estaba marcada, puedes desmarcarla.',
+      },
+      {
+        quick: false,
+        title: 'Consulta tu historial',
+        description: 'Pulsa “Ver historial” para regresar a la aplicación y revisar tus videos vistos y las rutinas completadas.',
+      },
+      {
+        quick: false,
+        title: 'Explora más ejercicios',
+        description: 'Al final encontrarás recomendaciones de la misma zona corporal. Usa las flechas o desplázate horizontalmente para explorar otras rutinas.',
+      },
+    ];
+    let videoGuideIndex = 0;
+    let activeVideoGuideSteps = videoGuideSteps;
+    let videoGuideTourIndex = 0;
+    const renderVideoGuide = () => {
+      document.getElementById('videoGuideProgress').textContent =
+        `Paso ${videoGuideIndex + 1} de ${activeVideoGuideSteps.length}`;
+      document.getElementById('videoGuideTitle').textContent = activeVideoGuideSteps[videoGuideIndex].title;
+      document.getElementById('videoGuideDescription').textContent = activeVideoGuideSteps[videoGuideIndex].description;
+      document.getElementById('videoGuidePrevious').disabled = videoGuideIndex === 0;
+      document.getElementById('videoGuideNext').textContent =
+        videoGuideIndex === activeVideoGuideSteps.length - 1 ? 'Finalizar' : 'Siguiente';
+    };
+    document.getElementById('openVideoGuide').addEventListener('click', () => {
+      videoGuidePrompt.showModal();
+      document.getElementById('startCompleteVideoGuide').focus();
+    });
+    const launchVideoGuide = (isQuick) => {
+      videoGuidePrompt.close();
+      activeVideoGuideSteps = isQuick
+        ? videoGuideSteps.filter((step) => step.quick)
+        : videoGuideSteps;
+      videoGuideIndex = 0;
+      renderVideoGuide();
+      videoGuide.showModal();
+      document.getElementById('videoGuideNext').focus();
+    };
+    document.getElementById('startQuickVideoGuide').addEventListener('click', () => launchVideoGuide(true));
+    const closeVideoGuidePrompt = () => videoGuidePrompt.close();
+    document.getElementById('closeVideoGuidePrompt').addEventListener('click', closeVideoGuidePrompt);
+    document.getElementById('cancelVideoGuide').addEventListener('click', closeVideoGuidePrompt);
+    const closeVideoGuide = () => videoGuide.close();
+    document.getElementById('closeVideoGuide').addEventListener('click', closeVideoGuide);
+    document.getElementById('videoGuidePrevious').addEventListener('click', () => {
+      if (videoGuideIndex > 0) {
+        videoGuideIndex -= 1;
+        renderVideoGuide();
+      }
+    });
+    document.getElementById('videoGuideNext').addEventListener('click', () => {
+      if (videoGuideIndex === activeVideoGuideSteps.length - 1) {
+        closeVideoGuide();
+        return;
+      }
+      videoGuideIndex += 1;
+      renderVideoGuide();
+    });
+    const renderVideoGuideTour = () => {
+      const step = videoGuideCompleteSteps[videoGuideTourIndex];
+      const target = document.querySelector(step.selector);
+      document.getElementById('videoGuideTourProgress').textContent =
+        `Paso ${videoGuideTourIndex + 1} de ${videoGuideCompleteSteps.length}`;
+      document.getElementById('videoGuideTourTitle').textContent = step.title;
+      document.getElementById('videoGuideTourDescription').textContent = step.description;
+      document.getElementById('previousVideoGuideTour').disabled = videoGuideTourIndex === 0;
+      document.getElementById('nextVideoGuideTour').textContent =
+        videoGuideTourIndex === videoGuideCompleteSteps.length - 1 ? 'Finalizar' : 'Siguiente';
+
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      window.requestAnimationFrame(() => {
+        const bounds = target.getBoundingClientRect();
+        const padding = 8;
+        const x = Math.max(8, bounds.left - padding);
+        const y = Math.max(8, bounds.top - padding);
+        const width = Math.min(window.innerWidth - x - 8, bounds.width + padding * 2);
+        const height = Math.min(window.innerHeight - y - 8, bounds.height + padding * 2);
+        const shade = document.getElementById('videoGuideTourShade');
+        shade.setAttribute('viewBox', `0 0 ${window.innerWidth} ${window.innerHeight}`);
+        document.getElementById('videoGuideTourMaskBackground').setAttribute('width', String(window.innerWidth));
+        document.getElementById('videoGuideTourMaskBackground').setAttribute('height', String(window.innerHeight));
+        document.getElementById('videoGuideTourHole').setAttribute('x', String(x));
+        document.getElementById('videoGuideTourHole').setAttribute('y', String(y));
+        document.getElementById('videoGuideTourHole').setAttribute('width', String(Math.max(0, width)));
+        document.getElementById('videoGuideTourHole').setAttribute('height', String(Math.max(0, height)));
+
+        if (window.innerWidth > 560) {
+          const card = videoGuideTour.querySelector('.pro-tour-card');
+          const cardBounds = card.getBoundingClientRect();
+          const left = Math.min(
+            Math.max(16, bounds.left + bounds.width / 2 - cardBounds.width / 2),
+            window.innerWidth - cardBounds.width - 16,
+          );
+          const below = bounds.bottom + 18;
+          const top = below + cardBounds.height <= window.innerHeight - 16
+            ? below
+            : Math.max(16, bounds.top - cardBounds.height - 18);
+          card.style.left = `${left}px`;
+          card.style.top = `${top}px`;
+        }
+      });
+      document.getElementById('nextVideoGuideTour').focus();
+    };
+    const finishVideoGuideTour = () => {
+      videoGuideTour.classList.add('hidden');
+      if (videoGuideTour.open) videoGuideTour.close();
+      if (resumesAppGuide) {
+        resumesAppGuide = false;
+        const returnUrl = new URL("{% url 'principal' %}", window.location.origin);
+        returnUrl.searchParams.set('resume_app_tour', '1');
+        returnUrl.searchParams.set('resume_step', String(resumeAppGuideStep));
+        window.location.assign(returnUrl);
+      }
+    };
+    const cancelVideoGuideTour = () => {
+      videoGuideTour.classList.add('hidden');
+      if (videoGuideTour.open) videoGuideTour.close();
+      if (!resumesAppGuide) return;
+      resumesAppGuide = false;
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('resume_app_tour');
+      cleanUrl.searchParams.delete('resume_step');
+      window.history.replaceState(null, '', cleanUrl);
+    };
+    const startCompleteVideoGuide = () => {
+      videoGuideTourIndex = 0;
+      videoGuideTour.classList.remove('hidden');
+      videoGuideTour.showModal();
+      renderVideoGuideTour();
+    };
+    document.getElementById('startCompleteVideoGuide').addEventListener('click', () => {
+      if (videoGuidePrompt.open) videoGuidePrompt.close();
+      startCompleteVideoGuide();
+    });
+    document.getElementById('previousVideoGuideTour').addEventListener('click', () => {
+      if (videoGuideTourIndex > 0) {
+        videoGuideTourIndex -= 1;
+        renderVideoGuideTour();
+      }
+    });
+    document.getElementById('nextVideoGuideTour').addEventListener('click', () => {
+      if (videoGuideTourIndex === videoGuideCompleteSteps.length - 1) {
+        finishVideoGuideTour();
+        return;
+      }
+      videoGuideTourIndex += 1;
+      renderVideoGuideTour();
+    });
+    document.getElementById('exitVideoGuideTour').addEventListener('click', () => {
+      cancelVideoGuideTour();
+    });
+    videoGuideTour.addEventListener('cancel', cancelVideoGuideTour);
+    videoGuideTour.addEventListener('close', () => videoGuideTour.classList.add('hidden'));
+    if (resumesAppGuide && Number.isInteger(resumeAppGuideStep) && resumeAppGuideStep >= 0) {
+      startCompleteVideoGuide();
+    }
+
     const completeButton = document.getElementById('completeRoutineButton');
     const localVideo = document.querySelector('.video-player-frame video');
     const videoLoadError = document.querySelector('.video-load-error');
@@ -250,7 +498,9 @@
         if (data.completed) {
           motivationMessage.textContent = data.message;
           motivationModal.hidden = false;
-          confetti({ particleCount: 150, spread: 75, origin: { y: 0.6 } });
+          if (document.documentElement.dataset.motion !== 'off') {
+            confetti({ particleCount: 150, spread: 75, origin: { y: 0.6 } });
+          }
         }
       } catch (error) {
         completeButton.disabled = false;
@@ -288,5 +538,6 @@
     window.addEventListener('resize', updateCarousel);
     updateCarousel();
   </script>
+  {% include "principal/scroll_to_top.html" %}
 </body>
 </html>

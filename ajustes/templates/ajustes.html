@@ -7,11 +7,15 @@
   <title>Nexo Rev | Ajustes</title>
   <script>
     (() => {
+      const currentUser = "{{ current_user_email|default:''|escapejs }}".trim().toLowerCase();
       const currentUserStorageKey = "nexorev_current_user";
       const themePreferenceStorageKey = "nexorev_theme_preferences";
       const fontSizePreferenceStorageKey = "nexorev_font_size_preferences";
+      const motionPreferenceStorageKey = "nexorev_motion_preferences";
       const allowedFontSizes = new Set(["normal", "large", "xlarge"]);
-      const currentUser = sessionStorage.getItem(currentUserStorageKey)?.toLowerCase();
+      if (currentUser) {
+        sessionStorage.setItem(currentUserStorageKey, currentUser);
+      }
       const getPreferenceMap = (storageKey) => {
         try {
           const rawValue = localStorage.getItem(storageKey);
@@ -24,18 +28,21 @@
 
       const themePreferences = getPreferenceMap(themePreferenceStorageKey);
       const fontSizePreferences = getPreferenceMap(fontSizePreferenceStorageKey);
+      const motionPreferences = getPreferenceMap(motionPreferenceStorageKey);
 
       const theme = currentUser && themePreferences[currentUser] === "dark" ? "dark" : "light";
       const savedFontSize = currentUser ? fontSizePreferences[currentUser] : "normal";
       const fontSize = allowedFontSizes.has(savedFontSize) ? savedFontSize : "normal";
+      const animationsDisabled = currentUser && motionPreferences[currentUser] === true;
 
       document.documentElement.setAttribute("data-theme", theme);
       document.documentElement.setAttribute("data-font-size", fontSize);
+      document.documentElement.setAttribute("data-motion", animationsDisabled ? "off" : "on");
     })();
   </script>
-  <link rel="stylesheet" href="{% static 'estilo.css' %}">
+  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=15">
 </head>
-<body>
+<body data-current-user="{{ current_user_email|default:''|escapejs }}">
   <button
     class="menu-toggle"
     id="menuToggle"
@@ -88,6 +95,18 @@
 
       <div class="setting-row">
         <div class="setting-copy">
+          <h2 id="motionSettingLabel">Animaciones</h2>
+          <p>Desactiva los movimientos y las transiciones de la interfaz.</p>
+        </div>
+
+        <label class="switch" for="motionToggle" aria-label="Desactivar animaciones">
+          <input id="motionToggle" type="checkbox" aria-labelledby="motionSettingLabel">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
           <h2>Datos del usuario</h2>
         </div>
 
@@ -100,13 +119,15 @@
     const menuToggle = document.getElementById("menuToggle");
     const menuPanel = document.getElementById("menuPanel");
     const themeToggle = document.getElementById("themeToggle");
+    const motionToggle = document.getElementById("motionToggle");
     const fontSizeSelect = document.getElementById("fontSizeSelect");
-    const currentUserStorageKey = "nexorev_current_user";
     const themePreferenceStorageKey = "nexorev_theme_preferences";
     const fontSizePreferenceStorageKey = "nexorev_font_size_preferences";
+    const motionPreferenceStorageKey = "nexorev_motion_preferences";
     const allowedFontSizes = new Set(["normal", "large", "xlarge"]);
 
-    const getCurrentUser = () => sessionStorage.getItem(currentUserStorageKey)?.toLowerCase();
+    const currentUser = document.body.dataset.currentUser?.trim().toLowerCase()
+      || sessionStorage.getItem("nexorev_current_user")?.toLowerCase();
 
     const getPreferenceMap = (storageKey) => {
       try {
@@ -141,6 +162,15 @@
       return allowedFontSizes.has(savedFontSize) ? savedFontSize : "normal";
     };
 
+    const getAnimationsDisabledForUser = (user) => {
+      if (!user) {
+        return false;
+      }
+
+      const motionPreferences = getPreferenceMap(motionPreferenceStorageKey);
+      return motionPreferences[user] === true;
+    };
+
     const applyTheme = (theme) => {
       document.documentElement.setAttribute("data-theme", theme === "light" ? "light" : "dark");
     };
@@ -150,12 +180,18 @@
       document.documentElement.setAttribute("data-font-size", selectedFontSize);
     };
 
-    const currentUser = getCurrentUser();
+    const applyMotionPreference = (animationsDisabled) => {
+      document.documentElement.setAttribute("data-motion", animationsDisabled ? "off" : "on");
+    };
+
     const currentTheme = getThemeForUser(currentUser);
     const currentFontSize = getFontSizeForUser(currentUser);
+    const animationsDisabled = getAnimationsDisabledForUser(currentUser);
     applyTheme(currentTheme);
     applyFontSize(currentFontSize);
+    applyMotionPreference(animationsDisabled);
     themeToggle.checked = currentTheme === "dark";
+    motionToggle.checked = animationsDisabled;
     fontSizeSelect.value = currentFontSize;
 
     menuToggle.addEventListener("click", () => {
@@ -175,6 +211,17 @@
       }
     });
 
+    motionToggle.addEventListener("change", () => {
+      const animationsDisabled = motionToggle.checked;
+      applyMotionPreference(animationsDisabled);
+
+      if (currentUser) {
+        const motionPreferences = getPreferenceMap(motionPreferenceStorageKey);
+        motionPreferences[currentUser] = animationsDisabled;
+        savePreferenceMap(motionPreferenceStorageKey, motionPreferences);
+      }
+    });
+
     fontSizeSelect.addEventListener("change", () => {
       const selectedFontSize = allowedFontSizes.has(fontSizeSelect.value) ? fontSizeSelect.value : "normal";
       applyFontSize(selectedFontSize);
@@ -186,5 +233,6 @@
       }
     });
   </script>
+  {% include "principal/scroll_to_top.html" %}
 </body>
 </html>

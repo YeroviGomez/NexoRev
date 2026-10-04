@@ -20,7 +20,16 @@
   .body-placeholder { min-height: 380px; }
   .body-placeholder span { width: 100%; padding: 3rem 1rem; }
   .favorites-toolbar { align-items: flex-start; flex-direction: column; }
-  .tutorial-overlay { padding: 0; align-items: stretch; }
+  .tutorial-basic-dialog { padding: 0; }
+  .tutorial-prompt-dialog { max-height: calc(100vh - 2rem); }
+  .tutorial-prompt { width: 100%; }
+  .tutorial-prompt-actions { flex-direction: column-reverse; }
+  .tutorial-prompt-actions button { width: 100%; }
+  .page-head.section-guide-head { flex-direction: column; }
+  .section-guide-trigger { align-self: flex-start; }
+  .pro-tour-card { top: auto !important; right: 1rem; bottom: 1rem; left: 1rem !important; width: auto; }
+  .pro-tour-actions { gap: 0.35rem; }
+  .pro-tour-actions button { padding: 0.4rem 0.55rem; font-size: 0.82rem; }
   .tutorial-modal { width: 100vw; min-height: 100vh; max-height: 100vh; border-radius: 0; border-left: 0; border-right: 0; padding: 1.45rem 1.45rem 1rem; }
   .tutorial-heading h2 { font-size: 1.6rem; }
   .tutorial-heading p, .tutorial-info ul { font-size: 1.05rem; }
