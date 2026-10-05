@@ -1916,6 +1916,13 @@ if (securityTips && securityCriticalCheck && securityTipsClose) {
   });
   if (!securityTips.classList.contains('hidden')) document.body.classList.add('security-open');
 }
+if (document.body.dataset.showInitialGuide === 'true') {
+  if (securityTips && !securityTips.classList.contains('hidden') && securityTipsClose) {
+    securityTipsClose.addEventListener('click', () => openTutorialPrompt('inicio'), { once: true });
+  } else {
+    openTutorialPrompt('inicio');
+  }
+}
 
 const enableBiometric = document.getElementById('enableBiometric');
 if (enableBiometric) {

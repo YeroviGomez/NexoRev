@@ -135,6 +135,7 @@ def verify_2fa_view(request):
         request.session['current_user'] = email
         request.session['current_user_role'] = usuario.role if usuario else 'paciente'
         request.session['show_security_tips'] = True
+        request.session['show_initial_guide'] = True
         if usuario:
             try:
                 send_login_notification(usuario)

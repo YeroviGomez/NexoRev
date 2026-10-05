@@ -42,7 +42,7 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
-<body class="{% if usuario.modo_oscuro %}dark-mode{% endif %}" data-current-user="{{ current_user_email|default:''|escapejs }}" data-current-user-role="{{ usuario.role|default:''|escapejs }}" data-user-theme="{{ usuario.modo_oscuro|yesno:'dark,light' }}" data-user-font-size="{{ usuario.tamano_letra|default:'normal' }}" data-user-motion-disabled="{{ usuario.desactivar_animaciones|yesno:'true,false' }}" data-initial-view="{{ active_view|default:'inicio' }}">
+<body class="{% if usuario.modo_oscuro %}dark-mode{% endif %}" data-current-user="{{ current_user_email|default:''|escapejs }}" data-current-user-role="{{ usuario.role|default:''|escapejs }}" data-user-theme="{{ usuario.modo_oscuro|yesno:'dark,light' }}" data-user-font-size="{{ usuario.tamano_letra|default:'normal' }}" data-user-motion-disabled="{{ usuario.desactivar_animaciones|yesno:'true,false' }}" data-initial-view="{{ active_view|default:'inicio' }}" data-show-initial-guide="{{ show_initial_guide|yesno:'true,false' }}">
   {% include "principal/sidebar.html" %}
 
   <main class="app-shell">
@@ -59,6 +59,6 @@
 
   {% include "principal/scroll_to_top.html" %}
 
-  <script src="{% static 'princpal/js/principal.js' %}?v=31" defer></script>
+  <script src="{% static 'princpal/js/principal.js' %}?v=32" defer></script>
 </body>
 </html>

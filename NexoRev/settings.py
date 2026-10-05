@@ -84,7 +84,7 @@ DATABASES = {
         'USER': os.environ.get('POSTGRES_USER', 'nexorev_admin'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'abcdabcdab'),
         'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
-        'PORT': os.environ.get('POSTGRES_PORT', '5436'), #5436 yero xd
+        'PORT': os.environ.get('POSTGRES_PORT', '5432'), #5436 yero xd
     }
 }
 

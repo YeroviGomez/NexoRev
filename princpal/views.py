@@ -368,6 +368,7 @@ def generate_hls(video):
 @ensure_csrf_cookie
 def principal_view(request):
     show_security_tips = request.session.pop('show_security_tips', False)
+    show_initial_guide = request.session.pop('show_initial_guide', False)
     current_user_email = request.session.get('current_user', '')
     usuario = None
     paciente = None
@@ -447,6 +448,7 @@ def principal_view(request):
 
     return render(request, 'principal.html', {
         'show_security_tips': show_security_tips,
+        'show_initial_guide': show_initial_guide,
         'usuario': usuario,
         'paciente': paciente,
         'doctor_patients': doctor_patients,

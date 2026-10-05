@@ -37,6 +37,7 @@ class TwoFactorLoginTests(TestCase):
 
 		self.assertRedirects(response, reverse('principal'))
 		self.assertEqual(self.client.session.get('current_user'), self.usuario.email)
+		self.assertTrue(self.client.session.get('show_initial_guide'))
 		self.assertEqual(len(mail.outbox), 2)
 		self.assertEqual(
 			mail.outbox[1].subject,
@@ -44,6 +45,14 @@ class TwoFactorLoginTests(TestCase):
 		)
 		self.assertEqual(mail.outbox[1].to, [self.usuario.email])
 		self.assertIn('Se inició sesión en tu cuenta de Nexo ReV', mail.outbox[1].body)
+
+		principal_response = self.client.get(reverse('principal'))
+		self.assertEqual(principal_response.status_code, 200)
+		self.assertContains(principal_response, 'data-show-initial-guide="true"')
+		self.assertNotIn('show_initial_guide', self.client.session)
+
+		refreshed_response = self.client.get(reverse('principal'))
+		self.assertContains(refreshed_response, 'data-show-initial-guide="false"')
 
 	def test_invalid_email_code_does_not_send_login_notification(self):
 		self.client.post(reverse('login'), {
