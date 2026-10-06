@@ -2,8 +2,155 @@ const sidebarToggle = document.getElementById("sidebarToggle");
 const navTriggers = document.querySelectorAll("[data-nav]");
 const sidebarLinks = document.querySelectorAll(".sidebar-link[data-nav]");
 const appViews = document.querySelectorAll(".app-view");
+const calendarGrid = document.getElementById("calendarDays");
+const calendarTitle = document.getElementById("calendarMonthTitle");
+const calendarSelectedDate = document.getElementById("calendarSelectedDate");
+const calendarPrevious = document.getElementById("calendarPrevious");
+const calendarNext = document.getElementById("calendarNext");
+const calendarToday = document.getElementById("calendarToday");
+const calendarAgendaDate = document.getElementById("calendarAgendaDate");
+const calendarSessionList = document.getElementById("calendarSessionList");
+const calendarEmptyMessage = document.getElementById("calendarEmptyMessage");
+const calendarSessionsData = document.getElementById("calendarSessionsData");
+let calendarSessions = [];
+try {
+  calendarSessions = JSON.parse(calendarSessionsData?.textContent || '[]');
+} catch {
+  calendarSessions = [];
+}
 const favoriteUser = document.body.dataset.currentUser?.toLowerCase() || 'anonymous';
 const favoritesStorageKey = `nexorev_favorites_${favoriteUser}`;
+
+const initializeCalendar = () => {
+  if (!calendarGrid || !calendarTitle || !calendarSelectedDate || !calendarAgendaDate || !calendarSessionList || !calendarEmptyMessage) return;
+
+  const monthFormatter = new Intl.DateTimeFormat('es-SV', { month: 'long', year: 'numeric' });
+  const dateFormatter = new Intl.DateTimeFormat('es-SV', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+  const capitalizeFirst = (value) => `${value.charAt(0).toLocaleUpperCase('es-SV')}${value.slice(1)}`;
+  const getDateKey = (date) => [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+  const sessionsByDate = new Map();
+  calendarSessions.forEach((session) => {
+    const sessions = sessionsByDate.get(session.date) || [];
+    sessions.push(session);
+    sessionsByDate.set(session.date, sessions);
+  });
+  const today = new Date();
+  let displayedMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  let selectedDate = getDateKey(today);
+
+  const renderAgenda = () => {
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const selected = new Date(year, month - 1, day);
+    const sessions = sessionsByDate.get(selectedDate) || [];
+    calendarAgendaDate.textContent = capitalizeFirst(dateFormatter.format(selected));
+    calendarSessionList.replaceChildren();
+    calendarEmptyMessage.hidden = sessions.length > 0;
+
+    sessions.forEach((session) => {
+      const item = document.createElement('li');
+      item.className = 'calendar-session-item';
+      const time = document.createElement('time');
+      time.className = 'calendar-session-time';
+      time.dateTime = `${session.date}T${session.time}`;
+      time.textContent = session.time;
+      const objective = document.createElement('p');
+      objective.className = 'calendar-session-objective';
+      objective.textContent = session.objective;
+      item.append(time, objective);
+      calendarSessionList.append(item);
+    });
+  };
+
+  const render = () => {
+    const currentDate = new Date();
+    const todayKey = getDateKey(currentDate);
+    const firstDay = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth(), 1);
+    const mondayOffset = (firstDay.getDay() + 6) % 7;
+    const gridStart = new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() - mondayOffset);
+
+    calendarTitle.textContent = capitalizeFirst(monthFormatter.format(displayedMonth));
+    calendarGrid.replaceChildren();
+
+    for (let cell = 0; cell < 42; cell += 1) {
+      const date = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + cell);
+      const dateKey = getDateKey(date);
+      const dayButton = document.createElement('button');
+      dayButton.className = 'calendar-day';
+      dayButton.type = 'button';
+      if (date.getMonth() !== displayedMonth.getMonth()) dayButton.classList.add('is-outside-month');
+      const sessions = sessionsByDate.get(dateKey) || [];
+      const dayNumber = document.createElement('span');
+      dayNumber.className = 'calendar-day-number';
+      dayNumber.textContent = String(date.getDate());
+      dayButton.append(dayNumber);
+      dayButton.setAttribute('aria-label', `${dateFormatter.format(date)}${sessions.length ? `, ${sessions.length} ${sessions.length === 1 ? 'rutina agendada' : 'rutinas agendadas'}` : ''}`);
+      dayButton.setAttribute('aria-pressed', String(dateKey === selectedDate));
+      if (sessions.length) {
+        const sessionCount = document.createElement('span');
+        sessionCount.className = 'calendar-session-count';
+        sessionCount.setAttribute('aria-hidden', 'true');
+        sessionCount.textContent = String(sessions.length);
+        dayButton.append(sessionCount);
+      }
+      if (dateKey === todayKey) {
+        dayButton.classList.add('is-today');
+        dayButton.setAttribute('aria-current', 'date');
+      }
+      if (dateKey === selectedDate) dayButton.classList.add('is-selected');
+      dayButton.addEventListener('click', () => {
+        selectedDate = dateKey;
+        if (date.getMonth() !== displayedMonth.getMonth()) {
+          displayedMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+        }
+        render();
+      });
+      calendarGrid.append(dayButton);
+    }
+
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const selected = new Date(year, month - 1, day);
+    calendarSelectedDate.textContent = capitalizeFirst(dateFormatter.format(selected));
+    calendarSelectedDate.dateTime = selectedDate;
+    renderAgenda();
+  };
+
+  calendarPrevious?.addEventListener('click', () => {
+    displayedMonth = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth() - 1, 1);
+    selectedDate = getDateKey(displayedMonth);
+    render();
+  });
+  calendarNext?.addEventListener('click', () => {
+    displayedMonth = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth() + 1, 1);
+    selectedDate = getDateKey(displayedMonth);
+    render();
+  });
+  calendarToday?.addEventListener('click', () => {
+    const currentDate = new Date();
+    displayedMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    selectedDate = getDateKey(currentDate);
+    render();
+  });
+
+  const refreshAtMidnight = () => {
+    const currentDate = new Date();
+    const nextDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() + 1);
+    window.setTimeout(() => {
+      render();
+      refreshAtMidnight();
+    }, Math.max(nextDay.getTime() - currentDate.getTime(), 1000));
+  };
+
+  render();
+  refreshAtMidnight();
+};
+
+initializeCalendar();
 
 const getFavorites = () => {
   try {
@@ -196,6 +343,8 @@ const loadPatientRecord = async (patientId) => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'No se pudo cargar el expediente.');
     const patient = data.paciente;
+    const now = new Date();
+    const minimumSessionDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     doctorRecordView.innerHTML = `
       <div class="section-head">
         <h2>${escapeRecordText(patient.nombre)}</h2>
@@ -218,8 +367,22 @@ const loadPatientRecord = async (patientId) => {
         ${(patient.historial_avance || []).map((item) => `<li>${escapeRecordText(item.fecha)} · ${escapeRecordText(item.avance)}%</li>`).join('') || '<li>Sin historial registrado.</li>'}
       </ul>
       <h3>Sesiones</h3>
-      <ul class="record-history">
-        ${(patient.sesiones || []).map((session) => `<li>${escapeRecordText(session.fecha)} · ${escapeRecordText(session.objetivo)}${session.avance ? ` · ${escapeRecordText(session.avance)}` : ''}</li>`).join('') || '<li>Sin sesiones registradas.</li>'}
+      <ul class="record-history record-session-list">
+        ${(patient.sesiones || []).map((session) => `
+          <li class="record-session-item">
+            <div><time class="record-session-date" datetime="${escapeRecordText(session.fecha)}">${escapeRecordText(session.fecha_display || session.fecha)}</time> · ${escapeRecordText(session.objetivo)}${session.avance ? ` · ${escapeRecordText(session.avance)}` : ''}</div>
+            ${session.activo ? `
+              <details class="session-reschedule">
+                <summary>Reagendar cita</summary>
+                <form class="session-reschedule-form" data-patient-id="${escapeRecordText(patient.id)}" data-session-id="${escapeRecordText(session.id)}">
+                  <label>Nueva fecha y hora<input type="datetime-local" name="fecha" min="${minimumSessionDate}" value="${escapeRecordText(session.fecha_local)}" required></label>
+                  <button class="session-reschedule-submit" type="submit">Guardar cambio</button>
+                  <span class="session-reschedule-feedback" role="status" aria-live="polite"></span>
+                </form>
+              </details>
+            ` : '<span class="session-inactive-label">Cita inactiva</span>'}
+          </li>
+        `).join('') || '<li>Sin sesiones registradas.</li>'}
       </ul>
     `;
     showView('diagnostico');
@@ -232,6 +395,41 @@ const loadPatientRecord = async (patientId) => {
     console.error(error);
   }
 };
+
+doctorRecordView?.addEventListener('submit', async (event) => {
+  const form = event.target.closest('.session-reschedule-form');
+  if (!form) return;
+  event.preventDefault();
+
+  const submitButton = form.querySelector('[type="submit"]');
+  const feedback = form.querySelector('.session-reschedule-feedback');
+  submitButton.disabled = true;
+  feedback.textContent = 'Guardando cambio...';
+
+  try {
+    const response = await fetch(`/principal/pacientes/${form.dataset.patientId}/sesiones/${form.dataset.sessionId}/reagendar/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || getCookie('csrftoken'),
+        'X-Requested-With': 'XMLHttpRequest',
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      },
+      body: new URLSearchParams(new FormData(form)).toString(),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo reagendar la cita.');
+
+    const date = form.closest('.record-session-item').querySelector('.record-session-date');
+    date.dateTime = data.fecha;
+    date.textContent = data.fecha_display;
+    form.elements.fecha.value = data.fecha_local;
+    feedback.textContent = 'Cita reagendada correctamente.';
+  } catch (error) {
+    feedback.textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+  }
+});
 
 document.querySelectorAll('.patient-card[data-patient-id]').forEach((card) => {
   const openRecord = () => loadPatientRecord(card.dataset.patientId);

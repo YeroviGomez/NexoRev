@@ -1,4 +1,5 @@
 from django import forms
+from django.utils import timezone
 from pathlib import Path
 
 from .models import Diagnostico, Video
@@ -40,6 +41,8 @@ class DiagnosticoForm(forms.ModelForm):
 
     nivel_dolor = forms.IntegerField(
         label='Nivel de dolor',
+        min_value=1,
+        max_value=10,
         error_messages={'required': required_error},
         widget=forms.NumberInput(attrs={
             'type': 'range',
@@ -69,6 +72,22 @@ class DiagnosticoForm(forms.ModelForm):
         error_messages={'required': required_error},
         widget=forms.RadioSelect,
     )
+
+
+class RescheduleSessionForm(forms.Form):
+    fecha = forms.DateTimeField(
+        input_formats=['%Y-%m-%dT%H:%M'],
+        widget=forms.DateTimeInput(
+            format='%Y-%m-%dT%H:%M',
+            attrs={'type': 'datetime-local'},
+        ),
+    )
+
+    def clean_fecha(self):
+        fecha = self.cleaned_data['fecha']
+        if fecha <= timezone.now():
+            raise forms.ValidationError('Selecciona una fecha y hora futuras.')
+        return fecha
 
 
 class VideoUploadForm(forms.ModelForm):

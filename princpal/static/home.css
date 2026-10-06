@@ -48,7 +48,23 @@
 .record-summary span { display: block; border: 1px solid var(--line); border-radius: 0.7rem; padding: 0.7rem; color: var(--text); }
 .record-summary strong { display: block; margin-top: 0.2rem; }
 .record-history { margin: 0; padding-left: 1.2rem; color: var(--muted); }
+.record-session-list { display: grid; gap: 0.8rem; padding-left: 0; list-style: none; }
+.record-session-item { display: grid; gap: 0.65rem; border-bottom: 1px solid var(--line); padding: 0.75rem 0; }
+.record-session-date { font-weight: 700; }
+.session-reschedule { font-size: 0.9rem; }
+.session-reschedule summary { width: fit-content; color: var(--teal); cursor: pointer; font-weight: 700; }
+.session-reschedule-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 0.65rem; margin-top: 0.65rem; }
+.session-reschedule-form label { display: grid; gap: 0.3rem; color: var(--muted); font-size: 0.82rem; }
+.session-reschedule-form input { min-width: 0; min-height: 2.5rem; border: 1px solid var(--line); border-radius: 0.4rem; padding: 0.4rem 0.55rem; background: var(--surface); color: var(--ink); }
+.session-reschedule-submit { min-height: 2.5rem; border: 0; border-radius: 0.4rem; padding: 0.4rem 0.75rem; color: #fff; background: #007f77; cursor: pointer; font-weight: 700; }
+.session-reschedule-submit:disabled { opacity: 0.6; cursor: wait; }
+.session-reschedule-feedback { grid-column: 1 / -1; min-height: 1.2em; color: var(--muted); font-size: 0.8rem; }
+.session-inactive-label { color: var(--muted); font-size: 0.82rem; }
 .doctor-record-view { padding: 1.5rem; }
 .doctor-record-view h3 { margin: 1.2rem 0 0.5rem; }
 .record-empty { color: var(--muted); }
 .doctor-record-chart { width: 100%; min-height: 170px; margin-top: 0.7rem; }
+@media (max-width: 560px) {
+	.session-reschedule-form { grid-template-columns: minmax(0, 1fr); }
+	.session-reschedule-submit { justify-self: start; }
+}

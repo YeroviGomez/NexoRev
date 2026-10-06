@@ -1,0 +1,48 @@
+<section class="app-view calendar-view" id="calendarView" data-view="calendario">
+  <header class="page-head compact">
+    <h1>Calendario</h1>
+  </header>
+
+  <div class="calendar-layout">
+    <section class="calendar-workspace" aria-label="Calendario mensual">
+      <header class="calendar-toolbar">
+        <div class="calendar-month-info">
+          <h2 class="calendar-month-title" id="calendarMonthTitle"></h2>
+          <p class="calendar-selected-label">Fecha seleccionada <time id="calendarSelectedDate" aria-live="polite"></time></p>
+        </div>
+        <div class="calendar-actions">
+          <button class="calendar-today-button" id="calendarToday" type="button">Hoy</button>
+          <div class="calendar-month-controls" aria-label="Cambiar de mes">
+            <button class="calendar-arrow-button" id="calendarPrevious" type="button" aria-label="Mes anterior" title="Mes anterior">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+            </button>
+            <button class="calendar-arrow-button" id="calendarNext" type="button" aria-label="Mes siguiente" title="Mes siguiente">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div class="calendar-weekdays" aria-hidden="true">
+        <span><span class="calendar-weekday-full">Lunes</span><span class="calendar-weekday-short">Lu</span></span>
+        <span><span class="calendar-weekday-full">Martes</span><span class="calendar-weekday-short">Ma</span></span>
+        <span><span class="calendar-weekday-full">Miércoles</span><span class="calendar-weekday-short">Mi</span></span>
+        <span><span class="calendar-weekday-full">Jueves</span><span class="calendar-weekday-short">Ju</span></span>
+        <span><span class="calendar-weekday-full">Viernes</span><span class="calendar-weekday-short">Vi</span></span>
+        <span><span class="calendar-weekday-full">Sábado</span><span class="calendar-weekday-short">Sa</span></span>
+        <span><span class="calendar-weekday-full">Domingo</span><span class="calendar-weekday-short">Do</span></span>
+      </div>
+      <div class="calendar-days" id="calendarDays" aria-label="Días del mes"></div>
+    </section>
+
+    <aside class="calendar-agenda" aria-labelledby="calendarAgendaTitle">
+      <header class="calendar-agenda-header">
+        <h2 id="calendarAgendaTitle">Rutinas agendadas</h2>
+        <p id="calendarAgendaDate" aria-live="polite"></p>
+      </header>
+      <ul class="calendar-session-list" id="calendarSessionList"></ul>
+      <p class="calendar-empty-message" id="calendarEmptyMessage" hidden>No hay rutinas agendadas para este día.</p>
+    </aside>
+  </div>
+  {{ calendar_sessions|json_script:"calendarSessionsData" }}
+</section>

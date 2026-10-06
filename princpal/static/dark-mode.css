@@ -35,6 +35,12 @@ body.dark-mode .doctor-filters select {
   color: #f8fafc;
   border-color: #39435d;
 }
+html.dark-mode .session-reschedule-form input,
+body.dark-mode .session-reschedule-form input {
+  background: #23232d;
+  color: #f8fafc;
+  border-color: #3a3a4e;
+}
 html.dark-mode .patient-card:hover,
 body.dark-mode .patient-card:hover,
 html.dark-mode .patient-card:focus-visible,

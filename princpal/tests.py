@@ -11,7 +11,197 @@ from django.utils import timezone
 from PIL import Image
 
 from crear_cuenta.models import Usuario
-from .models import Paciente, VideoView
+from .models import Diagnostico, Paciente, Sesion, VideoView
+
+
+class DiagnosticFormTests(TestCase):
+	def setUp(self):
+		self.usuario = Usuario.objects.create(
+			email='formulario-test@example.com',
+			nombre='Paciente de prueba',
+		)
+		self.client = Client()
+		self.autenticar(self.client, self.usuario)
+		self.respuestas = {
+			'nivel_dolor': '4',
+			'pregunta1': 'espalda',
+			'pregunta2': 'La sesión fue cómoda.',
+			'pregunta3': 'si',
+			'comentario': 'Puedo moverme mejor.',
+		}
+
+	def autenticar(self, client, usuario):
+		session = client.session
+		session['current_user'] = usuario.email
+		session.save()
+
+	def test_guarda_el_formulario_en_la_cuenta_autenticada(self):
+		response = self.client.post('/principal/', self.respuestas)
+
+		self.assertEqual(response.status_code, 302)
+		diagnostico = Diagnostico.objects.get(usuario=self.usuario)
+		self.assertEqual(diagnostico.nivel_dolor, 4)
+		self.assertEqual(diagnostico.pregunta1, 'espalda')
+		self.assertEqual(diagnostico.pregunta2, 'La sesión fue cómoda.')
+		self.assertEqual(diagnostico.pregunta3, 'si')
+		self.assertEqual(diagnostico.comentario, 'Puedo moverme mejor.')
+
+	def test_actualiza_el_formulario_existente_del_paciente(self):
+		self.client.post('/principal/', self.respuestas)
+		respuestas_actualizadas = {**self.respuestas, 'nivel_dolor': '7'}
+		self.client.post('/principal/', respuestas_actualizadas)
+
+		self.assertEqual(Diagnostico.objects.filter(usuario=self.usuario).count(), 1)
+		self.assertEqual(Diagnostico.objects.get(usuario=self.usuario).nivel_dolor, 7)
+
+	def test_cada_paciente_solo_guarda_su_propio_formulario(self):
+		self.client.post('/principal/', self.respuestas)
+		otro_usuario = Usuario.objects.create(
+			email='otro-formulario-test@example.com',
+			nombre='Otro paciente',
+		)
+		otro_cliente = Client()
+		self.autenticar(otro_cliente, otro_usuario)
+		respuestas_otro_usuario = {**self.respuestas, 'nivel_dolor': '8'}
+		otro_cliente.post('/principal/', respuestas_otro_usuario)
+
+		self.assertEqual(Diagnostico.objects.count(), 2)
+		self.assertEqual(Diagnostico.objects.get(usuario=self.usuario).nivel_dolor, 4)
+		self.assertEqual(Diagnostico.objects.get(usuario=otro_usuario).nivel_dolor, 8)
+
+	def test_rechaza_dolor_fuera_del_rango_y_no_guarda(self):
+		respuestas_invalidas = {**self.respuestas, 'nivel_dolor': '11'}
+		response = self.client.post('/principal/', respuestas_invalidas)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('nivel_dolor', response.context['form'].errors)
+		self.assertFalse(Diagnostico.objects.exists())
+
+	def test_doctor_no_puede_enviar_el_formulario_de_paciente(self):
+		doctor = Usuario.objects.create(
+			email='doctor-formulario-test@example.com',
+			nombre='Doctor de prueba',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		cliente_doctor = Client()
+		self.autenticar(cliente_doctor, doctor)
+		response = cliente_doctor.post('/principal/', self.respuestas)
+
+		self.assertEqual(response.status_code, 403)
+		self.assertFalse(Diagnostico.objects.exists())
+
+	def test_calendario_muestra_sesiones_activas_en_la_fecha_local(self):
+		paciente = Paciente.objects.create(
+			usuario=self.usuario,
+			nombre=self.usuario.nombre,
+			email=self.usuario.email,
+		)
+		fecha = timezone.now() + timedelta(days=2)
+		Sesion.objects.create(paciente=paciente, fecha=fecha, objetivo='Rutina de movilidad')
+		Sesion.objects.create(paciente=paciente, fecha=fecha, objetivo='Sesión cancelada', activo=False)
+
+		response = self.client.get('/principal/')
+
+		self.assertEqual(response.status_code, 200)
+		sesiones = response.context['calendar_sessions']
+		self.assertEqual(len(sesiones), 1)
+		self.assertEqual(sesiones[0]['date'], timezone.localtime(fecha).date().isoformat())
+		self.assertEqual(sesiones[0]['time'], timezone.localtime(fecha).strftime('%H:%M'))
+		self.assertEqual(sesiones[0]['objective'], 'Rutina de movilidad')
+		self.assertContains(response, 'calendarSessionsData')
+
+
+class SessionRescheduleTests(TestCase):
+	def setUp(self):
+		self.doctor = Usuario.objects.create(
+			email='especialista-test@example.com',
+			nombre='Especialista de prueba',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		self.usuario = Usuario.objects.create(
+			email='paciente-cita-test@example.com',
+			nombre='Paciente de cita',
+		)
+		self.paciente = Paciente.objects.create(
+			usuario=self.usuario,
+			doctor=self.doctor,
+			nombre=self.usuario.nombre,
+			email=self.usuario.email,
+		)
+		self.sesion = Sesion.objects.create(
+			paciente=self.paciente,
+			fecha=timezone.now() + timedelta(days=1),
+			objetivo='Rutina de movilidad',
+		)
+		self.doctor_client = Client()
+		self.autenticar(self.doctor_client, self.doctor)
+
+	def test_expediente_entrega_el_id_y_fecha_local_de_la_sesion(self):
+		response = self.doctor_client.get(f'/principal/pacientes/{self.paciente.pk}/')
+
+		self.assertEqual(response.status_code, 200)
+		sesion = response.json()['paciente']['sesiones'][0]
+		self.assertEqual(sesion['id'], self.sesion.pk)
+		self.assertEqual(
+			sesion['fecha_local'],
+			timezone.localtime(self.sesion.fecha).strftime('%Y-%m-%dT%H:%M'),
+		)
+
+	def autenticar(self, client, usuario):
+		session = client.session
+		session['current_user'] = usuario.email
+		session.save()
+
+	def test_especialista_asignado_reagenda_y_calendario_refleja_el_cambio(self):
+		fecha_nueva = timezone.localtime(timezone.now() + timedelta(days=5)).replace(second=0, microsecond=0)
+		response = self.doctor_client.post(
+			reverse('reschedule_session', args=[self.paciente.pk, self.sesion.pk]),
+			{'fecha': fecha_nueva.strftime('%Y-%m-%dT%H:%M')},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertTrue(response.json()['success'])
+		self.sesion.refresh_from_db()
+		self.assertEqual(timezone.localtime(self.sesion.fecha), fecha_nueva)
+
+		patient_client = Client()
+		self.autenticar(patient_client, self.usuario)
+		calendar_response = patient_client.get('/principal/')
+		scheduled = calendar_response.context['calendar_sessions']
+		self.assertEqual(len(scheduled), 1)
+		self.assertEqual(scheduled[0]['date'], fecha_nueva.date().isoformat())
+		self.assertEqual(scheduled[0]['time'], fecha_nueva.strftime('%H:%M'))
+
+	def test_otro_especialista_no_puede_reagendar_la_cita(self):
+		especialista_ajeno = Usuario.objects.create(
+			email='otro-especialista-test@example.com',
+			nombre='Otro especialista',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		cliente_ajeno = Client()
+		self.autenticar(cliente_ajeno, especialista_ajeno)
+		fecha_original = self.sesion.fecha
+
+		response = cliente_ajeno.post(
+			reverse('reschedule_session', args=[self.paciente.pk, self.sesion.pk]),
+			{'fecha': (timezone.localtime(timezone.now() + timedelta(days=4))).strftime('%Y-%m-%dT%H:%M')},
+		)
+
+		self.assertEqual(response.status_code, 404)
+		self.sesion.refresh_from_db()
+		self.assertEqual(self.sesion.fecha, fecha_original)
+
+	def test_rechaza_una_fecha_pasada(self):
+		fecha_original = self.sesion.fecha
+		response = self.doctor_client.post(
+			reverse('reschedule_session', args=[self.paciente.pk, self.sesion.pk]),
+			{'fecha': (timezone.localtime(timezone.now() - timedelta(days=1))).strftime('%Y-%m-%dT%H:%M')},
+		)
+
+		self.assertEqual(response.status_code, 400)
+		self.assertFalse(response.json()['success'])
+		self.sesion.refresh_from_db()
+		self.assertEqual(self.sesion.fecha, fecha_original)
 
 
 @override_settings(MEDIA_ROOT=tempfile.gettempdir())

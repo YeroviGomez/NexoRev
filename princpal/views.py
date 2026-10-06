@@ -1,6 +1,5 @@
 from django.contrib import messages
-from django.http import JsonResponse
-from django.http import Http404, StreamingHttpResponse
+from django.http import Http404, HttpResponseForbidden, JsonResponse, StreamingHttpResponse
 from django.conf import settings
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import cache_control
@@ -21,8 +20,8 @@ import json
 import shutil
 import subprocess
 from urllib.parse import parse_qs, urlparse
-from .forms import DiagnosticoForm, FotoPerfilForm, ProfileUpdateForm, VideoUploadForm
-from .models import Diagnostico, Paciente, Video, VideoView
+from .forms import DiagnosticoForm, FotoPerfilForm, ProfileUpdateForm, RescheduleSessionForm, VideoUploadForm
+from .models import Diagnostico, Paciente, Sesion, Video, VideoView
 
 from crear_cuenta.models import Usuario
 
@@ -370,58 +369,68 @@ def principal_view(request):
     show_security_tips = request.session.pop('show_security_tips', False)
     show_initial_guide = request.session.pop('show_initial_guide', False)
     current_user_email = request.session.get('current_user', '')
-    usuario = None
+    usuario = Usuario.objects.filter(email=current_user_email, is_active=True).first()
+    if not usuario:
+        return redirect('login')
+
     paciente = None
     doctor_patients = []
     available_patients = []
     patient_progress_series = []
-    diagnostico_id = request.session.get('diagnostico_id')
-    diagnostico = None
+    calendar_sessions = []
+    request.session.pop('diagnostico_id', None)
+    diagnostico = Diagnostico.objects.filter(usuario=usuario).first() if usuario.is_paciente else None
     active_view = 'inicio'
-
-    if diagnostico_id:
-        diagnostico = Diagnostico.objects.filter(pk=diagnostico_id).first()
 
     form = DiagnosticoForm(request.POST or None, instance=diagnostico)
 
     if request.method == "POST":
+        if not usuario.is_paciente:
+            return HttpResponseForbidden('Solo los pacientes pueden enviar este formulario.')
+
         if form.is_valid():
-            diagnostico_guardado = form.save()
-            request.session['diagnostico_id'] = diagnostico_guardado.pk
+            diagnostico_guardado = form.save(commit=False)
+            diagnostico_guardado.usuario = usuario
+            diagnostico_guardado.save()
             if diagnostico:
-                messages.success(request, "Diagnostico actualizado correctamente.")
+                messages.success(request, "Formulario actualizado correctamente.")
             else:
-                messages.success(request, "Diagnostico guardado exitosamente.")
+                messages.success(request, "Formulario enviado correctamente.")
             return redirect("/principal/#diagnostico")
         messages.error(request, "Por favor, complete todos los campos obligatorios.")
         active_view = 'diagnostico'
 
-    if current_user_email:
-        try:
-            usuario = Usuario.objects.get(email=current_user_email)
-        except Usuario.DoesNotExist:
-            usuario = None
+    request.session['current_user_role'] = usuario.role
+    paciente = Paciente.objects.filter(usuario=usuario).select_related('doctor').first()
+    if usuario.is_doctor:
+        doctor_patients = list(Paciente.objects.filter(doctor=usuario).select_related('usuario').order_by('-avance'))
+        available_patients = Paciente.objects.filter(
+            doctor__isnull=True,
+        ).select_related('usuario').order_by('nombre')
+    if usuario.is_paciente and paciente is None:
+        paciente = Paciente.objects.filter(email=current_user_email, usuario__isnull=True).first()
+        if paciente:
+            paciente.usuario = usuario
+            paciente.save(update_fields=['usuario'])
         else:
-            request.session['current_user_role'] = usuario.role
-            paciente = Paciente.objects.filter(usuario=usuario).select_related('doctor').first()
-            if usuario.is_doctor:
-                doctor_patients = list(Paciente.objects.filter(doctor=usuario).select_related('usuario').order_by('-avance'))
-                available_patients = Paciente.objects.filter(
-                    doctor__isnull=True,
-                ).select_related('usuario').order_by('nombre')
-            if usuario.is_paciente and paciente is None:
-                paciente = Paciente.objects.get_or_create(
-                    email=current_user_email,
-                    defaults={
-                        'nombre': usuario.nombre,
-                        'usuario': usuario,
-                        'doctor': None,
-                        'avance': 0,
-                        'estado': Paciente.ESTADO_INICIAL,
-                    },
-                )[0]
-            if paciente:
-                patient_progress_series = paciente.get_progress_series()
+            paciente = Paciente.objects.create(
+                email=current_user_email,
+                nombre=usuario.nombre,
+                usuario=usuario,
+                doctor=None,
+                avance=0,
+                estado=Paciente.ESTADO_INICIAL,
+            )
+    if paciente:
+        patient_progress_series = paciente.get_progress_series()
+        if usuario.is_paciente:
+            for sesion in Sesion.objects.filter(paciente=paciente, activo=True).order_by('fecha'):
+                fecha_local = timezone.localtime(sesion.fecha)
+                calendar_sessions.append({
+                    'date': fecha_local.date().isoformat(),
+                    'time': fecha_local.strftime('%H:%M'),
+                    'objective': sesion.objetivo,
+                })
 
     videos = []
     categories = ['Todas', 'Rodilla', 'Hombro', 'Espalda', 'Cuello', 'Tobillo', 'Cadera']
@@ -454,6 +463,7 @@ def principal_view(request):
         'doctor_patients': doctor_patients,
         'available_patients': available_patients,
         'patient_progress_series': patient_progress_series,
+        'calendar_sessions': calendar_sessions,
         'current_user_email': current_user_email,
         'videos': videos_page,
         'videos_total': len(videos),
@@ -632,7 +642,58 @@ def paciente_detail_api(request, paciente_id):
     return JsonResponse({'paciente': paciente_detail_payload(paciente)})
 
 
+@require_login
+@require_POST
+def reschedule_session_view(request, paciente_id, sesion_id):
+    doctor = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        role=Usuario.ROLE_DOCTOR,
+        is_active=True,
+    ).first()
+    if not doctor:
+        return JsonResponse({'success': False, 'error': 'Solo el especialista asignado puede reagendar esta cita.'}, status=403)
+
+    sesion = get_object_or_404(
+        Sesion,
+        pk=sesion_id,
+        paciente_id=paciente_id,
+        paciente__doctor=doctor,
+    )
+    if not sesion.activo:
+        return JsonResponse({'success': False, 'error': 'Esta cita ya no está activa.'}, status=409)
+
+    form = RescheduleSessionForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({
+            'success': False,
+            'error': form.errors.get('fecha', ['Ingresa una fecha válida.'])[0],
+        }, status=400)
+
+    sesion.fecha = form.cleaned_data['fecha']
+    sesion.save(update_fields=['fecha'])
+    fecha_local = timezone.localtime(sesion.fecha)
+    return JsonResponse({
+        'success': True,
+        'fecha': fecha_local.isoformat(),
+        'fecha_local': fecha_local.strftime('%Y-%m-%dT%H:%M'),
+        'fecha_display': fecha_local.strftime('%d/%m/%Y %H:%M'),
+    })
+
+
 def paciente_detail_payload(paciente):
+    sesiones = []
+    for sesion in paciente.sesiones.all():
+        fecha_local = timezone.localtime(sesion.fecha)
+        sesiones.append({
+            'id': sesion.pk,
+            'fecha': sesion.fecha.isoformat(),
+            'fecha_local': fecha_local.strftime('%Y-%m-%dT%H:%M'),
+            'fecha_display': fecha_local.strftime('%d/%m/%Y %H:%M'),
+            'objetivo': sesion.objetivo,
+            'avance': sesion.avance,
+            'activo': sesion.activo,
+        })
+
     return {
         'id': paciente.pk,
         'nombre': paciente.nombre,
@@ -645,38 +706,34 @@ def paciente_detail_payload(paciente):
         'color_estado': paciente.color_estado,
         'doctor_id': paciente.doctor_id,
         'historial_avance': paciente.get_progress_series(),
-        'sesiones': [
-            {
-                'fecha': sesion.fecha.isoformat(),
-                'objetivo': sesion.objetivo,
-                'avance': sesion.avance,
-                'activo': sesion.activo,
-            }
-            for sesion in paciente.sesiones.all()
-        ],
+        'sesiones': sesiones,
     }
 
 
 @require_login
 @cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
 def diagnostico_view(request, pk=None):
+    usuario = Usuario.objects.filter(
+        email=request.session.get('current_user'),
+        is_active=True,
+    ).first()
+    if not usuario or not usuario.is_paciente:
+        return HttpResponseForbidden('Solo los pacientes pueden enviar este formulario.')
+
     if pk:
-        diagnostico = get_object_or_404(Diagnostico, pk=pk)
-        form = DiagnosticoForm(request.POST or None, instance=diagnostico)
-        if request.method == "POST":
-            if form.is_valid():
-                form.save()
-                messages.success(request, "Diagnóstico actualizado correctamente.")
-                return redirect("diagnostico")
+        diagnostico = get_object_or_404(Diagnostico, pk=pk, usuario=usuario)
     else:
-        form = DiagnosticoForm(request.POST or None)
-        if request.method == "POST":
-            if form.is_valid():
-                form.save()
-                messages.success(request, "Diagnóstico guardado exitosamente.")
-                return redirect("diagnostico")
-            else:
-                messages.error(request, "Por favor, complete todos los campos obligatorios.")
+        diagnostico = Diagnostico.objects.filter(usuario=usuario).first()
+
+    form = DiagnosticoForm(request.POST or None, instance=diagnostico)
+    if request.method == "POST":
+        if form.is_valid():
+            diagnostico_guardado = form.save(commit=False)
+            diagnostico_guardado.usuario = usuario
+            diagnostico_guardado.save()
+            messages.success(request, "Formulario enviado correctamente.")
+            return redirect("/principal/#diagnostico")
+        messages.error(request, "Por favor, complete todos los campos obligatorios.")
 
     return render(request, "principal/diagnostico.html", {"form": form})
 

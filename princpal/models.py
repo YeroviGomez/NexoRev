@@ -109,6 +109,14 @@ class Sesion(models.Model):
 
 
 class Diagnostico(models.Model):
+    usuario = models.OneToOneField(
+        'crear_cuenta.Usuario',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='diagnostico',
+        verbose_name='usuario',
+    )
     nivel_dolor = models.IntegerField(default=1)
     pregunta1 = models.CharField(max_length=255)
     pregunta2 = models.TextField()

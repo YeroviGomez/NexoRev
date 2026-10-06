@@ -1,7 +1,7 @@
 /* Punto de entrada de estilos de la aplicación principal. */
 @import url("base.css?v=3");
-@import url("layout.css");
-@import url("home.css");
+@import url("layout.css?v=2");
+@import url("home.css?v=2");
 @import url("videos.css?v=10");
 @import url("historial.css?v=4");
 @import url("perfil.css?v=8");
@@ -9,4 +9,5 @@
 @import url("seguridad.css");
 @import url("tutorial.css?v=3");
 @import url("responsive.css");
-@import url("dark-mode.css?v=10");
+@import url("dark-mode.css?v=12");
+@import url("calendario.css?v=3");
