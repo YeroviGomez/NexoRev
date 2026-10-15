@@ -2,6 +2,59 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 
 
+SECURITY_QUESTION_CHOICES = (
+    ('first_pet', '¿Cuál es el nombre de tu primera mascota?'),
+    ('primary_school', '¿Cuál era el nombre de tu escuela primaria?'),
+    ('favorite_food', '¿Cuál es tu comida favorita?'),
+    ('birth_city', '¿Cuál es la ciudad donde naciste?'),
+    ('first_job', '¿Cuál fue tu primer empleo?'),
+    ('childhood_friend', '¿Cuál es el nombre de tu mejor amigo de la infancia?'),
+    ('mother_surname', '¿Cuál es el segundo apellido de tu madre?'),
+)
+
+
+class SecurityQuestion(models.Model):
+    user = models.ForeignKey(
+        'crear_cuenta.Usuario',
+        on_delete=models.CASCADE,
+        related_name='security_questions',
+    )
+    question = models.CharField('pregunta de seguridad', max_length=255)
+    question_key = models.CharField('pregunta normalizada', max_length=255)
+    answer_hash = models.CharField('hash de respuesta', max_length=128)
+    is_custom = models.BooleanField('pregunta personalizada', default=False)
+    created_at = models.DateTimeField('fecha de creación', auto_now_add=True)
+
+    class Meta:
+        ordering = ['pk']
+        verbose_name = 'Pregunta de seguridad'
+        verbose_name_plural = 'Preguntas de seguridad'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'question_key'],
+                name='unique_security_question_per_user',
+            ),
+        ]
+
+    @staticmethod
+    def normalize(value):
+        return ' '.join(value.split()).casefold()
+
+    def set_answer(self, answer):
+        self.answer_hash = make_password(self.normalize(answer))
+
+    def check_answer(self, answer):
+        return check_password(self.normalize(answer), self.answer_hash)
+
+    def save(self, *args, **kwargs):
+        self.question = ' '.join(self.question.split())
+        self.question_key = self.normalize(self.question)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.question
+
+
 class Usuario(models.Model):
     ROLE_PACIENTE = 'paciente'
     ROLE_DOCTOR = 'doctor'

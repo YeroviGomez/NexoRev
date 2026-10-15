@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.urls import reverse
 from functools import wraps
 from pathlib import Path
+from datetime import date, timedelta
 import random
 import re
 import mimetypes
@@ -20,10 +21,28 @@ import json
 import shutil
 import subprocess
 from urllib.parse import parse_qs, urlparse
-from .forms import DiagnosticoForm, FotoPerfilForm, ProfileUpdateForm, RescheduleSessionForm, VideoUploadForm
-from .models import Diagnostico, Paciente, Sesion, Video, VideoView
+from .forms import (
+    DiagnosticoForm,
+    EvaluacionClinicaForm,
+    FotoPerfilForm,
+    ObjetivoTerapeuticoForm,
+    ProfileUpdateForm,
+    RescheduleSessionForm,
+    ScheduleSessionForm,
+    VideoUploadForm,
+)
+from .models import (
+    Diagnostico,
+    EvaluacionClinica,
+    ObjetivoTerapeutico,
+    Paciente,
+    RutinaAsignada,
+    Sesion,
+    Video,
+    VideoView,
+)
 
-from crear_cuenta.models import Usuario
+from crear_cuenta.models import SECURITY_QUESTION_CHOICES, SecurityQuestion, Usuario
 
 VIDEO_PAGE_SIZE = 8
 
@@ -229,6 +248,246 @@ def require_login(view_func):
     return _wrapped_view
 
 
+def doctor_dashboard_data(doctor):
+    patients = list(
+        Paciente.objects.filter(doctor=doctor).select_related('usuario').order_by('nombre', 'pk')
+    )
+    patient_ids = [patient.pk for patient in patients]
+    user_ids = [patient.usuario_id for patient in patients if patient.usuario_id]
+    evaluations_by_patient = {patient_id: [] for patient_id in patient_ids}
+    for evaluation in EvaluacionClinica.objects.filter(
+        paciente_id__in=patient_ids,
+    ).order_by('fecha', 'pk'):
+        evaluations_by_patient[evaluation.paciente_id].append({
+            'date': timezone.localtime(evaluation.fecha).isoformat(),
+            'pain': evaluation.nivel_dolor,
+            'metric': evaluation.metrica,
+            'value': float(evaluation.valor_actual) if evaluation.valor_actual is not None else None,
+            'unit': evaluation.unidad,
+        })
+
+    goals_by_patient = {patient_id: [] for patient_id in patient_ids}
+    for goal in ObjetivoTerapeutico.objects.filter(paciente_id__in=patient_ids):
+        goals_by_patient[goal.paciente_id].append({
+            'name': goal.nombre,
+            'metric': goal.metrica,
+            'direction': goal.direccion,
+            'target': float(goal.valor_objetivo),
+            'unit': goal.unidad,
+            'createdAt': timezone.localtime(goal.creado_en).isoformat(),
+        })
+
+    sessions_by_patient = {patient_id: [] for patient_id in patient_ids}
+    for session in Sesion.objects.filter(
+        paciente_id__in=patient_ids,
+        activo=True,
+    ).order_by('fecha', 'pk'):
+        event_date = session.realizada_en or session.fecha
+        sessions_by_patient[session.paciente_id].append({
+            'id': session.pk,
+            'date': timezone.localtime(event_date).isoformat(),
+            'scheduledDate': timezone.localtime(session.fecha).isoformat(),
+            'objective': session.objetivo,
+            'completed': session.realizada,
+        })
+
+    diagnoses_by_user = {
+        diagnosis.usuario_id: diagnosis
+        for diagnosis in Diagnostico.objects.filter(usuario_id__in=user_ids)
+    }
+    data = []
+    for patient in patients:
+        diagnosis = diagnoses_by_user.get(patient.usuario_id)
+        data.append({
+            'id': patient.pk,
+            'name': patient.nombre,
+            'progress': patient.avance,
+            'progressHistory': patient.historial_avance or [{
+                'fecha': timezone.localtime(patient.fecha_registro).isoformat(),
+                'avance': patient.avance,
+            }],
+            'state': patient.estado,
+            'diagnosisPain': diagnosis.nivel_dolor if diagnosis else None,
+            'diagnosisDate': timezone.localtime(diagnosis.fecha).isoformat() if diagnosis else None,
+            'evaluations': evaluations_by_patient[patient.pk],
+            'goals': goals_by_patient[patient.pk],
+            'sessions': sessions_by_patient[patient.pk],
+        })
+    return data
+
+
+def patient_progress_payload(paciente):
+    evaluations = list(paciente.evaluaciones.order_by('fecha', 'pk'))
+    latest_values = {}
+    for evaluation in evaluations:
+        if evaluation.metrica:
+            key = (evaluation.metrica.strip().casefold(), evaluation.unidad.strip().casefold())
+            latest_values[key] = evaluation
+
+    goals = []
+    for goal in paciente.objetivos.all():
+        current = latest_values.get((goal.metrica.strip().casefold(), goal.unidad.strip().casefold()))
+        completed = bool(current and (
+            current.valor_actual is not None
+            and (
+                current.valor_actual <= goal.valor_objetivo
+                if goal.direccion == ObjetivoTerapeutico.DIRECCION_MENOR
+                else current.valor_actual >= goal.valor_objetivo
+            )
+        ))
+        goals.append({
+            'name': goal.nombre,
+            'completed': completed,
+        })
+
+    sessions = list(Sesion.objects.filter(paciente=paciente, activo=True))
+    completed_sessions = sum(session.realizada for session in sessions)
+    routine_assignments = list(RutinaAsignada.objects.filter(paciente=paciente))
+    today = timezone.localdate()
+    todays_routines = [routine for routine in routine_assignments if routine.fecha_programada == today]
+    completed_routines = [routine for routine in routine_assignments if routine.completada_en]
+    completed_today = sum(
+        routine.completada_en is not None
+        and timezone.localtime(routine.completada_en).date() == today
+        for routine in todays_routines
+    )
+
+    activity_days = sorted({
+        timezone.localtime(routine.completada_en).date()
+        for routine in completed_routines
+    }, reverse=True)
+    streak = 0
+    expected_day = today
+    if activity_days and activity_days[0] == today - timedelta(days=1):
+        expected_day = activity_days[0]
+    for activity_day in activity_days:
+        if activity_day != expected_day:
+            break
+        streak += 1
+        expected_day -= timedelta(days=1)
+
+    favorable_evaluations = sum(
+        current.nivel_dolor < previous.nivel_dolor
+        for previous, current in zip(evaluations, evaluations[1:])
+    )
+    evaluation_comparisons = max(len(evaluations) - 1, 0)
+    goal_percent = round(sum(goal['completed'] for goal in goals) * 100 / len(goals)) if goals else 0
+    session_percent = round(completed_sessions * 100 / len(sessions)) if sessions else 0
+    due_routines = [
+        routine for routine in routine_assignments
+        if routine.fecha_programada <= today
+    ]
+    completed_due_routines = sum(routine.completada_en is not None for routine in due_routines)
+    routine_percent = round(completed_due_routines * 100 / len(due_routines)) if due_routines else 0
+    evaluation_percent = round(favorable_evaluations * 100 / evaluation_comparisons) if evaluation_comparisons else 0
+    recovery_percent = round((goal_percent + session_percent + routine_percent + evaluation_percent) / 4)
+
+    last_session = max(
+        (session.realizada_en or session.fecha for session in sessions if session.realizada),
+        default=None,
+    )
+    progress_history = paciente.historial_avance or [{
+        'fecha': timezone.localtime(paciente.fecha_registro).isoformat(),
+        'avance': paciente.avance,
+    }]
+    routines = [{
+        'title': routine.titulo,
+        'date': routine.fecha_programada.isoformat(),
+        'completed': routine.completada_en is not None,
+    } for routine in routine_assignments]
+    return {
+        'recoveryPercent': recovery_percent,
+        'stage': paciente.estado,
+        'stageLabel': paciente.get_estado_display(),
+        'progressHistory': progress_history,
+        'goals': goals,
+        'goalCompleted': sum(goal['completed'] for goal in goals),
+        'goalTotal': len(goals),
+        'sessionsCompleted': completed_sessions,
+        'sessionsPlanned': len(sessions),
+        'routinesCompleted': len(completed_routines),
+        'routinesAssigned': len(routine_assignments),
+        'streak': streak,
+        'lastSession': timezone.localtime(last_session).isoformat() if last_session else None,
+        'dailyRoutinesAssigned': len(todays_routines),
+        'dailyRoutinesCompleted': completed_today,
+        'dailyPercent': round(completed_today * 100 / len(todays_routines)) if todays_routines else 0,
+        'dailyHasAssignments': bool(todays_routines),
+        'dailyPendingAssignments': sum(routine.completada_en is None for routine in todays_routines),
+        'evaluationFavorable': favorable_evaluations,
+        'evaluationTotal': evaluation_comparisons,
+        'routines': routines,
+        'components': {
+            'goals': goal_percent,
+            'sessions': session_percent,
+            'routines': routine_percent,
+            'evaluations': evaluation_percent,
+        },
+    }
+
+
+def refresh_patient_progress(paciente):
+    progress = patient_progress_payload(paciente)['recoveryPercent']
+    if paciente.avance != progress:
+        paciente.registrar_avance(progress)
+
+
+@require_login
+@cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
+def patient_progress_data_api(request):
+    usuario = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        is_active=True,
+        role=Usuario.ROLE_PACIENTE,
+    ).first()
+    paciente = Paciente.objects.filter(usuario=usuario).first() if usuario else None
+    if not paciente:
+        return JsonResponse({'success': False, 'error': 'No se encontró el progreso de este paciente.'}, status=404)
+    refresh_patient_progress(paciente)
+    return JsonResponse({'success': True, 'progress': patient_progress_payload(paciente)})
+
+
+@require_login
+@require_POST
+def assign_routine_view(request, paciente_id):
+    doctor = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        is_active=True,
+        role=Usuario.ROLE_DOCTOR,
+    ).first()
+    if not doctor:
+        return HttpResponseForbidden('Solo el especialista puede asignar rutinas.')
+    paciente = get_object_or_404(Paciente, pk=paciente_id, doctor=doctor)
+    video_id = request.POST.get('video_id', '').strip()
+    try:
+        scheduled_date = date.fromisoformat(request.POST.get('fecha_programada', ''))
+    except (TypeError, ValueError):
+        messages.error(request, 'Selecciona una fecha válida para la rutina.')
+        return redirect('/principal/#dashboard')
+    if scheduled_date < timezone.localdate():
+        messages.error(request, 'No se puede asignar una rutina para una fecha pasada.')
+        return redirect('/principal/#dashboard')
+
+    video = next((item for item in load_videos() if item['video_id'] == video_id), None)
+    if not video:
+        messages.error(request, 'Selecciona una rutina válida.')
+        return redirect('/principal/#dashboard')
+
+    _, created = RutinaAsignada.objects.get_or_create(
+        paciente=paciente,
+        video_id=video['video_id'],
+        fecha_programada=scheduled_date,
+        defaults={'titulo': video['title'][:150]},
+    )
+    if not created:
+        messages.error(request, 'Esa rutina ya está asignada a ese paciente para esa fecha.')
+    else:
+        refresh_patient_progress(paciente)
+        logger.info('routine_assigned doctor_id=%s patient_id=%s video_id=%s date=%s', doctor.pk, paciente.pk, video_id, scheduled_date)
+        messages.success(request, f'Rutina asignada a {paciente.nombre}.')
+    return redirect('/principal/#dashboard')
+
+
 @require_login
 def media_file_view(request, path):
     media_root = Path(settings.MEDIA_ROOT).resolve()
@@ -380,33 +639,8 @@ def principal_view(request):
     calendar_sessions = []
     request.session.pop('diagnostico_id', None)
     diagnostico = Diagnostico.objects.filter(usuario=usuario).first() if usuario.is_paciente else None
-    active_view = 'inicio'
-
-    form = DiagnosticoForm(request.POST or None, instance=diagnostico)
-
-    if request.method == "POST":
-        if not usuario.is_paciente:
-            return HttpResponseForbidden('Solo los pacientes pueden enviar este formulario.')
-
-        if form.is_valid():
-            diagnostico_guardado = form.save(commit=False)
-            diagnostico_guardado.usuario = usuario
-            diagnostico_guardado.save()
-            if diagnostico:
-                messages.success(request, "Formulario actualizado correctamente.")
-            else:
-                messages.success(request, "Formulario enviado correctamente.")
-            return redirect("/principal/#diagnostico")
-        messages.error(request, "Por favor, complete todos los campos obligatorios.")
-        active_view = 'diagnostico'
-
-    request.session['current_user_role'] = usuario.role
+    active_view = 'dashboard' if usuario.is_doctor else 'inicio'
     paciente = Paciente.objects.filter(usuario=usuario).select_related('doctor').first()
-    if usuario.is_doctor:
-        doctor_patients = list(Paciente.objects.filter(doctor=usuario).select_related('usuario').order_by('-avance'))
-        available_patients = Paciente.objects.filter(
-            doctor__isnull=True,
-        ).select_related('usuario').order_by('nombre')
     if usuario.is_paciente and paciente is None:
         paciente = Paciente.objects.filter(email=current_user_email, usuario__isnull=True).first()
         if paciente:
@@ -421,7 +655,44 @@ def principal_view(request):
                 avance=0,
                 estado=Paciente.ESTADO_INICIAL,
             )
+
+    form = DiagnosticoForm(request.POST or None, instance=diagnostico)
+
+    if request.method == "POST":
+        if not usuario.is_paciente:
+            return HttpResponseForbidden('Solo los pacientes pueden enviar este formulario.')
+
+        if form.is_valid():
+            diagnostico_guardado = form.save(commit=False)
+            diagnostico_guardado.usuario = usuario
+            diagnostico_guardado.save()
+            if paciente:
+                EvaluacionClinica.objects.create(
+                    paciente=paciente,
+                    nivel_dolor=diagnostico_guardado.nivel_dolor,
+                )
+                refresh_patient_progress(paciente)
+            if diagnostico:
+                messages.success(request, "Formulario actualizado correctamente.")
+            else:
+                messages.success(request, "Formulario enviado correctamente.")
+            return redirect("/principal/#diagnostico")
+        messages.error(request, "Por favor, complete todos los campos obligatorios.")
+        active_view = 'diagnostico'
+
+    request.session['current_user_role'] = usuario.role
+    security_question_items = list(
+        SecurityQuestion.objects.filter(user=usuario).values('question', 'is_custom')
+    )
+    if usuario.is_doctor:
+        doctor_patients = list(Paciente.objects.filter(doctor=usuario).select_related('usuario').order_by('-avance'))
+        available_patients = Paciente.objects.filter(
+            doctor__isnull=True,
+        ).select_related('usuario').order_by('nombre')
+    dashboard_patients = doctor_dashboard_data(usuario) if usuario.is_doctor else []
     if paciente:
+        if usuario.is_paciente:
+            refresh_patient_progress(paciente)
         patient_progress_series = paciente.get_progress_series()
         if usuario.is_paciente:
             for sesion in Sesion.objects.filter(paciente=paciente, activo=True).order_by('fecha'):
@@ -454,6 +725,7 @@ def principal_view(request):
         completed=True,
         completed_at__isnull=False,
     ).count()
+    patient_progress = patient_progress_payload(paciente) if paciente and usuario.is_paciente else None
 
     return render(request, 'principal.html', {
         'show_security_tips': show_security_tips,
@@ -461,7 +733,13 @@ def principal_view(request):
         'usuario': usuario,
         'paciente': paciente,
         'doctor_patients': doctor_patients,
+        'dashboard_patients': dashboard_patients,
         'available_patients': available_patients,
+        'security_question_items': security_question_items,
+        'security_predefined_questions': [
+            {'key': key, 'question': question}
+            for key, question in SECURITY_QUESTION_CHOICES
+        ],
         'patient_progress_series': patient_progress_series,
         'calendar_sessions': calendar_sessions,
         'current_user_email': current_user_email,
@@ -473,9 +751,15 @@ def principal_view(request):
         'form': form,
         'is_diagnostic_update': diagnostico is not None,
         'active_view': active_view,
+        'today': timezone.localdate().isoformat(),
         'completed_history': completed_history['items'],
         'completed_history_pagination': completed_history,
         'completed_event_count': completed_event_count,
+        'patient_progress': patient_progress,
+        'routine_catalog': [
+            {'video_id': video['video_id'], 'title': video['title']}
+            for video in videos
+        ] if usuario.is_doctor else [],
         'recent_videos': recent_history['items'],
         'recent_history_pagination': recent_history,
     })
@@ -680,6 +964,118 @@ def reschedule_session_view(request, paciente_id, sesion_id):
     })
 
 
+@require_login
+@cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
+def doctor_dashboard_data_api(request):
+    doctor = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        role=Usuario.ROLE_DOCTOR,
+        is_active=True,
+    ).first()
+    if not doctor:
+        return JsonResponse({'error': 'Solo un especialista puede consultar el dashboard.'}, status=403)
+    return JsonResponse({'patients': doctor_dashboard_data(doctor)})
+
+
+def dashboard_patient_for_doctor(request, paciente_id):
+    doctor = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        role=Usuario.ROLE_DOCTOR,
+        is_active=True,
+    ).first()
+    if not doctor:
+        return None
+    return Paciente.objects.filter(pk=paciente_id, doctor=doctor).first()
+
+
+@require_login
+@require_POST
+def register_clinical_evaluation(request, paciente_id):
+    paciente = dashboard_patient_for_doctor(request, paciente_id)
+    if not paciente:
+        return HttpResponseForbidden('Solo el especialista asignado puede registrar evaluaciones.')
+
+    form = EvaluacionClinicaForm(request.POST)
+    if form.is_valid():
+        evaluation = form.save(commit=False)
+        evaluation.paciente = paciente
+        evaluation.save()
+        refresh_patient_progress(paciente)
+        messages.success(request, f'Evaluación clínica de {paciente.nombre} registrada.')
+    else:
+        messages.error(request, 'No se pudo registrar la evaluación: ' + ' '.join(
+            error for errors in form.errors.values() for error in errors
+        ))
+    return redirect('/principal/#dashboard')
+
+
+@require_login
+@require_POST
+def add_therapeutic_goal(request, paciente_id):
+    paciente = dashboard_patient_for_doctor(request, paciente_id)
+    if not paciente:
+        return HttpResponseForbidden('Solo el especialista asignado puede registrar objetivos.')
+
+    form = ObjetivoTerapeuticoForm(request.POST)
+    if form.is_valid():
+        goal = form.save(commit=False)
+        goal.paciente = paciente
+        goal.save()
+        refresh_patient_progress(paciente)
+        messages.success(request, f'Objetivo terapéutico añadido para {paciente.nombre}.')
+    else:
+        messages.error(request, 'No se pudo añadir el objetivo: ' + ' '.join(
+            error for errors in form.errors.values() for error in errors
+        ))
+    return redirect('/principal/#dashboard')
+
+
+@require_login
+@require_POST
+def schedule_session(request, paciente_id):
+    paciente = dashboard_patient_for_doctor(request, paciente_id)
+    if not paciente:
+        return HttpResponseForbidden('Solo el especialista asignado puede agendar sesiones.')
+
+    form = ScheduleSessionForm(request.POST)
+    if form.is_valid():
+        session = form.save(commit=False)
+        session.paciente = paciente
+        session.save()
+        refresh_patient_progress(paciente)
+        messages.success(request, f'Sesión agendada para {paciente.nombre}.')
+    else:
+        messages.error(request, 'No se pudo agendar la sesión: ' + ' '.join(
+            error for errors in form.errors.values() for error in errors
+        ))
+    return redirect('/principal/#dashboard')
+
+
+@require_login
+@require_POST
+def complete_session(request, sesion_id):
+    doctor = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        role=Usuario.ROLE_DOCTOR,
+        is_active=True,
+    ).first()
+    if not doctor:
+        return HttpResponseForbidden('Solo un especialista puede registrar sesiones.')
+
+    session = get_object_or_404(Sesion, pk=sesion_id, paciente__doctor=doctor, activo=True)
+    if session.realizada:
+        messages.info(request, 'La sesión ya estaba registrada como realizada.')
+    elif session.fecha > timezone.now():
+        return HttpResponseForbidden('No se puede registrar como realizada una sesión futura.')
+    else:
+        session.realizada = True
+        session.realizada_en = timezone.now()
+        session.save(update_fields=['realizada', 'realizada_en'])
+        refresh_patient_progress(session.paciente)
+        messages.success(request, f'Sesión de {session.paciente.nombre} registrada como realizada.')
+    return redirect('/principal/#dashboard')
+
+
 def paciente_detail_payload(paciente):
     sesiones = []
     for sesion in paciente.sesiones.all():
@@ -875,30 +1271,49 @@ def complete_video_view(request, video_index):
         completed_at__date=timezone.localdate(),
     ).order_by('-completed_at').first()
     if completed_today:
+        if completed_today.rutina_asignada_id:
+            assigned_routine = completed_today.rutina_asignada
+            assigned_routine.completada_en = None
+            assigned_routine.save(update_fields=['completada_en'])
+            if assigned_routine.paciente.usuario_id:
+                refresh_patient_progress(assigned_routine.paciente)
         completed_today.completed = False
         completed_today.completed_at = None
-        completed_today.save(update_fields=['completed', 'completed_at'])
+        completed_today.rutina_asignada = None
+        completed_today.save(update_fields=['completed', 'completed_at', 'rutina_asignada'])
         return JsonResponse({'success': True, 'completed': False, 'title': video['title']})
 
     viewed_video = VideoView.objects.filter(
-        user_email=email, video_id=video['video_id']
+        user_email=email,
+        video_id=video['video_id'],
+        completed=False,
     ).order_by('-viewed_at').first()
+    usuario = Usuario.objects.filter(email=email, is_active=True).first()
+    paciente = Paciente.objects.filter(usuario=usuario).first() if usuario else None
+    assigned_routine = RutinaAsignada.objects.filter(
+        paciente=paciente,
+        video_id=video['video_id'],
+        fecha_programada__lte=timezone.localdate(),
+        completada_en__isnull=True,
+    ).order_by('fecha_programada', 'pk').first() if paciente else None
     if viewed_video:
         viewed_video.completed = True
         viewed_video.completed_at = timezone.now()
-        viewed_video.save(update_fields=['completed', 'completed_at'])
+        viewed_video.rutina_asignada = assigned_routine
+        viewed_video.save(update_fields=['completed', 'completed_at', 'rutina_asignada'])
         completed_at = viewed_video.completed_at
     else:
         completed_at = timezone.now()
         VideoView.objects.create(
             user_email=email, video_id=video['video_id'],
             category=video['category'], completed=True, completed_at=completed_at,
+            rutina_asignada=assigned_routine,
         )
 
-    usuario = Usuario.objects.filter(email=email).first()
-    paciente = Paciente.objects.filter(usuario=usuario).first() if usuario else None
-    if paciente:
-        paciente.registrar_avance(min(100, paciente.avance + 10))
+    if assigned_routine:
+        assigned_routine.completada_en = completed_at
+        assigned_routine.save(update_fields=['completada_en'])
+        refresh_patient_progress(paciente)
 
     return JsonResponse({'success': True, 'completed': True, 'title': video['title'], 'completed_at': completed_at.isoformat(), 'message': random.choice([
         '¡Gran trabajo hoy!',
@@ -990,6 +1405,87 @@ def change_password_view(request):
     usuario.set_password(new_password)
     usuario.save(update_fields=['password'])
     return JsonResponse({'success': True})
+
+
+@require_login
+@require_POST
+def update_security_questions(request):
+    usuario = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        is_active=True,
+    ).first()
+    if not usuario:
+        return JsonResponse({'success': False, 'error': 'Usuario no encontrado.'}, status=404)
+
+    try:
+        data = json.loads(request.body or b'{}')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({'success': False, 'error': 'La solicitud no contiene datos válidos.'}, status=400)
+    if not isinstance(data, dict) or not isinstance(data.get('questions'), list):
+        return JsonResponse({'success': False, 'error': 'La lista de preguntas no es válida.'}, status=400)
+
+    submissions = data['questions']
+    if len(submissions) < 2:
+        return JsonResponse({'success': False, 'error': 'Configura al menos dos preguntas de seguridad.'}, status=400)
+
+    predefined = dict(SECURITY_QUESTION_CHOICES)
+    validated = []
+    seen_questions = set()
+    for submission in submissions:
+        if not isinstance(submission, dict):
+            return JsonResponse({'success': False, 'error': 'Cada pregunta debe tener una respuesta válida.'}, status=400)
+
+        question_type = submission.get('type')
+        if question_type == 'predefined':
+            question = predefined.get(submission.get('key'))
+            is_custom = False
+        elif question_type == 'custom':
+            question = submission.get('question')
+            is_custom = True
+            if not isinstance(question, str):
+                question = ''
+            question = ' '.join(question.split())
+            if len(question) < 10:
+                return JsonResponse({'success': False, 'error': 'Las preguntas personalizadas deben tener al menos 10 caracteres.'}, status=400)
+        else:
+            return JsonResponse({'success': False, 'error': 'Selecciona una pregunta de seguridad válida.'}, status=400)
+
+        if not question or len(question) > 255:
+            return JsonResponse({'success': False, 'error': 'La pregunta no es válida.'}, status=400)
+
+        answer = submission.get('answer')
+        if not isinstance(answer, str) or not SecurityQuestion.normalize(answer):
+            return JsonResponse({'success': False, 'error': 'Todas las preguntas requieren una respuesta.'}, status=400)
+        if len(answer) > 1024:
+            return JsonResponse({'success': False, 'error': 'Las respuestas no pueden superar 1024 caracteres.'}, status=400)
+
+        question_key = SecurityQuestion.normalize(question)
+        if question_key in seen_questions:
+            return JsonResponse({'success': False, 'error': 'No puedes configurar preguntas duplicadas.'}, status=400)
+        seen_questions.add(question_key)
+        validated.append((question, is_custom, answer))
+
+    with transaction.atomic():
+        SecurityQuestion.objects.filter(user=usuario).delete()
+        for question, is_custom, answer in validated:
+            security_question = SecurityQuestion(
+                user=usuario,
+                question=question,
+                is_custom=is_custom,
+            )
+            security_question.set_answer(answer)
+            security_question.save()
+
+    logging.getLogger('nexorev.auth').info(
+        'security_questions_updated user_id=%s question_count=%s',
+        usuario.pk,
+        len(validated),
+    )
+    return JsonResponse({
+        'success': True,
+        'message': 'Tus preguntas de seguridad se guardaron correctamente.',
+        'question_count': len(validated),
+    })
 
 
 @require_login

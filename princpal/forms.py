@@ -2,7 +2,7 @@ from django import forms
 from django.utils import timezone
 from pathlib import Path
 
-from .models import Diagnostico, Video
+from .models import Diagnostico, EvaluacionClinica, ObjetivoTerapeutico, Sesion, Video
 
 
 class ProfileUpdateForm(forms.Form):
@@ -82,6 +82,49 @@ class RescheduleSessionForm(forms.Form):
             attrs={'type': 'datetime-local'},
         ),
     )
+
+    def clean_fecha(self):
+        fecha = self.cleaned_data['fecha']
+        if fecha <= timezone.now():
+            raise forms.ValidationError('Selecciona una fecha y hora futuras.')
+        return fecha
+
+
+class EvaluacionClinicaForm(forms.ModelForm):
+    class Meta:
+        model = EvaluacionClinica
+        fields = ['nivel_dolor', 'metrica', 'valor_actual', 'unidad']
+        widgets = {
+            'nivel_dolor': forms.NumberInput(attrs={'min': 0, 'max': 10}),
+            'valor_actual': forms.NumberInput(attrs={'min': 0, 'step': '0.01'}),
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if bool(cleaned_data.get('metrica')) != (cleaned_data.get('valor_actual') is not None):
+            raise forms.ValidationError('Indica juntos la métrica clínica y su valor actual.')
+        if cleaned_data.get('valor_actual') is not None and not cleaned_data.get('unidad'):
+            self.add_error('unidad', 'Indica la unidad de la métrica.')
+        return cleaned_data
+
+
+class ObjetivoTerapeuticoForm(forms.ModelForm):
+    class Meta:
+        model = ObjetivoTerapeutico
+        fields = ['nombre', 'metrica', 'direccion', 'valor_objetivo', 'unidad']
+        widgets = {'valor_objetivo': forms.NumberInput(attrs={'min': 0, 'step': '0.01'})}
+
+
+class ScheduleSessionForm(forms.ModelForm):
+    class Meta:
+        model = Sesion
+        fields = ['fecha', 'objetivo']
+        widgets = {
+            'fecha': forms.DateTimeInput(
+                format='%Y-%m-%dT%H:%M',
+                attrs={'type': 'datetime-local'},
+            ),
+        }
 
     def clean_fecha(self):
         fecha = self.cleaned_data['fecha']

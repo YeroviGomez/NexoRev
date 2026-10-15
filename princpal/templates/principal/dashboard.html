@@ -1,0 +1,208 @@
+{% if usuario and usuario.role == 'doctor' %}
+<section class="app-view dashboard-view" id="dashboardView" data-view="dashboard" data-today="{{ today }}" data-refresh-url="{% url 'doctor_dashboard_data' %}" data-complete-url="{% url 'complete_session' 0 %}">
+  <header class="page-head dashboard-heading">
+    <div>
+      <p class="dashboard-eyebrow">PANEL CLÍNICO</p>
+      <h1>Dashboard médico</h1>
+      <p>Seguimiento de recuperación, dolor y adherencia de tus pacientes.</p>
+    </div>
+    <span class="dashboard-updated"><span aria-hidden="true"></span> Datos clínicos actualizados</span>
+  </header>
+  {% if messages %}
+    <ul class="dashboard-notices" role="status">
+      {% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  <section class="dashboard-kpis" aria-label="Métricas clave">
+    <article class="dashboard-kpi kpi-patients">
+      <span class="kpi-icon" aria-hidden="true">+</span>
+      <p>Pacientes activos</p>
+      <strong id="kpiActivePatients">0</strong>
+      <small>En tratamiento</small>
+    </article>
+    <article class="dashboard-kpi kpi-progress">
+      <span class="kpi-icon" aria-hidden="true">↗</span>
+      <p>Progreso promedio</p>
+      <strong><span id="kpiProgress">0</span><small>%</small></strong>
+      <small>Avance de recuperación</small>
+    </article>
+    <article class="dashboard-kpi kpi-pain">
+      <span class="kpi-icon" aria-hidden="true">♡</span>
+      <p>Dolor promedio</p>
+      <strong><span id="kpiPain">—</span><small>/ 10</small></strong>
+      <small>Escala EVA</small>
+    </article>
+    <article class="dashboard-kpi kpi-goals">
+      <span class="kpi-icon" aria-hidden="true">✓</span>
+      <p>Objetivos completados</p>
+      <strong><span id="kpiGoals">0</span><small>%</small></strong>
+      <small><span id="kpiGoalCount">0 de 0</span> objetivos</small>
+    </article>
+  </section>
+
+  <section class="dashboard-filters" aria-label="Filtros del dashboard">
+    <label>Paciente
+      <select id="dashboardPatientFilter">
+        <option value="all">Todos los pacientes</option>
+      </select>
+    </label>
+    <label>Desde
+      <input id="dashboardDateFrom" type="date">
+    </label>
+    <label>Hasta
+      <input id="dashboardDateTo" type="date">
+    </label>
+    <label>Tratamiento
+      <select id="dashboardStatusFilter">
+        <option value="all">Todos los estados</option>
+        <option value="active">Activo</option>
+        <option value="finished">Finalizado</option>
+      </select>
+    </label>
+    <label>Ordenar por
+      <select id="dashboardSort">
+        <option value="progress_desc">Mayor progreso</option>
+        <option value="progress_asc">Menor progreso</option>
+        <option value="sessions_desc">Más sesiones realizadas</option>
+        <option value="sessions_asc">Menos sesiones realizadas</option>
+        <option value="last_session_desc">Última sesión reciente</option>
+      </select>
+    </label>
+    <button type="button" class="dashboard-reset" id="dashboardReset">Limpiar filtros</button>
+  </section>
+
+  <div class="dashboard-chart-grid">
+    <article class="dashboard-card dashboard-chart-card dashboard-chart-wide">
+      <div class="dashboard-card-heading">
+        <div><h2>Evolución del dolor</h2><p>Escala EVA · 0 a 10</p></div>
+      </div>
+      <svg class="dashboard-chart pain-chart" id="painChart" role="img" aria-label="Evolución del dolor por paciente"></svg>
+      <div class="chart-legend" id="painLegend"></div>
+    </article>
+    <article class="dashboard-card dashboard-chart-card">
+      <div class="dashboard-card-heading">
+        <div><h2>Objetivos terapéuticos</h2><p>Estado de cumplimiento</p></div>
+      </div>
+      <div class="donut-layout">
+        <svg class="donut-chart" id="goalsChart" role="img" aria-label="Porcentaje de objetivos completados"></svg>
+        <div class="donut-legend" id="goalsLegend"></div>
+      </div>
+    </article>
+    <article class="dashboard-card dashboard-chart-card">
+      <div class="dashboard-card-heading">
+        <div><h2>Adherencia al tratamiento</h2><p>Sesiones realizadas vs. planificadas</p></div>
+      </div>
+      <div class="donut-layout">
+        <svg class="donut-chart" id="sessionsChart" role="img" aria-label="Adherencia de sesiones al tratamiento"></svg>
+        <div class="donut-legend" id="sessionsLegend"></div>
+      </div>
+    </article>
+    <article class="dashboard-card dashboard-chart-card dashboard-chart-wide">
+      <div class="dashboard-card-heading">
+        <div><h2>Progreso por paciente</h2><p>Ordenado de mayor a menor avance</p></div>
+      </div>
+      <svg class="dashboard-chart progress-chart" id="progressChart" role="img" aria-label="Comparación del progreso por paciente"></svg>
+    </article>
+    <article class="dashboard-card dashboard-chart-card dashboard-chart-full">
+      <div class="dashboard-card-heading">
+        <div><h2>Estado actual vs. objetivo</h2><p>Valores clínicos normalizados al objetivo · valores registrados al final de cada barra</p></div>
+      </div>
+      <svg class="dashboard-chart objectives-chart" id="comparisonChart" role="img" aria-label="Comparación de valores actuales y objetivos clínicos"></svg>
+      <div class="chart-legend comparison-legend">
+        <span><i class="legend-current"></i> Estado actual</span>
+        <span><i class="legend-target"></i> Objetivo</span>
+      </div>
+    </article>
+  </div>
+
+  <article class="dashboard-card dashboard-table-card">
+    <div class="dashboard-card-heading">
+      <div><h2>Resumen de pacientes</h2><p id="dashboardPatientCount">0 pacientes</p></div>
+      <a href="#inicio" class="dashboard-manage-link" data-nav="inicio">Administrar pacientes</a>
+    </div>
+    <div class="dashboard-table-scroll">
+      <table class="dashboard-table">
+        <thead>
+          <tr><th>Paciente</th><th>Progreso</th><th>Dolor actual</th><th>Sesiones</th><th>Última sesión</th></tr>
+        </thead>
+        <tbody id="dashboardPatientRows"></tbody>
+      </table>
+      <p class="dashboard-empty" id="dashboardEmpty" hidden>No hay pacientes que coincidan con los filtros.</p>
+    </div>
+  </article>
+
+  <div class="dashboard-workspace">
+    <article class="dashboard-card dashboard-form-card">
+      <div class="dashboard-card-heading"><div><h2>Registrar evaluación</h2><p>Actualiza el dolor y una medida clínica opcional.</p></div></div>
+      <form class="dashboard-form" id="evaluationForm" method="post" data-action-template="{% url 'register_clinical_evaluation' 0 %}">
+        {% csrf_token %}
+        <label>Paciente<select name="patient_id" required><option value="">Selecciona un paciente</option></select></label>
+        <label>Dolor EVA<input name="nivel_dolor" type="number" min="0" max="10" required></label>
+        <label>Métrica clínica <span>(opcional)</span><input name="metrica" maxlength="100" placeholder="Movilidad, fuerza..."></label>
+        <label>Valor actual <span>(opcional)</span><input name="valor_actual" type="number" min="0" step="0.01"></label>
+        <label>Unidad<input name="unidad" maxlength="30" placeholder="grados, kg..."></label>
+        <button type="submit" class="dashboard-submit">Guardar evaluación</button>
+      </form>
+    </article>
+    <article class="dashboard-card dashboard-form-card">
+      <div class="dashboard-card-heading"><div><h2>Definir objetivo</h2><p>Compara el estado actual con la meta terapéutica.</p></div></div>
+      <form class="dashboard-form" id="goalForm" method="post" data-action-template="{% url 'add_therapeutic_goal' 0 %}">
+        {% csrf_token %}
+        <label>Paciente<select name="patient_id" required><option value="">Selecciona un paciente</option></select></label>
+        <label>Nombre del objetivo<input name="nombre" maxlength="150" required placeholder="Recuperar movilidad"></label>
+        <label>Métrica clínica<input name="metrica" maxlength="100" required placeholder="Movilidad"></label>
+        <label>Criterio
+          <select name="direccion">
+            <option value="mayor">Alcanzar o superar</option>
+            <option value="menor">Reducir hasta</option>
+          </select>
+        </label>
+        <label>Valor objetivo<input name="valor_objetivo" type="number" min="0" step="0.01" required></label>
+        <label>Unidad<input name="unidad" maxlength="30" placeholder="grados, kg..."></label>
+        <button type="submit" class="dashboard-submit">Añadir objetivo</button>
+      </form>
+    </article>
+    <article class="dashboard-card dashboard-form-card">
+      <div class="dashboard-card-heading"><div><h2>Agendar sesión</h2><p>Las citas activas se incluyen en la adherencia.</p></div></div>
+      <form class="dashboard-form" id="sessionForm" method="post" data-action-template="{% url 'schedule_session' 0 %}">
+        {% csrf_token %}
+        <label>Paciente<select name="patient_id" required><option value="">Selecciona un paciente</option></select></label>
+        <label>Fecha y hora<input name="fecha" type="datetime-local" required></label>
+        <label class="dashboard-form-wide">Objetivo de la sesión<input name="objetivo" maxlength="255" required placeholder="Movilidad de rodilla"></label>
+        <button type="submit" class="dashboard-submit">Agendar sesión</button>
+      </form>
+    </article>
+    <article class="dashboard-card dashboard-form-card">
+      <div class="dashboard-card-heading"><div><h2>Asignar rutina</h2><p>Programa una rutina de ejercicios para un paciente.</p></div></div>
+      <form class="dashboard-form" id="routineForm" method="post" data-action-template="{% url 'assign_routine' 0 %}">
+        {% csrf_token %}
+        <label>Paciente<select name="patient_id" required><option value="">Selecciona un paciente</option></select></label>
+        <label>Rutina
+          <select name="video_id" required>
+            <option value="">Selecciona una rutina</option>
+            {% for routine in routine_catalog %}
+              <option value="{{ routine.video_id }}">{{ routine.title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Fecha programada<input name="fecha_programada" type="date" required></label>
+        <button type="submit" class="dashboard-submit">Asignar rutina</button>
+      </form>
+    </article>
+  </div>
+
+  <article class="dashboard-card dashboard-table-card">
+    <div class="dashboard-card-heading"><div><h2>Sesiones pendientes de registrar</h2><p>Marca las citas realizadas para actualizar la adherencia.</p></div></div>
+    <div class="dashboard-table-scroll">
+      <table class="dashboard-table">
+        <thead><tr><th>Paciente</th><th>Sesión</th><th>Fecha</th><th>Acción</th></tr></thead>
+        <tbody id="dashboardPendingSessions"></tbody>
+      </table>
+      <p class="dashboard-empty" id="dashboardSessionsEmpty" hidden>No hay sesiones pendientes.</p>
+    </div>
+  </article>
+
+  {{ dashboard_patients|json_script:"dashboard-patient-data" }}
+</section>
+{% endif %}

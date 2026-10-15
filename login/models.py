@@ -49,6 +49,20 @@ class PasswordRecovery(models.Model):
                 return code
 
 
+class RecoverySecurityAttempt(models.Model):
+    email = models.EmailField('correo electrónico', db_index=True)
+    ip_address = models.GenericIPAddressField('dirección IP', null=True, blank=True)
+    timestamp = models.DateTimeField('fecha', auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        verbose_name = 'Intento de recuperación de cuenta'
+        verbose_name_plural = 'Intentos de recuperación de cuenta'
+
+    def __str__(self):
+        return f'{self.email} — {self.timestamp:%Y-%m-%d %H:%M}'
+
+
 class TwoFactorCode(models.Model):
     email = models.EmailField('correo electrónico')
     code = models.CharField('código', max_length=6)

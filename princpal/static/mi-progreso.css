@@ -1,0 +1,273 @@
+.patient-progress-view {
+  --progress-green: #13825d;
+  --progress-green-soft: #e9f7ef;
+  --progress-blue: #2875b8;
+  --progress-blue-soft: #edf6fd;
+  --progress-gray: #8996a3;
+  --progress-ink: #1c3445;
+  --progress-muted: #657887;
+  --progress-line: #e1e9ed;
+  color: var(--progress-ink);
+}
+
+.patient-progress-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+
+.patient-progress-eyebrow,
+.progress-kicker {
+  margin: 0 0 0.35rem;
+  color: var(--progress-blue);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.patient-progress-updated {
+  border: 1px solid #d4e7f5;
+  border-radius: 99px;
+  padding: 0.45rem 0.75rem;
+  color: var(--progress-blue);
+  background: var(--progress-blue-soft);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.patient-progress-card {
+  min-width: 0;
+  border: 1px solid var(--progress-line);
+  border-radius: 1rem;
+  padding: 1.15rem 1.25rem;
+  background: var(--surface);
+  box-shadow: 0 0.3rem 1.2rem rgba(26, 58, 67, 0.04);
+}
+
+.patient-recovery-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(9rem, 0.55fr);
+  align-items: center;
+  gap: 0.8rem 2rem;
+  border-color: #ccebd9;
+  background: linear-gradient(120deg, #f4fcf7, #ffffff 72%);
+}
+
+.recovery-copy > strong {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--progress-green);
+  font-size: clamp(2.8rem, 6vw, 4rem);
+  line-height: 1;
+}
+
+.recovery-copy > strong small { font-size: 1.5rem; }
+.recovery-copy > p { max-width: 35rem; margin: 0.55rem 0 0; color: var(--progress-muted); }
+
+.patient-progress-track {
+  width: 100%;
+  height: 0.8rem;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #e8eef1;
+}
+
+.patient-progress-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #279c6d, #50be82);
+  transition: width 0.35s ease;
+}
+
+.recovery-track { align-self: center; height: 1rem; }
+.recovery-components {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  color: var(--progress-muted);
+  font-size: 0.79rem;
+}
+.recovery-components strong { color: var(--progress-ink); }
+
+.patient-progress-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin-bottom: 0.8rem;
+}
+
+.patient-progress-card-heading h2 {
+  margin: 0;
+  color: #1e3a4c;
+  font-size: 1.08rem;
+}
+.patient-progress-card-heading p { margin: 0.25rem 0 0; color: var(--progress-muted); font-size: 0.83rem; }
+
+.patient-stage-card { margin-top: 1rem; }
+.patient-stage-line {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin: 1.2rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.patient-stage-line::before {
+  position: absolute;
+  top: 0.85rem;
+  right: 10%;
+  left: 10%;
+  height: 0.22rem;
+  background: #e5ebee;
+  content: "";
+}
+.patient-stage-line li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
+  color: var(--progress-gray);
+  font-size: 0.8rem;
+  text-align: center;
+}
+.patient-stage-line li > span {
+  z-index: 1;
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border: 2px solid #d7dfe4;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--progress-gray);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+.patient-stage-line li.is-complete { color: var(--progress-green); }
+.patient-stage-line li.is-complete > span,
+.patient-stage-line li.is-current > span { border-color: var(--progress-green); background: var(--progress-green); color: #fff; }
+.patient-stage-line li.is-current { color: var(--progress-green); font-weight: 800; }
+.patient-stage-line li.is-current > span { box-shadow: 0 0 0 4px var(--progress-green-soft); }
+
+.patient-progress-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(16rem, 0.9fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.patient-recovery-chart { display: block; width: 100%; min-height: 14rem; overflow: visible; }
+.patient-chart-grid { stroke: #e8eef1; stroke-width: 1; }
+.patient-chart-label { fill: #788a97; font-size: 11px; }
+.patient-chart-line { fill: none; stroke: #258b68; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.patient-chart-point { fill: #fff; stroke: #258b68; stroke-width: 3; }
+.patient-chart-empty { fill: #788a97; font-size: 13px; }
+
+.patient-goals-list,
+.patient-routines-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.patient-goals-list li,
+.patient-routines-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.3rem 0.8rem;
+  border-bottom: 1px solid #edf1f3;
+  padding: 0.7rem 0.2rem;
+}
+.patient-goals-list li > span:first-child { grid-row: span 2; color: var(--progress-gray); font-size: 1.1rem; }
+.patient-goals-list li > span:nth-child(2),
+.patient-routines-list li > span:first-child { font-weight: 650; }
+.patient-goals-list li small,
+.patient-routines-list li small { color: var(--progress-gray); font-size: 0.75rem; }
+.patient-goals-list li.is-complete > span:first-child,
+.patient-goals-list li.is-complete small,
+.patient-routines-list li.is-complete small { color: var(--progress-green); }
+.patient-routines-list time { color: var(--progress-muted); font-size: 0.76rem; }
+.patient-progress-empty { grid-column: 1 / -1; color: var(--progress-muted); font-size: 0.86rem; }
+
+.patient-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+.patient-summary-card { position: relative; min-height: 9rem; padding: 1rem; }
+.patient-summary-card > p { margin: 0 0 0.65rem; color: var(--progress-muted); font-size: 0.82rem; }
+.patient-summary-card > strong { display: block; color: var(--progress-ink); font-size: 1.75rem; line-height: 1.1; }
+.patient-summary-card > strong small { color: var(--progress-muted); font-size: 0.9rem; font-weight: 550; }
+.patient-summary-card > span:last-child { display: block; margin-top: 0.45rem; color: var(--progress-muted); font-size: 0.75rem; }
+.patient-summary-card .summary-symbol {
+  position: absolute;
+  top: 0.8rem;
+  right: 0.9rem;
+  color: var(--progress-blue);
+  font-size: 1.2rem;
+}
+.summary-routines .summary-symbol, .summary-streak .summary-symbol { color: var(--progress-green); }
+.patient-summary-card > strong.summary-date { padding-top: 0.25rem; font-size: 1.05rem; }
+
+.patient-daily-card,
+.patient-routines-card { margin-top: 1rem; }
+.patient-daily-percent { color: var(--progress-blue); font-size: 1.4rem; }
+.daily-progress-track > span { background: linear-gradient(90deg, #398ed0, #60b4e9); }
+.patient-daily-note { margin: 0.55rem 0 0; color: var(--progress-muted); font-size: 0.82rem; }
+.patient-routines-list li { grid-template-columns: minmax(0, 1fr) auto auto; }
+
+.dashboard-notices { display: grid; gap: 0.4rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+.dashboard-notices li { border-radius: 0.6rem; padding: 0.75rem 1rem; color: #176448; background: #eaf8ef; }
+.dashboard-notices li.error { color: #8c342e; background: #fff0ee; }
+
+body.dark-mode .patient-progress-card { border-color: #343b4a; background: #1a1a24; color: #f1f5f7; }
+body.dark-mode .patient-recovery-card { background: linear-gradient(120deg, #172a23, #1a1a24 72%); }
+body.dark-mode .patient-progress-card-heading h2,
+body.dark-mode .recovery-components strong { color: #e3f5ed; }
+body.dark-mode .patient-progress-card-heading p,
+body.dark-mode .recovery-copy > p,
+body.dark-mode .recovery-components,
+body.dark-mode .patient-summary-card > p,
+body.dark-mode .patient-summary-card > span:last-child,
+body.dark-mode .patient-daily-note { color: #b3c0c8; }
+body.dark-mode .patient-stage-line::before { background: #39424b; }
+body.dark-mode .patient-stage-line li > span { border-color: #46515a; background: #222630; }
+body.dark-mode .patient-stage-line li.is-complete > span,
+body.dark-mode .patient-stage-line li.is-current > span { background: var(--progress-green); }
+body.dark-mode .patient-progress-track { background: #303943; }
+body.dark-mode .patient-goals-list li,
+body.dark-mode .patient-routines-list li { border-color: #333b46; }
+body.dark-mode .patient-routines-list time,
+body.dark-mode .patient-progress-empty { color: #b3c0c8; }
+body.dark-mode .patient-chart-grid { stroke: #38424a; }
+body.dark-mode .patient-chart-label,
+body.dark-mode .patient-chart-empty { fill: #b3c0c8; }
+body.dark-mode .patient-chart-point { fill: #1a1a24; }
+body.dark-mode .patient-progress-updated { border-color: #31506a; background: #1e3041; color: #9bd0f4; }
+
+@media (max-width: 900px) {
+  .patient-progress-columns { grid-template-columns: minmax(0, 1fr); }
+  .patient-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .patient-progress-heading { align-items: flex-start; flex-direction: column; }
+  .patient-recovery-card { grid-template-columns: minmax(0, 1fr); gap: 0.9rem; }
+  .recovery-components { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .patient-summary-grid { grid-template-columns: minmax(0, 1fr); }
+  .patient-summary-card { min-height: 7.8rem; }
+  .patient-progress-card { padding: 1rem 0.9rem; }
+  .patient-stage-line { gap: 0.15rem; }
+  .patient-stage-line li { font-size: 0.7rem; }
+  .patient-recovery-chart { min-height: 11rem; }
+  .patient-routines-list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .patient-routines-list li small { grid-column: 1 / -1; }
+}

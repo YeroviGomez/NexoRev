@@ -38,7 +38,7 @@
       }
     });
   </script>
-  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=42">
+  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=43">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
@@ -46,6 +46,8 @@
   {% include "principal/sidebar.html" %}
 
   <main class="app-shell">
+    {% include "principal/dashboard.html" %}
+    {% include "principal/mi_progreso.html" %}
     {% include "principal/home.html" %}
     {% include "principal/diagnostico.html" %}
     {% include "principal/videos.html" %}
@@ -61,5 +63,12 @@
   {% include "principal/scroll_to_top.html" %}
 
   <script src="{% static 'princpal/js/principal.js' %}?v=39" defer></script>
+  {% if usuario and usuario.role == 'doctor' %}
+    <script src="{% static 'princpal/js/dashboard.js' %}?v=2" defer></script>
+  {% endif %}
+  {% if usuario and usuario.role == 'paciente' %}
+    <script src="{% static 'princpal/js/mi-progreso.js' %}?v=1" defer></script>
+  {% endif %}
+  <script src="{% static 'princpal/js/security-questions.js' %}?v=1" defer></script>
 </body>
 </html>

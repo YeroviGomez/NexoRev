@@ -1,0 +1,454 @@
+(() => {
+  const root = document.getElementById('dashboardView');
+  const dataElement = document.getElementById('dashboard-patient-data');
+  if (!root || !dataElement) return;
+
+  const byId = (id) => document.getElementById(id);
+  const patientFilter = byId('dashboardPatientFilter');
+  const statusFilter = byId('dashboardStatusFilter');
+  const dateFrom = byId('dashboardDateFrom');
+  const dateTo = byId('dashboardDateTo');
+  const sortSelect = byId('dashboardSort');
+  const patientRows = byId('dashboardPatientRows');
+  const pendingRows = byId('dashboardPendingSessions');
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const colors = ['#119b72', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
+  let patients = [];
+  let refreshing = false;
+
+  try {
+    patients = JSON.parse(dataElement.textContent || '[]');
+  } catch (error) {
+    console.error('No se pudieron leer los datos del dashboard médico.', error);
+  }
+
+  const svgElement = (name, attributes = {}, text = '') => {
+    const node = document.createElementNS(SVG_NS, name);
+    Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, String(value)));
+    if (text) node.textContent = text;
+    return node;
+  };
+
+  const formatNumber = (value) => Number(value).toLocaleString('es-SV', {
+    maximumFractionDigits: 1,
+  });
+
+  const formatDate = (date) => date
+    ? new Intl.DateTimeFormat('es-SV', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(date))
+    : 'Sin registro';
+
+  const withinDateRange = (date) => {
+    if (!date) return false;
+    const key = date.slice(0, 10);
+    return (!dateFrom.value || key >= dateFrom.value) && (!dateTo.value || key <= dateTo.value);
+  };
+
+  const patientEvaluations = (patient) => {
+    const records = patient.evaluations.length
+      ? patient.evaluations
+      : patient.diagnosisPain !== null && patient.diagnosisDate
+        ? [{ date: patient.diagnosisDate, pain: patient.diagnosisPain, metric: '', value: null, unit: '' }]
+        : [];
+    return records.filter((record) => withinDateRange(record.date));
+  };
+
+  const filteredPatients = () => patients
+    .filter((patient) => patientFilter.value === 'all' || String(patient.id) === patientFilter.value)
+    .filter((patient) => statusFilter.value === 'all'
+      || (statusFilter.value === 'finished' ? patient.state === 'finalizado' : patient.state !== 'finalizado'))
+    .map((patient) => ({
+      ...patient,
+      visibleProgress: patient.progressHistory
+        .filter((point) => withinDateRange(point.fecha))
+        .at(-1)?.avance ?? (dateFrom.value || dateTo.value ? null : patient.progress),
+      visibleSessions: patient.sessions.filter((session) => withinDateRange(session.date)),
+      visibleEvaluations: patientEvaluations(patient),
+      visibleGoals: patient.goals.filter((goal) => !dateTo.value || goal.createdAt.slice(0, 10) <= dateTo.value),
+    }));
+
+  const currentGoalValue = (patient, goal) => patient.visibleEvaluations
+    .filter((evaluation) => evaluation.metric.trim().toLocaleLowerCase('es-SV') === goal.metric.trim().toLocaleLowerCase('es-SV')
+      && evaluation.value !== null
+      && evaluation.unit.trim().toLocaleLowerCase('es-SV') === goal.unit.trim().toLocaleLowerCase('es-SV'))
+    .at(-1);
+
+  const goalResults = (records) => records.flatMap((patient) => patient.visibleGoals.map((goal) => {
+    const current = currentGoalValue(patient, goal);
+    return {
+      patient,
+      goal,
+      current,
+      completed: Boolean(current && (goal.direction === 'menor'
+        ? current.value <= goal.target
+        : current.value >= goal.target)),
+    };
+  }));
+
+  const updateSelectOptions = () => {
+    const selectedPatient = patientFilter.value;
+    patientFilter.replaceChildren(new Option('Todos los pacientes', 'all'));
+    patients.forEach((patient) => patientFilter.add(new Option(patient.name, String(patient.id))));
+    if (patients.some((patient) => String(patient.id) === selectedPatient)) {
+      patientFilter.value = selectedPatient;
+    }
+    document.querySelectorAll('.dashboard-form [name="patient_id"]').forEach((select) => {
+      const selected = select.value;
+      select.replaceChildren(new Option('Selecciona un paciente', ''));
+      patients.forEach((patient) => select.add(new Option(patient.name, String(patient.id))));
+      if (patients.some((patient) => String(patient.id) === selected)) select.value = selected;
+      select.disabled = patients.length === 0;
+    });
+  };
+
+  const drawDonut = (svgId, legendId, completed, total, completedLabel, pendingLabel) => {
+    const svg = byId(svgId);
+    const legend = byId(legendId);
+    svg.replaceChildren();
+    legend.replaceChildren();
+    svg.setAttribute('viewBox', '0 0 180 180');
+    const radius = 60;
+    const circumference = 2 * Math.PI * radius;
+    const percent = total ? Math.round((completed / total) * 100) : 0;
+    svg.append(
+      svgElement('circle', { cx: 90, cy: 90, r: radius, fill: 'none', stroke: '#e8edf0', 'stroke-width': 18 }),
+      svgElement('circle', {
+        cx: 90, cy: 90, r: radius, fill: 'none', stroke: '#14a477', 'stroke-width': 18,
+        'stroke-dasharray': `${circumference * percent / 100} ${circumference}`,
+        'stroke-linecap': 'round', transform: 'rotate(-90 90 90)',
+      }),
+      svgElement('text', { x: 90, y: 87, 'text-anchor': 'middle', class: 'donut-value' }, `${percent}%`),
+      svgElement('text', { x: 90, y: 109, 'text-anchor': 'middle', class: 'donut-caption' }, `${completed} de ${total}`),
+    );
+    [
+      { label: completedLabel, count: completed, className: 'legend-completed' },
+      { label: pendingLabel, count: Math.max(total - completed, 0), className: 'legend-pending' },
+    ].forEach((item) => {
+      const line = document.createElement('div');
+      line.className = 'donut-legend-item';
+      const swatch = document.createElement('span');
+      swatch.className = item.className;
+      const label = document.createElement('span');
+      label.textContent = item.label;
+      const count = document.createElement('strong');
+      count.textContent = String(item.count);
+      line.append(swatch, label, count);
+      legend.append(line);
+    });
+  };
+
+  const drawPainChart = (records) => {
+    const svg = byId('painChart');
+    const legend = byId('painLegend');
+    svg.replaceChildren();
+    legend.replaceChildren();
+    const datedRecords = records.map((patient) => ({
+      ...patient,
+      points: patient.visibleEvaluations.map((evaluation) => ({
+        date: new Date(evaluation.date),
+        pain: evaluation.pain,
+      })).sort((left, right) => left.date - right.date),
+    })).filter((patient) => patient.points.length);
+    const width = 720;
+    const height = 270;
+    const left = 48;
+    const right = 20;
+    const top = 20;
+    const bottom = 38;
+    const plotWidth = width - left - right;
+    const plotHeight = height - top - bottom;
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    if (!datedRecords.length) {
+      svg.append(svgElement('text', { x: width / 2, y: height / 2, 'text-anchor': 'middle', class: 'chart-empty-label' }, 'Sin evaluaciones en este período'));
+      return;
+    }
+
+    const times = datedRecords.flatMap((patient) => patient.points.map((point) => point.date.getTime()));
+    const minimumTime = Math.min(...times);
+    const maximumTime = Math.max(...times);
+    const timeSpan = maximumTime - minimumTime;
+    for (let pain = 0; pain <= 10; pain += 2) {
+      const y = top + plotHeight - (pain / 10) * plotHeight;
+      svg.append(
+        svgElement('line', { x1: left, y1: y, x2: width - right, y2: y, class: 'chart-grid-line' }),
+        svgElement('text', { x: left - 12, y: y + 4, 'text-anchor': 'end', class: 'chart-axis-label' }, pain),
+      );
+    }
+    const dateFormatter = new Intl.DateTimeFormat('es-SV', { day: '2-digit', month: 'short' });
+    datedRecords.forEach((patient, index) => {
+      const color = colors[index % colors.length];
+      const coordinates = patient.points.map((point, pointIndex) => ({
+        x: timeSpan ? left + ((point.date.getTime() - minimumTime) / timeSpan) * plotWidth
+          : left + (datedRecords.length > 1 ? pointIndex * plotWidth : plotWidth / 2),
+        y: top + plotHeight - (point.pain / 10) * plotHeight,
+      }));
+      svg.append(svgElement('polyline', {
+        points: coordinates.map((point) => `${point.x},${point.y}`).join(' '),
+        fill: 'none', stroke: color, 'stroke-width': 3, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+      }));
+      coordinates.forEach((point, pointIndex) => svg.append(svgElement('circle', {
+        cx: point.x, cy: point.y, r: 4.5, fill: color, stroke: '#fff', 'stroke-width': 2,
+      }, `${patient.name}: EVA ${patient.points[pointIndex].pain}, ${dateFormatter.format(patient.points[pointIndex].date)}`)));
+      const label = document.createElement('span');
+      label.className = 'chart-legend-item';
+      label.style.setProperty('--legend-color', color);
+      label.textContent = patient.name;
+      legend.append(label);
+    });
+    const firstDate = new Date(minimumTime);
+    const lastDate = new Date(maximumTime);
+    svg.append(
+      svgElement('text', { x: left, y: height - 7, class: 'chart-axis-label' }, dateFormatter.format(firstDate)),
+      svgElement('text', { x: width - right, y: height - 7, 'text-anchor': 'end', class: 'chart-axis-label' }, dateFormatter.format(lastDate)),
+    );
+  };
+
+  const drawProgressChart = (records) => {
+    const svg = byId('progressChart');
+    svg.replaceChildren();
+    const ordered = [...records].sort((left, right) => (right.visibleProgress ?? -1) - (left.visibleProgress ?? -1)
+      || left.name.localeCompare(right.name, 'es'));
+    const width = 720;
+    const rowHeight = 38;
+    const top = 16;
+    const height = Math.max(ordered.length * rowHeight + 30, 100);
+    const labelWidth = 170;
+    const barWidth = width - labelWidth - 72;
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    if (!ordered.length) {
+      svg.append(svgElement('text', { x: width / 2, y: height / 2, 'text-anchor': 'middle', class: 'chart-empty-label' }, 'Sin pacientes para mostrar'));
+      return;
+    }
+    ordered.forEach((patient, index) => {
+      const y = top + index * rowHeight;
+      const progress = Math.max(0, Math.min(100, patient.visibleProgress ?? 0));
+      svg.append(
+        svgElement('text', { x: labelWidth - 12, y: y + 17, 'text-anchor': 'end', class: 'chart-row-label' }, patient.name),
+        svgElement('rect', { x: labelWidth, y, width: barWidth, height: 16, rx: 8, class: 'chart-bar-track' }),
+        svgElement('rect', { x: labelWidth, y, width: barWidth * progress / 100, height: 16, rx: 8, fill: '#16a477' }),
+        svgElement('text', { x: labelWidth + barWidth + 10, y: y + 14, class: 'chart-bar-value' }, patient.visibleProgress === null ? '—' : `${progress}%`),
+      );
+    });
+  };
+
+  const drawComparisonChart = (goals) => {
+    const svg = byId('comparisonChart');
+    svg.replaceChildren();
+    const width = 900;
+    const rowHeight = 48;
+    const labelWidth = 230;
+    const plotWidth = 450;
+    const top = 16;
+    const height = Math.max(goals.length * rowHeight + 24, 90);
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    if (!goals.length) {
+      svg.append(svgElement('text', { x: width / 2, y: height / 2, 'text-anchor': 'middle', class: 'chart-empty-label' }, 'Agrega objetivos y evaluaciones clínicas para comparar'));
+      return;
+    }
+    goals.forEach(({ patient, goal, current }, index) => {
+      const y = top + index * rowHeight;
+      const currentValue = current ? current.value : 0;
+      const ratio = goal.target > 0 ? currentValue / goal.target
+        : currentValue === 0 ? 1 : currentValue;
+      const maxRatio = Math.max(ratio, 1);
+      const scaledTargetWidth = plotWidth / maxRatio;
+      const scaledCurrentWidth = Math.min(ratio, maxRatio) * scaledTargetWidth;
+      const completed = current && (goal.direction === 'menor' ? currentValue <= goal.target : currentValue >= goal.target);
+      const currentColor = completed ? '#16a477' : '#f59e0b';
+      svg.append(
+        svgElement('text', { x: labelWidth - 12, y: y + 20, 'text-anchor': 'end', class: 'chart-row-label' }, `${patient.name} · ${goal.name}`),
+        svgElement('rect', { x: labelWidth, y, width: plotWidth, height: 10, rx: 5, class: 'chart-bar-track' }),
+        svgElement('rect', { x: labelWidth, y, width: scaledCurrentWidth, height: 10, rx: 5, fill: currentColor }),
+        svgElement('rect', { x: labelWidth, y: y + 15, width: plotWidth, height: 10, rx: 5, class: 'chart-bar-track' }),
+        svgElement('rect', { x: labelWidth, y: y + 15, width: scaledTargetWidth, height: 10, rx: 5, fill: '#8b9aa5' }),
+        svgElement('text', { x: labelWidth + plotWidth + 12, y: y + 9, class: 'chart-comparison-value' }, `Actual: ${current ? formatNumber(current.value) : 'Sin dato'} ${goal.unit}`),
+        svgElement('text', { x: labelWidth + plotWidth + 12, y: y + 25, class: 'chart-comparison-value' }, `Meta: ${formatNumber(goal.target)} ${goal.unit}`),
+      );
+    });
+  };
+
+  const renderTable = (records, goals) => {
+    patientRows.replaceChildren();
+    const sorted = [...records];
+    const lastCompletedDate = (patient) => patient.visibleSessions
+      .filter((session) => session.completed)
+      .reduce((latest, session) => !latest || session.date > latest ? session.date : latest, '');
+    const sessionCounts = (patient) => patient.visibleSessions.reduce((count, session) => count + Number(session.completed), 0);
+    const sortValue = sortSelect.value;
+    sorted.sort((left, right) => {
+      if (sortValue === 'progress_asc') return (left.visibleProgress ?? 101) - (right.visibleProgress ?? 101)
+        || left.name.localeCompare(right.name, 'es');
+      if (sortValue === 'sessions_desc') return sessionCounts(right) - sessionCounts(left) || left.name.localeCompare(right.name, 'es');
+      if (sortValue === 'sessions_asc') return sessionCounts(left) - sessionCounts(right) || left.name.localeCompare(right.name, 'es');
+      if (sortValue === 'last_session_desc') return lastCompletedDate(right).localeCompare(lastCompletedDate(left))
+        || left.name.localeCompare(right.name, 'es');
+      return (right.visibleProgress ?? -1) - (left.visibleProgress ?? -1) || left.name.localeCompare(right.name, 'es');
+    });
+
+    const latestPain = (patient) => patient.visibleEvaluations.at(-1);
+    sorted.forEach((patient) => {
+      const completed = sessionCounts(patient);
+      const total = patient.visibleSessions.length;
+      const lastSession = lastCompletedDate(patient);
+      const pain = latestPain(patient);
+      const row = document.createElement('tr');
+      const name = document.createElement('th');
+      name.scope = 'row';
+      name.textContent = patient.name;
+      const progress = document.createElement('td');
+      const progressWrap = document.createElement('div');
+      progressWrap.className = 'table-progress';
+      const track = document.createElement('span');
+      track.className = 'table-progress-track';
+      const fill = document.createElement('span');
+      fill.className = 'table-progress-fill';
+      fill.style.width = `${Math.min(100, patient.visibleProgress ?? 0)}%`;
+      track.append(fill);
+      const percent = document.createElement('strong');
+      percent.textContent = patient.visibleProgress === null ? 'Sin registro' : `${patient.visibleProgress}%`;
+      progressWrap.append(track, percent);
+      progress.append(progressWrap);
+      const painCell = document.createElement('td');
+      painCell.textContent = pain ? `${pain.pain} / 10` : 'Sin registro';
+      if (pain) painCell.className = pain.pain >= 7 ? 'pain-critical' : pain.pain >= 4 ? 'pain-warning' : 'pain-positive';
+      const sessions = document.createElement('td');
+      sessions.textContent = `${completed} / ${total}`;
+      const last = document.createElement('td');
+      last.textContent = lastSession ? formatDate(lastSession) : 'Sin sesiones realizadas';
+      row.append(name, progress, painCell, sessions, last);
+      patientRows.append(row);
+    });
+
+    const pending = records.flatMap((patient) => patient.visibleSessions
+      .filter((session) => !session.completed && new Date(session.scheduledDate) <= new Date())
+      .map((session) => ({ patient, session })))
+      .sort((left, right) => left.session.scheduledDate.localeCompare(right.session.scheduledDate));
+    pendingRows.replaceChildren();
+    pending.forEach(({ patient, session }) => {
+      const row = document.createElement('tr');
+      const patientName = document.createElement('th');
+      patientName.scope = 'row';
+      patientName.textContent = patient.name;
+      const objective = document.createElement('td');
+      objective.textContent = session.objective;
+      const date = document.createElement('td');
+      date.textContent = formatDate(session.scheduledDate);
+      const actionCell = document.createElement('td');
+      const form = document.createElement('form');
+      form.method = 'post';
+      form.action = root.dataset.completeUrl.replace('/0/', `/${session.id}/`);
+      form.className = 'session-complete-form';
+      const csrf = document.createElement('input');
+      csrf.type = 'hidden';
+      csrf.name = 'csrfmiddlewaretoken';
+      csrf.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
+      const button = document.createElement('button');
+      button.type = 'submit';
+      button.className = 'session-complete-button';
+      button.textContent = 'Marcar realizada';
+      form.append(csrf, button);
+      actionCell.append(form);
+      row.append(patientName, objective, date, actionCell);
+      pendingRows.append(row);
+    });
+    byId('dashboardEmpty').hidden = sorted.length > 0;
+    byId('dashboardSessionsEmpty').hidden = pending.length > 0;
+    byId('dashboardPatientCount').textContent = `${sorted.length} ${sorted.length === 1 ? 'paciente' : 'pacientes'}`;
+  };
+
+  const render = () => {
+    const records = filteredPatients();
+    const goals = goalResults(records);
+    const sessions = records.flatMap((patient) => patient.visibleSessions);
+    const completedSessions = sessions.filter((session) => session.completed).length;
+    const currentPain = records.map((patient) => patient.visibleEvaluations.at(-1)?.pain).filter(Number.isFinite);
+    const painAverage = currentPain.length
+      ? currentPain.reduce((total, pain) => total + pain, 0) / currentPain.length
+      : null;
+    const completedGoals = goals.filter((goal) => goal.completed).length;
+    const progressValues = records.map((patient) => patient.visibleProgress).filter(Number.isFinite);
+    const progressAverage = progressValues.length
+      ? progressValues.reduce((total, progress) => total + progress, 0) / progressValues.length
+      : 0;
+    const activePatients = records.filter((patient) => patient.state !== 'finalizado').length;
+
+    byId('kpiActivePatients').textContent = String(activePatients);
+    byId('kpiProgress').textContent = progressValues.length ? formatNumber(progressAverage) : '—';
+    byId('kpiPain').textContent = painAverage === null ? '—' : formatNumber(painAverage);
+    const painKpi = byId('kpiPain').closest('.dashboard-kpi');
+    painKpi.classList.toggle('kpi-pain-positive', painAverage !== null && painAverage < 4);
+    painKpi.classList.toggle('kpi-pain-critical', painAverage !== null && painAverage >= 7);
+    byId('kpiGoals').textContent = String(goals.length ? Math.round((completedGoals / goals.length) * 100) : 0);
+    byId('kpiGoalCount').textContent = `${completedGoals} de ${goals.length}`;
+
+    const chartPatients = records.map((patient) => ({ ...patient, visibleEvaluations: patient.visibleEvaluations }));
+    drawPainChart(chartPatients);
+    drawDonut('goalsChart', 'goalsLegend', completedGoals, goals.length, 'Completados', 'Pendientes');
+    drawDonut('sessionsChart', 'sessionsLegend', completedSessions, sessions.length, 'Realizadas', 'Planificadas');
+    drawProgressChart(records);
+    drawComparisonChart(goals);
+    renderTable(records, goals);
+  };
+
+  document.querySelectorAll('.dashboard-form').forEach((form) => {
+    const patientSelect = form.elements.namedItem('patient_id');
+    const scheduledDate = form.elements.namedItem('fecha_programada');
+    if (scheduledDate) {
+      const todayKey = root.dataset.today;
+      scheduledDate.min = todayKey;
+      scheduledDate.value = todayKey;
+    }
+    patientSelect.addEventListener('change', () => {
+      form.action = form.dataset.actionTemplate.replace('/0/', `/${patientSelect.value}/`);
+    });
+    form.addEventListener('submit', (event) => {
+      if (!patientSelect.value) {
+        event.preventDefault();
+        patientSelect.setCustomValidity('Selecciona un paciente asignado.');
+        patientSelect.reportValidity();
+      }
+    });
+    patientSelect.addEventListener('input', () => patientSelect.setCustomValidity(''));
+  });
+
+  [patientFilter, statusFilter, dateFrom, dateTo, sortSelect].forEach((filter) => filter.addEventListener('change', render));
+  byId('dashboardReset').addEventListener('click', () => {
+    patientFilter.value = 'all';
+    statusFilter.value = 'all';
+    dateFrom.value = '';
+    dateTo.value = '';
+    sortSelect.value = 'progress_desc';
+    render();
+  });
+
+  const updatePatients = (nextPatients) => {
+    patients = nextPatients;
+    updateSelectOptions();
+    render();
+  };
+
+  updateSelectOptions();
+  document.querySelectorAll('.dashboard-form').forEach((form) => {
+    const patientSelect = form.elements.namedItem('patient_id');
+    patientSelect.dispatchEvent(new Event('change'));
+  });
+  render();
+
+  window.setInterval(async () => {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const response = await fetch(root.dataset.refreshUrl, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error(`No se pudo actualizar el dashboard (${response.status}).`);
+      const data = await response.json();
+      if (!Array.isArray(data.patients)) throw new Error('La respuesta de datos del dashboard no es válida.');
+      updatePatients(data.patients);
+    } catch (error) {
+      console.error('Error al actualizar los datos clínicos del dashboard.', error);
+    } finally {
+      refreshing = false;
+    }
+  }, 60000);
+})();

@@ -35,10 +35,54 @@ una experiencia adaptada y el acceso se protege mediante middleware.
 
 ### Dashboard médico y pacientes asignados
 
-El médico puede consultar sus pacientes asignados y añadir pacientes ya
-registrados o crear nuevos desde un formulario integrado. La asignación se
-guarda mediante la relación `doctor_id`. Las tarjetas muestran nombre, edad,
-zona afectada, estado y porcentaje de avance.
+El médico puede consultar sus pacientes asignados en un dashboard con métricas
+de pacientes activos, avance promedio, dolor EVA y cumplimiento de objetivos.
+Incluye tablas y gráficas de evolución del dolor, objetivos, adherencia a
+sesiones, progreso por paciente y valores clínicos frente a sus metas. Los
+filtros permiten seleccionar paciente, fechas y estado del tratamiento, y la
+tabla se puede ordenar por progreso, sesiones realizadas o última sesión.
+
+Las evaluaciones históricas y objetivos se guardan en `EvaluacionClinica` y
+`ObjetivoTerapeutico`. Desde el dashboard se pueden registrar evaluaciones
+clínicas, definir objetivos, agendar sesiones y marcar citas vencidas como
+realizadas. Cada objetivo permite indicar si se cumple al alcanzar/superar la
+meta o al reducir la métrica hasta ese valor. Las gráficas consultan la base
+de datos y se refrescan automáticamente cada minuto. La asignación se guarda
+mediante `doctor_id` y los endpoints del dashboard limitan la consulta y
+escritura al especialista asignado.
+
+Los datos antiguos de dolor disponibles en el diagnóstico del paciente se
+utilizan como punto histórico cuando aún no hay evaluaciones clínicas nuevas.
+La comparación de objetivos toma la evaluación más reciente de la misma
+métrica y unidad.
+
+### Preguntas de seguridad
+
+Desde **Perfil → Seguridad de la cuenta**, cada usuario puede configurar al
+menos dos preguntas predefinidas o personalizadas. Las respuestas se normalizan
+y almacenan con hash; no se muestran en la interfaz ni se incluyen en las
+respuestas de la API. Para las cuentas que tengan preguntas configuradas, la
+recuperación de contraseña requiere verificar el código enviado por correo y
+responder correctamente todas las preguntas. Los errores de código o de
+respuesta se registran sin almacenar las respuestas y limitan la recuperación
+a cinco intentos por correo en una ventana de 15 minutos. Las cuentas sin
+preguntas conservan la recuperación por código para no bloquear a usuarios
+existentes.
+
+### Mi Progreso del paciente
+
+La vista del paciente reúne la etapa del tratamiento, historial gráfico,
+objetivos que cumplen las evaluaciones clínicas, sesiones programadas y
+rutinas asignadas. El porcentaje general es el promedio de cuatro porcentajes:
+objetivos cumplidos, sesiones realizadas, rutinas asignadas vencidas o
+programadas para hoy que se completaron y evaluaciones con reducción del dolor
+frente a la evaluación anterior. Un componente sin registros aporta 0 %.
+
+El fisioterapeuta asigna videos de ejercicio a pacientes propios desde el
+dashboard, con una fecha. Al marcarse un video como completado se actualiza la
+asignación correspondiente; se conserva el historial de avances en el paciente.
+La vista consulta los datos actuales y los refresca periódicamente, incluso
+cuando se registran sesiones o evaluaciones desde otra sesión.
 
 ### Expediente del paciente
 

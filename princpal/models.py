@@ -1,3 +1,4 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -97,6 +98,8 @@ class Sesion(models.Model):
     objetivo = models.CharField('objetivo', max_length=255)
     avance = models.TextField('avance', blank=True)
     activo = models.BooleanField('activa', default=True)
+    realizada = models.BooleanField('realizada', default=False)
+    realizada_en = models.DateTimeField('realizada el', null=True, blank=True)
 
     class Meta:
         ordering = ['-fecha']
@@ -105,6 +108,98 @@ class Sesion(models.Model):
 
     def __str__(self):
         return f"{self.paciente.nombre} — {self.fecha:%Y-%m-%d}"
+
+
+class EvaluacionClinica(models.Model):
+    paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name='evaluaciones')
+    fecha = models.DateTimeField('fecha de evaluación', auto_now_add=True)
+    nivel_dolor = models.PositiveSmallIntegerField(
+        'dolor (EVA)',
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+    )
+    metrica = models.CharField('métrica clínica', max_length=100, blank=True)
+    valor_actual = models.DecimalField(
+        'valor actual',
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    unidad = models.CharField('unidad', max_length=30, blank=True)
+
+    class Meta:
+        ordering = ['fecha', 'pk']
+        verbose_name = 'Evaluación clínica'
+        verbose_name_plural = 'Evaluaciones clínicas'
+
+    def __str__(self):
+        return f'{self.paciente.nombre} — EVA {self.nivel_dolor} ({self.fecha:%Y-%m-%d})'
+
+
+class ObjetivoTerapeutico(models.Model):
+    DIRECCION_MAYOR = 'mayor'
+    DIRECCION_MENOR = 'menor'
+    DIRECCION_CHOICES = [
+        (DIRECCION_MAYOR, 'Alcanzar o superar'),
+        (DIRECCION_MENOR, 'Reducir hasta'),
+    ]
+
+    paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name='objetivos')
+    nombre = models.CharField('objetivo', max_length=150)
+    metrica = models.CharField('métrica clínica', max_length=100)
+    direccion = models.CharField(
+        'criterio de cumplimiento',
+        max_length=10,
+        choices=DIRECCION_CHOICES,
+        default=DIRECCION_MAYOR,
+    )
+    valor_objetivo = models.DecimalField(
+        'valor objetivo',
+        max_digits=8,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+    )
+    unidad = models.CharField('unidad', max_length=30, blank=True)
+    creado_en = models.DateTimeField('creado el', auto_now_add=True)
+
+    class Meta:
+        ordering = ['nombre', 'pk']
+        verbose_name = 'Objetivo terapéutico'
+        verbose_name_plural = 'Objetivos terapéuticos'
+
+    def __str__(self):
+        return f'{self.paciente.nombre} — {self.nombre}'
+
+
+class RutinaAsignada(models.Model):
+    paciente = models.ForeignKey(
+        Paciente,
+        on_delete=models.CASCADE,
+        related_name='rutinas_asignadas',
+    )
+    video_id = models.CharField('ID de rutina', max_length=128)
+    titulo = models.CharField('rutina', max_length=150)
+    fecha_programada = models.DateField('fecha programada')
+    asignada_en = models.DateTimeField('asignada el', auto_now_add=True)
+    completada_en = models.DateTimeField('completada el', null=True, blank=True)
+
+    class Meta:
+        ordering = ['fecha_programada', 'pk']
+        verbose_name = 'Rutina asignada'
+        verbose_name_plural = 'Rutinas asignadas'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['paciente', 'video_id', 'fecha_programada'],
+                name='unique_routine_assignment_per_day',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['paciente', 'fecha_programada']),
+        ]
+
+    def __str__(self):
+        return f'{self.paciente.nombre} — {self.titulo} ({self.fecha_programada:%Y-%m-%d})'
 
 
 
@@ -154,6 +249,13 @@ class VideoView(models.Model):
     completed = models.BooleanField('rutina completada', default=False)
     completed_at = models.DateTimeField('fecha de finalización', null=True, blank=True)
     viewed_at = models.DateTimeField('fecha de visualización', auto_now_add=True)
+    rutina_asignada = models.ForeignKey(
+        RutinaAsignada,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vistas',
+    )
 
     class Meta:
         ordering = ['-viewed_at']

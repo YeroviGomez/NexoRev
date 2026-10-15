@@ -122,8 +122,26 @@
     </section>
 
     <section class="profile-card">
-      <h2>Seguridad</h2>
+      <h2>Seguridad de la cuenta</h2>
       <p>Administra la seguridad de tu cuenta</p>
+
+      <section class="security-questions-section" aria-labelledby="securityQuestionsTitle">
+        <div>
+          <h3 id="securityQuestionsTitle">Preguntas de Seguridad</h3>
+          <p>Configura al menos dos preguntas para verificar tu identidad durante la recuperación de contraseña. Las respuestas se guardan mediante hash y no se pueden consultar después.</p>
+        </div>
+        <p class="security-questions-feedback" id="securityQuestionsFeedback" role="status" aria-live="polite" hidden></p>
+        <form id="securityQuestionsForm" data-url="{% url 'update_security_questions' %}">
+          {% csrf_token %}
+          <div class="security-question-list" id="securityQuestionList"></div>
+          <div class="security-question-actions">
+            <button type="button" class="outline-button" id="addSecurityQuestion">Agregar pregunta</button>
+            <button type="submit" class="save-button" id="saveSecurityQuestions">Guardar preguntas</button>
+          </div>
+        </form>
+        {{ security_question_items|json_script:"security-question-data" }}
+        {{ security_predefined_questions|json_script:"security-question-options" }}
+      </section>
 
       <div class="preference-row biometric-row">
         <div>

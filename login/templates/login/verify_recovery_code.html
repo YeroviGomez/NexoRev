@@ -28,54 +28,49 @@
         {% endif %}
 
         <div class="form-head">
-          <h2>Cambiar Contraseña</h2>
-          <p>Ingresa el código que recibiste en <strong>{{ email }}</strong> y tu nueva contraseña</p>
+          {% if stage == 'code' %}
+            <h2>Verificar correo</h2>
+            <p>Ingresa el código enviado a <strong>{{ email }}</strong>.</p>
+          {% elif stage == 'questions' %}
+            <h2>Verificar identidad</h2>
+            <p>Responde tus preguntas de seguridad para continuar con la recuperación.</p>
+          {% else %}
+            <h2>Cambiar contraseña</h2>
+            <p>Define una nueva contraseña para <strong>{{ email }}</strong>.</p>
+          {% endif %}
         </div>
 
-        <div class="field-group">
-          <label for="code">Código de Recuperación</label>
-          <input
-            id="code"
-            name="code"
-            type="text"
-            placeholder="000000"
-            maxlength="6"
-            inputmode="numeric"
-            pattern="[0-9]{6}"
-            required
-            autocomplete="off"
-          >
-          <small class="form-hint">Ingresa el código de 6 dígitos que recibiste por correo (válido por 15 minutos)</small>
-        </div>
-
-        <div class="field-group">
-          <label for="password">Nueva Contraseña</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autocomplete="new-password"
-            placeholder="••••••••"
-            minlength="8"
-            required
-          >
-          <small class="form-hint">Mínimo 8 caracteres, con letras y números</small>
-        </div>
-
-        <div class="field-group">
-          <label for="password_confirm">Confirmar Contraseña</label>
-          <input
-            id="password_confirm"
-            name="password_confirm"
-            type="password"
-            autocomplete="new-password"
-            placeholder="••••••••"
-            minlength="8"
-            required
-          >
-        </div>
-
-        <button type="submit" class="primary-btn">Cambiar Contraseña</button>
+        {% if stage == 'code' %}
+          <div class="field-group">
+            <label for="code">Código de Recuperación</label>
+            <input id="code" name="code" type="text" placeholder="000000" maxlength="6"
+                   inputmode="numeric" pattern="[0-9]{6}" required autocomplete="one-time-code">
+            <small class="form-hint">Código de 6 dígitos, válido por 15 minutos.</small>
+          </div>
+          <button type="submit" class="primary-btn">Verificar código</button>
+        {% elif stage == 'questions' %}
+          {% for question in security_questions %}
+            <div class="field-group">
+              <label for="answer_{{ question.id }}">{{ question.question }}</label>
+              <input id="answer_{{ question.id }}" name="answer_{{ question.id }}" type="password"
+                     autocomplete="off" maxlength="1024" required>
+            </div>
+          {% endfor %}
+          <button type="submit" class="primary-btn">Verificar respuestas</button>
+        {% else %}
+          <div class="field-group">
+            <label for="password">Nueva Contraseña</label>
+            <input id="password" name="password" type="password" autocomplete="new-password"
+                   placeholder="••••••••" minlength="8" required>
+            <small class="form-hint">Mínimo 8 caracteres, con letras y números.</small>
+          </div>
+          <div class="field-group">
+            <label for="password_confirm">Confirmar Contraseña</label>
+            <input id="password_confirm" name="password_confirm" type="password"
+                   autocomplete="new-password" placeholder="••••••••" minlength="8" required>
+          </div>
+          <button type="submit" class="primary-btn">Cambiar Contraseña</button>
+        {% endif %}
 
         <a href="{% url 'forgot_password' %}" class="text-link">Solicitar un nuevo código</a>
       </form>
@@ -107,19 +102,22 @@
       });
     }
 
-    if (form) {
+    if (form && codeInput) {
       form.addEventListener('submit', (e) => {
         const code = codeInput.value.trim();
-        const password = passwordInput.value;
-        const passwordConfirm = passwordConfirmInput.value;
 
         if (code.length !== 6) {
           e.preventDefault();
           alert('El código debe tener 6 dígitos.');
           codeInput.focus();
-          return;
         }
+      });
+    }
 
+    if (form && passwordInput && passwordConfirmInput) {
+      form.addEventListener('submit', (e) => {
+        const password = passwordInput.value;
+        const passwordConfirm = passwordConfirmInput.value;
         if (password.length < 8) {
           e.preventDefault();
           alert('La contraseña debe tener al menos 8 caracteres.');

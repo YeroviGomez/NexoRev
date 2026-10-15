@@ -11,7 +11,15 @@ from django.utils import timezone
 from PIL import Image
 
 from crear_cuenta.models import Usuario
-from .models import Diagnostico, Paciente, Sesion, VideoView
+from .models import (
+	Diagnostico,
+	EvaluacionClinica,
+	ObjetivoTerapeutico,
+	Paciente,
+	RutinaAsignada,
+	Sesion,
+	VideoView,
+)
 
 
 class DiagnosticFormTests(TestCase):
@@ -45,6 +53,10 @@ class DiagnosticFormTests(TestCase):
 		self.assertEqual(diagnostico.pregunta2, 'La sesión fue cómoda.')
 		self.assertEqual(diagnostico.pregunta3, 'si')
 		self.assertEqual(diagnostico.comentario, 'Puedo moverme mejor.')
+		self.assertEqual(
+			EvaluacionClinica.objects.get(paciente__usuario=self.usuario).nivel_dolor,
+			diagnostico.nivel_dolor,
+		)
 
 	def test_actualiza_el_formulario_existente_del_paciente(self):
 		self.client.post('/principal/', self.respuestas)
@@ -607,3 +619,359 @@ class VideoHistoryTests(TestCase):
 		self.assertEqual(second_page.content.count(b'class="video-card"'), 3)
 		self.assertNotContains(second_page, 'Siguiente página')
 # Create your tests here.
+
+
+class MedicalDashboardTests(TestCase):
+	def setUp(self):
+		self.doctor = Usuario.objects.create(
+			email='dashboard-doctor@example.com',
+			nombre='Especialista',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		self.patient_user = Usuario.objects.create(
+			email='dashboard-patient@example.com',
+			nombre='Paciente Dashboard',
+		)
+		self.patient = Paciente.objects.create(
+			usuario=self.patient_user,
+			doctor=self.doctor,
+			nombre=self.patient_user.nombre,
+			email=self.patient_user.email,
+			avance=65,
+			estado=Paciente.ESTADO_EN_PROCESO,
+		)
+		self.client = Client()
+		session = self.client.session
+		session['current_user'] = self.doctor.email
+		session.save()
+
+	def test_dashboard_uses_assigned_patient_clinical_records(self):
+		evaluation = EvaluacionClinica.objects.create(
+			paciente=self.patient,
+			nivel_dolor=5,
+			metrica='Movilidad',
+			valor_actual=60,
+			unidad='grados',
+		)
+		goal = ObjetivoTerapeutico.objects.create(
+			paciente=self.patient,
+			nombre='Flexión de rodilla',
+			metrica='Movilidad',
+			valor_objetivo=90,
+			unidad='grados',
+		)
+		session = Sesion.objects.create(
+			paciente=self.patient,
+			fecha=timezone.now() - timedelta(days=1),
+			objetivo='Ejercicios de movilidad',
+			realizada=True,
+			realizada_en=timezone.now() - timedelta(hours=2),
+		)
+
+		page = self.client.get(reverse('principal'))
+		response = self.client.get(reverse('doctor_dashboard_data'))
+
+		self.assertEqual(page.status_code, 200)
+		self.assertEqual(page.context['active_view'], 'dashboard')
+		self.assertContains(page, 'Dashboard médico')
+		self.assertEqual(response.status_code, 200)
+		patient_data = response.json()['patients'][0]
+		self.assertEqual(patient_data['name'], self.patient.nombre)
+		self.assertEqual(patient_data['evaluations'][0]['pain'], evaluation.nivel_dolor)
+		self.assertEqual(patient_data['goals'][0]['target'], float(goal.valor_objetivo))
+		self.assertEqual(patient_data['goals'][0]['direction'], ObjetivoTerapeutico.DIRECCION_MAYOR)
+		self.assertEqual(patient_data['sessions'][0]['id'], session.pk)
+		self.assertTrue(patient_data['sessions'][0]['completed'])
+
+	def test_doctor_can_register_evaluation_goal_and_planned_session(self):
+		evaluation_response = self.client.post(
+			reverse('register_clinical_evaluation', args=[self.patient.pk]),
+			{
+				'nivel_dolor': '4',
+				'metrica': 'Fuerza',
+				'valor_actual': '20',
+				'unidad': 'kg',
+			},
+		)
+		goal_response = self.client.post(
+			reverse('add_therapeutic_goal', args=[self.patient.pk]),
+			{
+				'nombre': 'Fuerza de pierna',
+				'metrica': 'Fuerza',
+				'direccion': 'mayor',
+				'valor_objetivo': '30',
+				'unidad': 'kg',
+			},
+		)
+		future_date = timezone.localtime(timezone.now() + timedelta(days=2)).strftime('%Y-%m-%dT%H:%M')
+		session_response = self.client.post(
+			reverse('schedule_session', args=[self.patient.pk]),
+			{'fecha': future_date, 'objetivo': 'Fortalecimiento'},
+		)
+
+		self.assertEqual(evaluation_response.status_code, 302)
+		self.assertEqual(goal_response.status_code, 302)
+		self.assertEqual(session_response.status_code, 302)
+		self.assertEqual(EvaluacionClinica.objects.filter(paciente=self.patient).count(), 1)
+		self.assertEqual(ObjetivoTerapeutico.objects.filter(paciente=self.patient).count(), 1)
+		self.assertEqual(Sesion.objects.filter(paciente=self.patient, activo=True).count(), 1)
+
+	def test_dashboard_and_clinical_write_routes_are_scoped_to_assigned_patients(self):
+		other_doctor = Usuario.objects.create(
+			email='otro-dashboard-doctor@example.com',
+			nombre='Otro especialista',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		other_patient = Paciente.objects.create(
+			doctor=other_doctor,
+			nombre='Paciente ajeno',
+			email='paciente-ajeno-dashboard@example.com',
+		)
+		EvaluacionClinica.objects.create(paciente=other_patient, nivel_dolor=8)
+
+		data_response = self.client.get(reverse('doctor_dashboard_data'))
+		write_response = self.client.post(
+			reverse('register_clinical_evaluation', args=[other_patient.pk]),
+			{'nivel_dolor': '2'},
+		)
+
+		self.assertEqual(data_response.status_code, 200)
+		self.assertEqual([patient['id'] for patient in data_response.json()['patients']], [self.patient.pk])
+		self.assertEqual(write_response.status_code, 403)
+		self.assertEqual(EvaluacionClinica.objects.filter(paciente=other_patient).count(), 1)
+
+	def test_doctor_can_complete_only_due_sessions(self):
+		due_session = Sesion.objects.create(
+			paciente=self.patient,
+			fecha=timezone.now() - timedelta(minutes=5),
+			objetivo='Sesión concluida',
+		)
+		future_session = Sesion.objects.create(
+			paciente=self.patient,
+			fecha=timezone.now() + timedelta(days=1),
+			objetivo='Próxima sesión',
+		)
+
+		due_response = self.client.post(reverse('complete_session', args=[due_session.pk]))
+		future_response = self.client.post(reverse('complete_session', args=[future_session.pk]))
+
+		self.assertEqual(due_response.status_code, 302)
+		self.assertEqual(future_response.status_code, 403)
+		due_session.refresh_from_db()
+		future_session.refresh_from_db()
+		self.assertTrue(due_session.realizada)
+		self.assertIsNotNone(due_session.realizada_en)
+		self.assertFalse(future_session.realizada)
+
+
+class PatientProgressTests(TestCase):
+	def setUp(self):
+		self.doctor = Usuario.objects.create(
+			email='progress-doctor@example.com',
+			nombre='Fisioterapeuta',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		self.user = Usuario.objects.create(
+			email='progress-patient@example.com',
+			nombre='Paciente',
+		)
+		self.patient = Paciente.objects.create(
+			usuario=self.user,
+			doctor=self.doctor,
+			nombre=self.user.nombre,
+			email=self.user.email,
+			avance=0,
+			estado=Paciente.ESTADO_INICIAL,
+		)
+		self.patient_client = Client()
+		session = self.patient_client.session
+		session['current_user'] = self.user.email
+		session.save()
+		self.doctor_client = Client()
+		session = self.doctor_client.session
+		session['current_user'] = self.doctor.email
+		session.save()
+
+	def test_patient_progress_uses_goals_sessions_routines_and_clinical_history(self):
+		ObjetivoTerapeutico.objects.create(
+			paciente=self.patient,
+			nombre='Mejorar movilidad',
+			metrica='Movilidad',
+			direccion=ObjetivoTerapeutico.DIRECCION_MAYOR,
+			valor_objetivo=80,
+			unidad='grados',
+		)
+		ObjetivoTerapeutico.objects.create(
+			paciente=self.patient,
+			nombre='Recuperar fuerza',
+			metrica='Fuerza',
+			direccion=ObjetivoTerapeutico.DIRECCION_MAYOR,
+			valor_objetivo=30,
+			unidad='kg',
+		)
+		EvaluacionClinica.objects.create(
+			paciente=self.patient,
+			nivel_dolor=8,
+			metrica='Movilidad',
+			valor_actual=60,
+			unidad='grados',
+		)
+		EvaluacionClinica.objects.create(
+			paciente=self.patient,
+			nivel_dolor=6,
+			metrica='Movilidad',
+			valor_actual=85,
+			unidad='grados',
+		)
+		EvaluacionClinica.objects.create(paciente=self.patient, nivel_dolor=7)
+		Sesion.objects.create(
+			paciente=self.patient,
+			fecha=timezone.now() - timedelta(days=1),
+			objetivo='Sesión realizada',
+			realizada=True,
+			realizada_en=timezone.now() - timedelta(hours=1),
+		)
+		Sesion.objects.create(
+			paciente=self.patient,
+			fecha=timezone.now() + timedelta(days=1),
+			objetivo='Sesión programada',
+		)
+		RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='routine-1',
+			titulo='Ejercicios de movilidad',
+			fecha_programada=timezone.localdate(),
+			completada_en=timezone.now(),
+		)
+		RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='routine-2',
+			titulo='Ejercicios de equilibrio',
+			fecha_programada=timezone.localdate(),
+		)
+
+		response = self.patient_client.get(reverse('patient_progress_data'))
+		progress = response.json()['progress']
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(progress['components'], {
+			'goals': 50,
+			'sessions': 50,
+			'routines': 50,
+			'evaluations': 50,
+		})
+		self.assertEqual(progress['recoveryPercent'], 50)
+		self.assertEqual((progress['goalCompleted'], progress['goalTotal']), (1, 2))
+		self.assertEqual((progress['sessionsCompleted'], progress['sessionsPlanned']), (1, 2))
+		self.assertEqual((progress['dailyRoutinesCompleted'], progress['dailyRoutinesAssigned']), (1, 2))
+		self.assertEqual(progress['dailyPercent'], 50)
+		self.assertEqual(len(progress['progressHistory']), 1)
+
+	def test_patient_progress_page_and_api_are_scoped_to_the_authenticated_patient(self):
+		other_user = Usuario.objects.create(
+			email='other-progress-patient@example.com',
+			nombre='Otro paciente',
+		)
+		other_patient = Paciente.objects.create(
+			usuario=other_user,
+			nombre=other_user.nombre,
+			email=other_user.email,
+		)
+		ObjetivoTerapeutico.objects.create(
+			paciente=other_patient,
+			nombre='Objetivo privado',
+			metrica='Movilidad',
+			valor_objetivo=10,
+		)
+
+		page = self.patient_client.get(reverse('principal'))
+		api = self.patient_client.get(reverse('patient_progress_data'))
+		doctor_api = self.doctor_client.get(reverse('patient_progress_data'))
+
+		self.assertEqual(page.status_code, 200)
+		self.assertContains(page, 'Mi progreso')
+		self.assertContains(page, 'patientRecoveryChart')
+		self.assertEqual(api.status_code, 200)
+		self.assertEqual(api.json()['progress']['goalTotal'], 0)
+		self.assertNotIn('Objetivo privado', str(api.json()))
+		self.assertEqual(doctor_api.status_code, 404)
+
+	def test_assigned_routine_updates_when_the_patient_marks_video_completed(self):
+		today = timezone.localdate()
+		assignment = RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='video-1',
+			titulo='Rutina de equilibrio',
+			fecha_programada=today,
+		)
+		video = {
+			'video_id': 'video-1',
+			'title': 'Rutina de equilibrio',
+			'category': 'Equilibrio',
+		}
+
+		with patch('princpal.views.load_videos', return_value=[video]):
+			response = self.patient_client.post(reverse('complete_video', args=[0]))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertTrue(response.json()['completed'])
+		assignment.refresh_from_db()
+		self.assertIsNotNone(assignment.completada_en)
+		view = VideoView.objects.get(video_id='video-1')
+		self.assertEqual(view.rutina_asignada_id, assignment.pk)
+
+		with patch('princpal.views.load_videos', return_value=[video]):
+			undo_response = self.patient_client.post(reverse('complete_video', args=[0]))
+
+		self.assertEqual(undo_response.status_code, 200)
+		self.assertFalse(undo_response.json()['completed'])
+		assignment.refresh_from_db()
+		view.refresh_from_db()
+		self.assertIsNone(assignment.completada_en)
+		self.assertIsNone(view.rutina_asignada_id)
+
+	def test_clinical_evaluations_update_the_persisted_progress_history(self):
+		evaluation_url = reverse('register_clinical_evaluation', args=[self.patient.pk])
+		self.doctor_client.post(evaluation_url, {'nivel_dolor': '8'})
+		self.doctor_client.post(evaluation_url, {'nivel_dolor': '5'})
+
+		self.patient.refresh_from_db()
+		progress = self.patient_client.get(reverse('patient_progress_data')).json()['progress']
+
+		self.assertEqual(progress['components']['evaluations'], 100)
+		self.assertEqual(progress['recoveryPercent'], 25)
+		self.assertEqual(self.patient.historial_avance[-1]['avance'], 25)
+
+	def test_doctor_can_assign_a_routine_only_to_an_assigned_patient(self):
+		routine = {
+			'video_id': 'video-2',
+			'title': 'Rutina de estiramiento',
+		}
+		url = reverse('assign_routine', args=[self.patient.pk])
+		form_data = {
+			'video_id': 'video-2',
+			'fecha_programada': timezone.localdate().isoformat(),
+		}
+
+		with patch('princpal.views.load_videos', return_value=[routine]):
+			response = self.doctor_client.post(url, form_data)
+
+		self.assertEqual(response.status_code, 302)
+		assignment = RutinaAsignada.objects.get(paciente=self.patient)
+		self.assertEqual(assignment.titulo, routine['title'])
+		self.assertEqual(assignment.fecha_programada, timezone.localdate())
+
+		other_doctor = Usuario.objects.create(
+			email='different-progress-doctor@example.com',
+			nombre='Otro fisioterapeuta',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		other_client = Client()
+		session = other_client.session
+		session['current_user'] = other_doctor.email
+		session.save()
+		with patch('princpal.views.load_videos', return_value=[routine]):
+			unauthorized = other_client.post(url, form_data)
+
+		self.assertEqual(unauthorized.status_code, 404)
+		self.assertEqual(RutinaAsignada.objects.filter(paciente=self.patient).count(), 1)

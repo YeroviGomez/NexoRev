@@ -1,0 +1,28 @@
+.security-questions-section { display: grid; gap: 1rem; margin: 1.4rem 0 1.8rem; padding: 1rem; border: 1px solid #dce9e3; border-radius: 0.8rem; background: #f8fcf9; }
+.security-questions-section h3 { margin: 0; color: #17382f; font-size: 1.05rem; }
+.security-questions-section > div > p { margin: 0.45rem 0 0; color: #60726a; font-size: 0.84rem; line-height: 1.55; }
+.security-question-list { display: grid; gap: 0.75rem; }
+.security-question-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; min-width: 0; margin: 0; padding: 0.85rem; border: 1px solid #e0e9e5; border-radius: 0.7rem; }
+.security-question-row legend { padding: 0 0.35rem; color: #355849; font-size: 0.8rem; font-weight: 750; }
+.security-question-row label { display: grid; gap: 0.35rem; color: #52645c; font-size: 0.77rem; font-weight: 650; }
+.security-question-row input, .security-question-row select { width: 100%; min-height: 2.45rem; padding: 0.48rem 0.65rem; border: 1px solid #d6e0dc; border-radius: 0.5rem; background: #fff; color: #243b33; font: inherit; font-size: 0.84rem; }
+.security-question-remove { justify-self: start; padding: 0.35rem 0; border: 0; background: transparent; color: #ad4038; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.security-question-remove:hover { text-decoration: underline; }
+.security-question-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center; }
+.security-questions-feedback { margin: 0; padding: 0.65rem 0.8rem; border-radius: 0.55rem; background: #e9f7ef; color: #176c4d; font-size: 0.84rem; }
+.security-questions-feedback.is-error { background: #fff0ee; color: #a1302b; }
+.security-questions-section [hidden] { display: none !important; }
+
+body.dark-mode .security-questions-section { background: #171f20; border-color: #344a41; }
+body.dark-mode .security-questions-section h3, body.dark-mode .security-question-row legend { color: #d7eee3; }
+body.dark-mode .security-questions-section > div > p, body.dark-mode .security-question-row label { color: #bdcbc4; }
+body.dark-mode .security-question-row { background: #1c232b; border-color: #3d4a50; }
+body.dark-mode .security-question-row input, body.dark-mode .security-question-row select { background: #23232d; border-color: #42495a; color: #f1f5f7; }
+body.dark-mode .security-questions-feedback { background: #18332b; color: #9be2bd; }
+body.dark-mode .security-questions-feedback.is-error { background: #472d30; color: #ffb6ad; }
+
+@media (max-width: 560px) {
+  .security-question-row { grid-template-columns: minmax(0, 1fr); }
+  .security-question-actions { align-items: stretch; flex-direction: column; }
+  .security-question-actions button { width: 100%; }
+}

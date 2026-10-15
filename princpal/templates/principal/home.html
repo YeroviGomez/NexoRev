@@ -132,69 +132,6 @@
             {% endfor %}
           </div>
         </article>
-      {% elif paciente %}
-        <article class="panel progress-panel">
-          <h2>Mi progreso</h2>
-          <div class="stage-scale" aria-label="Escala de progreso">
-            <span class="stage-step initial">Inicial</span>
-            <span class="stage-step process">Proceso</span>
-            <span class="stage-step advanced">Avanzado</span>
-            <span class="stage-step final">Finalizado</span>
-          </div>
-          <div class="patient-progress-chart" aria-label="Gráfica de progreso">
-            <svg id="patientProgressChart" viewBox="0 0 320 180" preserveAspectRatio="none"></svg>
-          </div>
-          <p class="progress-summary">{{ paciente.avance }}% de avance · {{ paciente.get_estado_display }}</p>
-          <script>
-            const progressData = {{ patient_progress_series|safe }};
-            const svg = document.getElementById('patientProgressChart');
-            if (svg && progressData && progressData.length) {
-              const width = 320;
-              const height = 180;
-              const padding = 16;
-              const min = 0;
-              const max = 100;
-              const latestProgress = Number(progressData[progressData.length - 1]?.avance ?? 0);
-              const stageColors = [
-                { max: 30, color: '#a78bfa' },
-                { max: 70, color: '#fbbf24' },
-                { max: 99, color: '#38bdf8' },
-                { max: Infinity, color: '#22c55e' },
-              ];
-              const progressColor = stageColors.find((stage) => latestProgress <= stage.max)?.color || '#22c55e';
-              const xStep = (width - padding * 2) / Math.max(progressData.length - 1, 1);
-              const points = progressData.map((point, index) => {
-                const x = padding + index * xStep;
-                const y = height - padding - ((Number(point.avance) || 0) - min) / Math.max(max - min, 1) * (height - padding * 2);
-                return `${x},${y}`;
-              }).join(' ');
-              const area = `0,${height - padding} ${points} ${width},${height - padding}`;
-              svg.innerHTML = `
-                <defs>
-                  <linearGradient id="progressFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="${progressColor}" stop-opacity="0.45" />
-                    <stop offset="100%" stop-color="${progressColor}" stop-opacity="0.02" />
-                  </linearGradient>
-                </defs>
-                <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#475569" stroke-width="1" stroke-dasharray="4 4" />
-                <polyline points="${points}" fill="none" stroke="${progressColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
-                <polygon points="${area}" fill="url(#progressFill)" opacity="0.9" />
-                ${progressData.map((point, index) => {
-                  const x = padding + index * xStep;
-                  const y = height - padding - ((Number(point.avance) || 0) - min) / Math.max(max - min, 1) * (height - padding * 2);
-                  return `<circle cx="${x}" cy="${y}" r="4" fill="${progressColor}" />`;
-                }).join('')}
-              `;
-            }
-          </script>
-        </article>
-      {% endif %}
-      {% if not usuario or usuario.role != 'doctor' %}
-        <article class="panel routine-panel">
-          <h2>Tu progreso de hoy</h2>
-          <div class="progress-track"><span id="homeProgressBar"></span></div>
-          <p id="homeProgressText">0 rutinas completadas</p>
-        </article>
       {% endif %}
     </div>
   </div>

@@ -1,0 +1,149 @@
+{% if usuario and usuario.role == 'paciente' and patient_progress %}
+<section
+  class="app-view patient-progress-view"
+  id="patientProgressView"
+  data-view="progreso"
+  data-refresh-url="{% url 'patient_progress_data' %}"
+>
+  <header class="page-head patient-progress-heading">
+    <div>
+      <p class="patient-progress-eyebrow">TU REHABILITACIÓN</p>
+      <h1>Mi progreso</h1>
+      <p>Un resumen sencillo de cómo avanzas y de lo que ya has logrado.</p>
+    </div>
+    <span class="patient-progress-updated" id="patientProgressUpdated" role="status">Progreso actualizado</span>
+  </header>
+
+  <article class="patient-progress-card patient-recovery-card">
+    <div class="recovery-copy">
+      <span class="progress-kicker">RECUPERACIÓN GENERAL</span>
+      <strong><span id="patientRecoveryPercent">{{ patient_progress.recoveryPercent }}</span><small>%</small></strong>
+      <p>Tu avance combina objetivos, sesiones, rutinas y cambios en tus evaluaciones.</p>
+    </div>
+    <div
+      class="patient-progress-track recovery-track"
+      id="patientRecoveryTrack"
+      role="progressbar"
+      aria-label="Porcentaje general de recuperación"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="{{ patient_progress.recoveryPercent }}"
+    >
+      <span id="patientRecoveryBar" style="width: {{ patient_progress.recoveryPercent }}%"></span>
+    </div>
+    <div class="recovery-components" aria-label="Componentes del progreso">
+      <span>Objetivos <strong id="recoveryGoalsPercent">{{ patient_progress.components.goals }}%</strong></span>
+      <span>Sesiones <strong id="recoverySessionsPercent">{{ patient_progress.components.sessions }}%</strong></span>
+      <span>Rutinas <strong id="recoveryRoutinesPercent">{{ patient_progress.components.routines }}%</strong></span>
+      <span>Evaluaciones favorables <strong id="recoveryEvaluationsPercent">{{ patient_progress.components.evaluations }}%</strong></span>
+    </div>
+  </article>
+
+  <article class="patient-progress-card patient-stage-card">
+    <div class="patient-progress-card-heading">
+      <div>
+        <h2>Etapa de rehabilitación</h2>
+        <p id="patientStageLabel">{{ patient_progress.stageLabel }}</p>
+      </div>
+    </div>
+    <ol class="patient-stage-line" id="patientStageLine">
+      <li data-stage="inicial"><span>1</span><strong>Inicial</strong></li>
+      <li data-stage="en_proceso"><span>2</span><strong>Proceso</strong></li>
+      <li data-stage="avanzado"><span>3</span><strong>Avanzado</strong></li>
+      <li data-stage="finalizado"><span>4</span><strong>Finalizado</strong></li>
+    </ol>
+  </article>
+
+  <div class="patient-progress-columns">
+    <article class="patient-progress-card patient-progress-chart-card">
+      <div class="patient-progress-card-heading">
+        <div>
+          <h2>Evolución de tu recuperación</h2>
+          <p>Cambios de progreso guardados durante tu tratamiento</p>
+        </div>
+      </div>
+      <svg id="patientRecoveryChart" class="patient-recovery-chart" role="img" aria-label="Gráfica de evolución de la recuperación"></svg>
+    </article>
+
+    <article class="patient-progress-card patient-goals-card">
+      <div class="patient-progress-card-heading">
+        <div>
+          <h2>Tus objetivos</h2>
+          <p><strong id="patientGoalsCount">{{ patient_progress.goalCompleted }} de {{ patient_progress.goalTotal }}</strong> completados · <span id="patientGoalsPercent">{{ patient_progress.components.goals }}%</span></p>
+        </div>
+      </div>
+      <ul class="patient-goals-list" id="patientGoalsList">
+        {% for goal in patient_progress.goals %}
+          <li class="{% if goal.completed %}is-complete{% else %}is-pending{% endif %}">
+            <span aria-hidden="true">{% if goal.completed %}✓{% else %}○{% endif %}</span>
+            <span>{{ goal.name }}</span>
+            <small>{% if goal.completed %}Completado{% else %}En progreso{% endif %}</small>
+          </li>
+        {% empty %}
+          <li class="patient-progress-empty">Tu fisioterapeuta aún no ha registrado objetivos.</li>
+        {% endfor %}
+      </ul>
+    </article>
+  </div>
+
+  <section class="patient-summary-grid" aria-label="Resumen del tratamiento">
+    <article class="patient-progress-card patient-summary-card summary-sessions">
+      <span class="summary-symbol" aria-hidden="true">◷</span>
+      <p>Sesiones realizadas</p>
+      <strong><span id="patientSessionsCompleted">{{ patient_progress.sessionsCompleted }}</span><small> / <span id="patientSessionsPlanned">{{ patient_progress.sessionsPlanned }}</span></small></strong>
+      <span>sesiones programadas</span>
+    </article>
+    <article class="patient-progress-card patient-summary-card summary-routines">
+      <span class="summary-symbol" aria-hidden="true">✓</span>
+      <p>Rutinas completadas</p>
+      <strong><span id="patientRoutinesCompleted">{{ patient_progress.routinesCompleted }}</span><small> / <span id="patientRoutinesAssigned">{{ patient_progress.routinesAssigned }}</span></small></strong>
+      <span>rutinas asignadas</span>
+    </article>
+    <article class="patient-progress-card patient-summary-card summary-streak">
+      <span class="summary-symbol" aria-hidden="true">↗</span>
+      <p>Días consecutivos</p>
+      <strong><span id="patientActivityStreak">{{ patient_progress.streak }}</span><small> días</small></strong>
+      <span>con actividad registrada</span>
+    </article>
+    <article class="patient-progress-card patient-summary-card summary-last-session">
+      <span class="summary-symbol" aria-hidden="true">▦</span>
+      <p>Última sesión</p>
+      <strong class="summary-date" id="patientLastSession">—</strong>
+      <span>sesión realizada</span>
+    </article>
+  </section>
+
+  <article class="patient-progress-card patient-daily-card">
+    <div class="patient-progress-card-heading">
+      <div>
+        <h2>Tu progreso de hoy</h2>
+        <p id="patientDailySummary"></p>
+      </div>
+      <strong class="patient-daily-percent" id="patientDailyPercent">0%</strong>
+    </div>
+    <div
+      class="patient-progress-track daily-progress-track"
+      id="patientDailyTrack"
+      role="progressbar"
+      aria-label="Porcentaje de rutinas completadas para hoy"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="{{ patient_progress.dailyPercent }}"
+    >
+      <span id="patientDailyBar" style="width: {{ patient_progress.dailyPercent }}%"></span>
+    </div>
+    <p class="patient-daily-note" id="patientDailyNote"></p>
+  </article>
+
+  <article class="patient-progress-card patient-routines-card">
+    <div class="patient-progress-card-heading">
+      <div>
+        <h2>Rutinas asignadas</h2>
+        <p>Actividades indicadas por tu fisioterapeuta</p>
+      </div>
+    </div>
+    <ul class="patient-routines-list" id="patientRoutinesList"></ul>
+  </article>
+  {{ patient_progress|json_script:"patient-progress-data" }}
+</section>
+{% endif %}
