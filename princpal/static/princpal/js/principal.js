@@ -999,6 +999,8 @@ function openTutorialPrompt(scope = null) {
     const sectionNames = {
       inicio: "Inicio",
       diagnostico: "Diagnóstico",
+      dashboard: "Dashboard profesional",
+      calendario: "Calendario profesional",
       videos: "Videos",
       favoritos: "Favoritos",
       historial: "Historial",
@@ -1033,6 +1035,19 @@ const tutorialSteps = [
     ],
     tip: true,
   },
+  ...(document.body.dataset.currentUserRole === "doctor" ? [{
+    view: "dashboard",
+    icon: "pulse",
+    title: "Dashboard profesional",
+    subtitle: "Da seguimiento al tratamiento de tus pacientes desde un solo lugar.",
+    boxTitle: "Cómo funciona:",
+    items: [
+      "Consulta indicadores de pacientes activos, progreso, dolor y objetivos.",
+      "Filtra y ordena la información por paciente, fechas y estado del tratamiento.",
+      "Revisa solicitudes de cambio de sesión y responde a tus pacientes.",
+      "Registra evaluaciones, define objetivos, agenda sesiones y asigna rutinas.",
+    ],
+  }] : []),
   {
     view: "inicio",
     icon: "home",
@@ -1074,6 +1089,19 @@ const tutorialSteps = [
         "“Cancelar” limpia los datos que todavía no hayas guardado.",
       ],
   },
+  ...(document.body.dataset.currentUserRole === "doctor" ? [{
+    view: "calendario",
+    icon: "history",
+    title: "Calendario profesional",
+    subtitle: "Consulta la agenda de sesiones de tus pacientes.",
+    boxTitle: "Cómo funciona:",
+    items: [
+      "Navega entre meses o vuelve rápidamente a la fecha actual.",
+      "Selecciona un día para consultar sus sesiones programadas.",
+      "La agenda muestra el horario, el objetivo y el paciente de cada sesión.",
+      "Las solicitudes de cambio se revisan y responden desde el Dashboard.",
+    ],
+  }] : []),
   {
     view: "videos",
     icon: "video",
@@ -1193,6 +1221,92 @@ function closeTutorial() {
 }
 
 const proTourSteps = [
+  ...(document.body.dataset.currentUserRole === "doctor" ? [
+    {
+      view: "dashboard",
+      selector: "#rescheduleRequestsCard",
+      title: "Revisa solicitudes de cambio",
+      description: "Consulta las solicitudes de tus pacientes. Puedes aprobarlas, rechazarlas o proponer otra fecha y enviar una respuesta.",
+    },
+    {
+      view: "dashboard",
+      selector: ".dashboard-kpis",
+      title: "Indicadores de seguimiento",
+      description: "Revisa de un vistazo los pacientes activos, el progreso promedio, el dolor promedio y el cumplimiento de objetivos.",
+    },
+    {
+      view: "dashboard",
+      selector: ".dashboard-filters",
+      title: "Filtra y ordena los datos",
+      description: "Limita el análisis por paciente, rango de fechas y estado del tratamiento. También puedes ordenar los resultados; “Limpiar filtros” restablece la vista.",
+    },
+    {
+      view: "dashboard",
+      selector: "#painChart",
+      title: "Evolución del dolor",
+      description: "La gráfica muestra los registros de dolor en escala EVA para los pacientes que coinciden con los filtros.",
+    },
+    {
+      view: "dashboard",
+      selector: "#goalsChart",
+      title: "Cumplimiento de objetivos",
+      description: "Consulta la proporción de objetivos terapéuticos alcanzados frente a los que siguen pendientes.",
+    },
+    {
+      view: "dashboard",
+      selector: "#sessionsChart",
+      title: "Adherencia a sesiones",
+      description: "Compara las sesiones realizadas con las planificadas para revisar la continuidad del tratamiento.",
+    },
+    {
+      view: "dashboard",
+      selector: "#progressChart",
+      title: "Compara el progreso",
+      description: "Esta gráfica permite comparar el avance de recuperación de los pacientes incluidos en la consulta.",
+    },
+    {
+      view: "dashboard",
+      selector: "#comparisonChart",
+      title: "Estado actual y objetivos clínicos",
+      description: "Compara los valores clínicos registrados con las metas definidas para cada paciente.",
+    },
+    {
+      view: "dashboard",
+      selector: "#dashboardPatientSummary",
+      title: "Resumen de pacientes",
+      description: "Consulta el progreso, dolor actual, sesiones y última sesión de cada paciente. El enlace permite volver a administrar pacientes.",
+    },
+    {
+      view: "dashboard",
+      selector: "#evaluationForm",
+      title: "Registra una evaluación",
+      description: "Selecciona al paciente e ingresa el dolor EVA. También puedes registrar una métrica clínica, su valor y unidad antes de guardar.",
+    },
+    {
+      view: "dashboard",
+      selector: "#goalForm",
+      title: "Define un objetivo terapéutico",
+      description: "Elige un paciente, describe el objetivo y la métrica, indica si el valor debe aumentar o reducirse y guarda el valor meta.",
+    },
+    {
+      view: "dashboard",
+      selector: "#sessionForm",
+      title: "Agenda una sesión",
+      description: "Selecciona al paciente, define la fecha y hora y especifica el objetivo de la sesión para agregarla al calendario.",
+    },
+    {
+      view: "dashboard",
+      selector: "#routineForm",
+      title: "Asigna una rutina",
+      description: "Elige un paciente, selecciona una rutina del catálogo e indica la fecha programada.",
+    },
+    {
+      view: "dashboard",
+      selector: "#dashboardPendingSessionsCard",
+      title: "Registra las sesiones realizadas",
+      description: "En esta tabla aparecen las sesiones pendientes de registrar. Marca las citas realizadas para actualizar la adherencia del tratamiento.",
+    },
+  ] : []),
   ...(document.body.dataset.currentUserRole === "doctor" ? [] : [
     {
     view: "inicio",
@@ -1279,6 +1393,26 @@ const proTourSteps = [
       ? "Selecciona un paciente desde Inicio para cargar aquí la información de su expediente."
       : "Mueve la escala para indicar tu nivel de dolor. El valor seleccionado aparece junto a la pregunta.",
   },
+  ...(document.body.dataset.currentUserRole === "doctor" ? [
+    {
+      view: "calendario",
+      selector: ".calendar-toolbar",
+      title: "Calendario: navega por las fechas",
+      description: "Consulta el mes y la fecha seleccionada. Usa “Hoy” para regresar a la fecha actual y las flechas para cambiar de mes.",
+    },
+    {
+      view: "calendario",
+      selector: "#calendarDays",
+      title: "Selecciona un día",
+      description: "El calendario marca los días con sesiones. Selecciona una fecha para cargar sus citas en la agenda lateral.",
+    },
+    {
+      view: "calendario",
+      selector: ".calendar-agenda",
+      title: "Consulta la agenda del día",
+      description: "Revisa el horario, el objetivo y el paciente de cada sesión programada. Las solicitudes de cambio se gestionan desde el Dashboard.",
+    },
+  ] : []),
   ...(document.body.dataset.currentUserRole === "doctor" ? [] : [
     {
       view: "diagnostico",

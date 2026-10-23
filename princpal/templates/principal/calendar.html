@@ -1,14 +1,17 @@
 <section class="app-view calendar-view" id="calendarView" data-view="calendario"
   data-create-request-url="{% url 'create_reschedule_request' 0 %}"
   data-respond-request-url="{% url 'respond_to_reschedule_proposal' 0 %}">
-  <header class="page-head compact">
+  <header class="page-head compact section-guide-head">
+    <div>
     {% if usuario and usuario.role == 'paciente' %}
-      <div>
         <h1>Sesiones y cambios de fecha</h1>
         <p>Selecciona una sesión futura para solicitar un cambio. Tu horario no cambiará hasta que el médico lo apruebe.</p>
-      </div>
     {% else %}
       <h1>Calendario</h1>
+    {% endif %}
+    </div>
+    {% if usuario and usuario.role == 'doctor' %}
+      <button class="section-guide-trigger" type="button" data-tutorial-view="calendario">Guía de uso</button>
     {% endif %}
   </header>
 

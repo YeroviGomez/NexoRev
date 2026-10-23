@@ -1,12 +1,15 @@
 {% if usuario and usuario.role == 'doctor' %}
 <section class="app-view dashboard-view" id="dashboardView" data-view="dashboard" data-today="{{ today }}" data-refresh-url="{% url 'doctor_dashboard_data' %}" data-complete-url="{% url 'complete_session' 0 %}" data-reschedule-review-url="{% url 'review_reschedule_request' 0 %}">
-  <header class="page-head dashboard-heading">
+  <header class="page-head dashboard-heading section-guide-head">
     <div>
       <p class="dashboard-eyebrow">PANEL CLÍNICO</p>
       <h1>Dashboard médico</h1>
       <p>Seguimiento de recuperación, dolor y adherencia de tus pacientes.</p>
     </div>
-    <span class="dashboard-updated"><span aria-hidden="true"></span> Datos clínicos actualizados</span>
+    <div class="dashboard-heading-actions">
+      <span class="dashboard-updated"><span aria-hidden="true"></span> Datos clínicos actualizados</span>
+      <button class="section-guide-trigger" type="button" data-tutorial-view="dashboard">Guía de uso</button>
+    </div>
   </header>
   {% if messages %}
     <ul class="dashboard-notices" role="status">
@@ -162,7 +165,7 @@
     </article>
   </div>
 
-  <article class="dashboard-card dashboard-table-card">
+  <article class="dashboard-card dashboard-table-card" id="dashboardPatientSummary">
     <div class="dashboard-card-heading">
       <div><h2>Resumen de pacientes</h2><p id="dashboardPatientCount">0 pacientes</p></div>
       <a href="#inicio" class="dashboard-manage-link" data-nav="inicio">Administrar pacientes</a>
@@ -238,7 +241,7 @@
     </article>
   </div>
 
-  <article class="dashboard-card dashboard-table-card">
+  <article class="dashboard-card dashboard-table-card" id="dashboardPendingSessionsCard">
     <div class="dashboard-card-heading"><div><h2>Sesiones pendientes de registrar</h2><p>Marca las citas realizadas para actualizar la adherencia.</p></div></div>
     <div class="dashboard-table-scroll">
       <table class="dashboard-table">
