@@ -1,10 +1,13 @@
 from django.http import HttpResponseRedirect
+from django.contrib.sessions.models import Session
 from django.shortcuts import redirect, render
 from django.core.mail import send_mail
 from django.conf import settings
 from django.urls import reverse
+from django.core import signing
 from django.utils import timezone
 from django.views.decorators.cache import cache_control
+from django.views.decorators.http import require_http_methods, require_POST
 from datetime import timedelta
 import secrets
 
@@ -15,6 +18,8 @@ import logging
 logger = logging.getLogger('nexorev.auth')
 RECOVERY_ATTEMPT_LIMIT = 5
 RECOVERY_ATTEMPT_WINDOW = timedelta(minutes=15)
+LOGIN_SESSION_REVOCATION_MAX_AGE = 30 * 60
+LOGIN_SESSION_REVOCATION_SALT = 'login.session-revocation'
 
 
 def recovery_ip_address(request):
@@ -77,6 +82,32 @@ def send_login_notification(usuario):
         settings.DEFAULT_FROM_EMAIL,
         [usuario.email],
         fail_silently=False,
+    )
+
+
+def log_login_session_notification(request, usuario):
+    session_key = request.session.session_key
+    token = signing.dumps(
+        {'session_key': session_key, 'email': usuario.email},
+        salt=LOGIN_SESSION_REVOCATION_SALT,
+        compress=True,
+    )
+    revocation_url = request.build_absolute_uri(
+        reverse('revoke_login_session', args=[token])
+    )
+    timestamp = timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M:%S %Z')
+    message = (
+        f'[Nuevo inicio de sesión] usuario: {usuario.email}; '
+        f'cuándo: {timestamp}; IP: {recovery_ip_address(request) or "desconocida"}; '
+        f'Si no reconoces esta actividad, confirma en los próximos 30 minutos para terminar '
+        f'esa sesión: {revocation_url}'
+    )
+    print(message, flush=True)
+    logger.warning(
+        'new_login_session user=%s at=%s ip=%s',
+        usuario.email,
+        timestamp,
+        recovery_ip_address(request),
     )
 
 
@@ -179,6 +210,14 @@ def verify_2fa_view(request):
         request.session['show_security_tips'] = True
         request.session['show_initial_guide'] = True
         if usuario:
+            request.session.save()
+            try:
+                log_login_session_notification(request, usuario)
+            except Exception:
+                logger.exception(
+                    'No se pudo registrar la notificación de inicio de sesión a %s',
+                    email,
+                )
             try:
                 send_login_notification(usuario)
             except Exception:
@@ -191,7 +230,90 @@ def verify_2fa_view(request):
     return render(request, 'login/verify_2fa.html', context)
 
 
+@cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
+@require_http_methods(['GET', 'POST'])
+def revoke_login_session(request, token):
+    try:
+        payload = signing.loads(
+            token,
+            salt=LOGIN_SESSION_REVOCATION_SALT,
+            max_age=LOGIN_SESSION_REVOCATION_MAX_AGE,
+        )
+    except signing.SignatureExpired:
+        return render(request, 'login/revoke_session.html', {
+            'error_message': 'El enlace venció. Inicia sesión nuevamente y revisa la actividad más reciente.',
+        }, status=410)
+    except signing.BadSignature:
+        return render(request, 'login/revoke_session.html', {
+            'error_message': 'El enlace no es válido. Inicia sesión nuevamente y revisa tu cuenta.',
+        }, status=400)
+
+    if not isinstance(payload, dict):
+        return render(request, 'login/revoke_session.html', {
+            'error_message': 'El enlace no es válido. Inicia sesión nuevamente y revisa tu cuenta.',
+        }, status=400)
+    session_key = payload.get('session_key')
+    email = payload.get('email')
+    if not isinstance(session_key, str) or not isinstance(email, str):
+        return render(request, 'login/revoke_session.html', {
+            'error_message': 'El enlace no es válido. Inicia sesión nuevamente y revisa tu cuenta.',
+        }, status=400)
+
+    target_session = Session.objects.filter(session_key=session_key).first()
+    if not target_session or target_session.get_decoded().get('current_user') != email:
+        return render(request, 'login/revoke_session.html', {
+            'error_message': 'Esta sesión ya terminó o el enlace ya fue utilizado.',
+        }, status=410)
+
+    usuario = Usuario.objects.filter(email=email, is_active=True).first()
+    if not usuario:
+        return render(request, 'login/revoke_session.html', {
+            'error_message': 'La cuenta asociada a esta sesión ya no está disponible.',
+        }, status=410)
+
+    if request.method == 'POST':
+        target_session.delete()
+        if request.session.session_key == session_key:
+            request.session.flush()
+        timestamp = timezone.localtime(timezone.now()).isoformat()
+        message = (
+            f'[Sesión no reconocida terminada] quién la cortó: enlace de seguridad de la cuenta {email}; '
+            f'a quién: {email}; cuándo: {timestamp}'
+        )
+        print(message, flush=True)
+        logger.warning(
+            'login_session_revoked actor=%s target=%s at=%s',
+            usuario.email,
+            email,
+            timestamp,
+        )
+        return redirect('login')
+
+    return render(request, 'login/revoke_session.html', {
+        'usuario': usuario,
+        'token': token,
+    })
+
+
+@require_POST
 def logout_view(request):
+    usuario = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        is_active=True,
+    ).first()
+    if usuario:
+        timestamp = timezone.localtime(timezone.now()).isoformat()
+        message = (
+            f'[Sesión terminada] quién la cortó: {usuario.email}; '
+            f'a quién: {usuario.email}; cuándo: {timestamp}'
+        )
+        print(message, flush=True)
+        logger.info(
+            'session_terminated actor=%s target=%s at=%s',
+            usuario.email,
+            usuario.email,
+            timestamp,
+        )
     request.session.flush()
     return redirect('login')
 

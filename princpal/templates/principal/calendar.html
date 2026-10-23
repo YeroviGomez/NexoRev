@@ -1,6 +1,15 @@
-<section class="app-view calendar-view" id="calendarView" data-view="calendario">
+<section class="app-view calendar-view" id="calendarView" data-view="calendario"
+  data-create-request-url="{% url 'create_reschedule_request' 0 %}"
+  data-respond-request-url="{% url 'respond_to_reschedule_proposal' 0 %}">
   <header class="page-head compact">
-    <h1>Calendario</h1>
+    {% if usuario and usuario.role == 'paciente' %}
+      <div>
+        <h1>Sesiones y cambios de fecha</h1>
+        <p>Selecciona una sesión futura para solicitar un cambio. Tu horario no cambiará hasta que el médico lo apruebe.</p>
+      </div>
+    {% else %}
+      <h1>Calendario</h1>
+    {% endif %}
   </header>
 
   <div class="calendar-layout">
@@ -37,12 +46,74 @@
 
     <aside class="calendar-agenda" aria-labelledby="calendarAgendaTitle">
       <header class="calendar-agenda-header">
-        <h2 id="calendarAgendaTitle">Rutinas agendadas</h2>
+        <h2 id="calendarAgendaTitle">{% if usuario and usuario.role == 'paciente' %}Sesiones agendadas{% else %}Sesiones programadas{% endif %}</h2>
         <p id="calendarAgendaDate" aria-live="polite"></p>
       </header>
       <ul class="calendar-session-list" id="calendarSessionList"></ul>
-      <p class="calendar-empty-message" id="calendarEmptyMessage" hidden>No hay rutinas agendadas para este día.</p>
+      <p class="calendar-empty-message" id="calendarEmptyMessage" hidden>No hay sesiones agendadas para este día.</p>
     </aside>
   </div>
+  {% if usuario and usuario.role == 'paciente' %}
+    <section class="reschedule-history" aria-labelledby="rescheduleHistoryTitle">
+      <header class="reschedule-history-heading">
+        <div>
+          <p class="reschedule-history-eyebrow">SEGUIMIENTO</p>
+          <h2 id="rescheduleHistoryTitle">Mis solicitudes de cambio</h2>
+          <p>Consulta la respuesta de tu médico y el estado de cada solicitud.</p>
+        </div>
+      </header>
+      <div class="reschedule-history-list" id="patientRescheduleRequestHistory">
+        {% for request in patient_reschedule_requests %}
+          <article class="reschedule-history-card is-{{ request.status }}">
+            <div class="reschedule-history-card-heading">
+              <div>
+                <h3>{{ request.session }}</h3>
+                <span class="reschedule-history-original">Sesión original · {{ request.original_date }}</span>
+              </div>
+              {% if request.status == 'pendiente' and request.alternative_date %}
+                <span class="reschedule-history-badge is-proposed">Nueva fecha propuesta</span>
+              {% elif request.status == 'aprobada' %}
+                <span class="reschedule-history-badge is-aprobada">Cambio aprobado</span>
+              {% elif request.status == 'rechazada' %}
+                <span class="reschedule-history-badge is-rechazada">Solicitud rechazada</span>
+              {% else %}
+                <span class="reschedule-history-badge is-{{ request.status }}">{{ request.status_display }}</span>
+              {% endif %}
+            </div>
+            <div class="reschedule-history-details">
+              <p><span>Fecha solicitada</span><strong>{{ request.requested_date }}</strong></p>
+              {% if request.alternative_date %}
+                <p><span>Alternativa del médico</span><strong>{{ request.alternative_date }}</strong></p>
+              {% endif %}
+              {% if request.status == 'aprobada' %}
+                <p><span>Nueva fecha confirmada</span><strong>{{ request.current_date }}</strong></p>
+              {% endif %}
+            </div>
+            <div class="reschedule-history-message">
+              <p><strong>Tu motivo</strong>{{ request.reason }}</p>
+              {% if request.response %}
+                <p><strong>Respuesta del médico</strong>{{ request.response }}</p>
+              {% endif %}
+            </div>
+            {% if request.status == 'pendiente' and request.alternative_date %}
+              <p class="reschedule-history-next-step">La fecha actual sigue vigente hasta que respondas a esta propuesta.</p>
+              <div class="reschedule-history-actions">
+                <button type="button" class="calendar-request-button" data-request-id="{{ request.id }}" data-request-action="aceptar">Aceptar propuesta</button>
+                <button type="button" class="calendar-request-button is-secondary" data-request-id="{{ request.id }}" data-request-action="rechazar">Rechazar propuesta</button>
+              </div>
+            {% elif request.status == 'pendiente' %}
+              <p class="reschedule-history-next-step">Pendiente de revisión. Tu sesión conserva la fecha original.</p>
+            {% elif request.status == 'rechazada' %}
+              <p class="reschedule-history-next-step">La solicitud fue rechazada. Tu sesión conserva la fecha original.</p>
+            {% else %}
+              <p class="reschedule-history-next-step">El cambio fue aprobado y la sesión ya tiene la nueva fecha.</p>
+            {% endif %}
+          </article>
+        {% empty %}
+          <p class="reschedule-history-empty">Aún no tienes solicitudes de cambio. Cuando envíes una, podrás consultar aquí su estado y la respuesta de tu médico.</p>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
   {{ calendar_sessions|json_script:"calendarSessionsData" }}
 </section>

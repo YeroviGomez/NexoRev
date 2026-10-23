@@ -21,6 +21,28 @@ try {
 const favoriteUser = document.body.dataset.currentUser?.toLowerCase() || 'anonymous';
 const favoritesStorageKey = `nexorev_favorites_${favoriteUser}`;
 
+const checkSessionStatus = async () => {
+  const statusUrl = document.body.dataset.sessionStatusUrl;
+  if (!statusUrl || document.visibilityState === 'hidden') return;
+  try {
+    const response = await fetch(statusUrl, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+    if (response.status === 401) {
+      window.location.replace(document.body.dataset.loginUrl || '/login/');
+    }
+  } catch {
+    // Keep the current page available during temporary network failures.
+  }
+};
+
+window.setInterval(checkSessionStatus, 3000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkSessionStatus();
+});
+
 const initializeCalendar = () => {
   if (!calendarGrid || !calendarTitle || !calendarSelectedDate || !calendarAgendaDate || !calendarSessionList || !calendarEmptyMessage) return;
 
@@ -41,8 +63,16 @@ const initializeCalendar = () => {
     sessionsByDate.set(session.date, sessions);
   });
   const today = new Date();
-  let displayedMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  let selectedDate = getDateKey(today);
+  const todayKey = getDateKey(today);
+  const nextSession = calendarSessions
+    .filter((session) => `${session.date}T${session.time}` >= new Date(
+      today.getTime() - today.getTimezoneOffset() * 60000,
+    ).toISOString().slice(0, 16))
+    .sort((left, right) => `${left.date}T${left.time}`.localeCompare(`${right.date}T${right.time}`))[0];
+  const selectedSessionDate = nextSession?.date || todayKey;
+  const [selectedYear, selectedMonth] = selectedSessionDate.split('-').map(Number);
+  let displayedMonth = new Date(selectedYear, selectedMonth - 1, 1);
+  let selectedDate = selectedSessionDate;
 
   const renderAgenda = () => {
     const [year, month, day] = selectedDate.split('-').map(Number);
@@ -62,10 +92,146 @@ const initializeCalendar = () => {
       const objective = document.createElement('p');
       objective.className = 'calendar-session-objective';
       objective.textContent = session.objective;
-      item.append(time, objective);
+      item.append(time);
+      if (session.patient) {
+        const patient = document.createElement('p');
+        patient.className = 'calendar-session-patient';
+        patient.textContent = `Paciente: ${session.patient}`;
+        item.append(patient);
+      }
+      item.append(objective);
+
+      if (session.request) {
+        const requestStatus = document.createElement('p');
+        requestStatus.className = `calendar-request-status is-${session.request.status}`;
+        requestStatus.textContent = `Solicitud: ${session.request.status_display}. Fecha solicitada: ${session.request.requested_date}.`;
+        item.append(requestStatus);
+        if (session.request.alternative_date) {
+          const alternative = document.createElement('p');
+          alternative.className = 'calendar-request-response';
+          alternative.textContent = `El médico propone: ${session.request.alternative_date}.${session.request.response ? ` ${session.request.response}` : ''}`;
+          item.append(alternative);
+          if (document.body.dataset.currentUserRole === 'paciente' && session.request.status === 'pendiente') {
+            const actions = document.createElement('div');
+            actions.className = 'calendar-request-actions';
+            ['aceptar', 'rechazar'].forEach((action) => {
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.className = 'calendar-request-button';
+              button.dataset.requestId = String(session.request.id);
+              button.dataset.requestAction = action;
+              button.textContent = action === 'aceptar' ? 'Aceptar propuesta' : 'Rechazar propuesta';
+              actions.append(button);
+            });
+            item.append(actions);
+          }
+        }
+      } else if (
+        document.body.dataset.currentUserRole === 'paciente'
+        && (!session.request || session.request.status !== 'pendiente')
+        && new Date(`${session.date}T${session.time}`) > new Date()
+      ) {
+        const form = document.createElement('form');
+        form.className = 'calendar-reschedule-form';
+        form.dataset.sessionId = String(session.id);
+        item.classList.add('has-reschedule-request');
+        const formHeading = document.createElement('h3');
+        formHeading.className = 'calendar-reschedule-heading';
+        formHeading.textContent = 'Solicitar cambio de sesión';
+        const formHelp = document.createElement('p');
+        formHelp.className = 'calendar-reschedule-help';
+        formHelp.textContent = 'Cuéntale a tu médico por qué necesitas cambiarla y qué horario te conviene. La fecha actual se mantiene hasta que el médico apruebe el cambio.';
+        const reasonLabel = document.createElement('label');
+        reasonLabel.textContent = 'Motivo de la solicitud';
+        const reason = document.createElement('textarea');
+        reason.name = 'motivo';
+        reason.maxLength = 2000;
+        reason.required = true;
+        reason.rows = 2;
+        reason.placeholder = 'Por ejemplo: tengo una cita médica ese día...';
+        reasonLabel.append(reason);
+        const dateLabel = document.createElement('label');
+        dateLabel.textContent = 'Fecha y hora que propones';
+        const proposedDate = document.createElement('input');
+        proposedDate.type = 'datetime-local';
+        proposedDate.name = 'fecha_propuesta';
+        proposedDate.min = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+          .toISOString().slice(0, 16);
+        proposedDate.required = true;
+        dateLabel.append(proposedDate);
+        const submit = document.createElement('button');
+        submit.type = 'submit';
+        submit.className = 'calendar-request-button';
+        submit.textContent = 'Solicitar cambio';
+        const feedback = document.createElement('span');
+        feedback.className = 'calendar-request-feedback';
+        feedback.setAttribute('role', 'status');
+        form.append(formHeading, formHelp, reasonLabel, dateLabel, submit, feedback);
+        item.append(form);
+      }
       calendarSessionList.append(item);
     });
   };
+
+  calendarSessionList.addEventListener('submit', async (event) => {
+    const form = event.target.closest('.calendar-reschedule-form');
+    if (!form) return;
+    event.preventDefault();
+    const submit = form.querySelector('[type="submit"]');
+    const feedback = form.querySelector('.calendar-request-feedback');
+    submit.disabled = true;
+    feedback.textContent = 'Enviando solicitud...';
+    try {
+      const url = document.getElementById('calendarView').dataset.createRequestUrl
+        .replace('/0/solicitar-reagendamiento/', `/${form.dataset.sessionId}/solicitar-reagendamiento/`);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        },
+        body: new URLSearchParams(new FormData(form)).toString(),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo enviar la solicitud.');
+      window.location.reload();
+    } catch (error) {
+      feedback.textContent = error instanceof Error ? error.message : String(error);
+      submit.disabled = false;
+    }
+  });
+
+  const respondToRescheduleRequest = async (button) => {
+    button.disabled = true;
+    try {
+      const url = document.getElementById('calendarView').dataset.respondRequestUrl
+        .replace('/0/responder/', `/${button.dataset.requestId}/responder/`);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        },
+        body: new URLSearchParams({ accion: button.dataset.requestAction }).toString(),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo responder a la propuesta.');
+      window.location.reload();
+    } catch (error) {
+      button.disabled = false;
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  [calendarSessionList, document.getElementById('patientRescheduleRequestHistory')]
+    .filter(Boolean)
+    .forEach((container) => {
+      container.addEventListener('click', async (event) => {
+        const button = event.target.closest('.calendar-request-button[data-request-action]');
+        if (!button || !container.contains(button)) return;
+        await respondToRescheduleRequest(button);
+      });
+  });
 
   const render = () => {
     const currentDate = new Date();
@@ -89,7 +255,7 @@ const initializeCalendar = () => {
       dayNumber.className = 'calendar-day-number';
       dayNumber.textContent = String(date.getDate());
       dayButton.append(dayNumber);
-      dayButton.setAttribute('aria-label', `${dateFormatter.format(date)}${sessions.length ? `, ${sessions.length} ${sessions.length === 1 ? 'rutina agendada' : 'rutinas agendadas'}` : ''}`);
+      dayButton.setAttribute('aria-label', `${dateFormatter.format(date)}${sessions.length ? `, ${sessions.length} ${sessions.length === 1 ? 'sesión agendada' : 'sesiones agendadas'}` : ''}`);
       dayButton.setAttribute('aria-pressed', String(dateKey === selectedDate));
       if (sessions.length) {
         const sessionCount = document.createElement('span');

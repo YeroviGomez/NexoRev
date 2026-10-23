@@ -1,0 +1,39 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Nexo ReV | Revisar sesión</title>
+  <link rel="stylesheet" href="{% static 'login/arte.css' %}">
+</head>
+<body>
+  <main class="auth-layout">
+    <aside class="brand-panel" aria-label="Nexo ReV">
+      <div class="brand-title"><h1>Nexo ReV</h1></div>
+      <p class="lead">Seguridad de tu cuenta</p>
+    </aside>
+    <section class="form-panel">
+      <div class="form-head">
+        {% if error_message %}
+          <h2>No se pudo revisar la sesión</h2>
+          <p class="form-message error" role="alert">{{ error_message }}</p>
+        {% else %}
+          <h2>¿No reconoces este inicio de sesión?</h2>
+          <p>Esta página de seguridad solo se puede abrir con el enlace personal y temporal de la notificación. Al confirmar, se terminará en el servidor la sesión iniciada en la cuenta <strong>{{ usuario.email }}</strong> y ese dispositivo tendrá que iniciar sesión otra vez.</p>
+        {% endif %}
+      </div>
+      {% if token %}
+        <form method="post">
+          {% csrf_token %}
+          <button type="submit" class="primary-btn">Sí, terminar esta sesión</button>
+          <a href="{% url 'login' %}" class="text-link">No hacer nada</a>
+        </form>
+      {% else %}
+        <a href="{% url 'login' %}" class="text-link">Ir al inicio de sesión</a>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

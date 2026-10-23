@@ -1,5 +1,22 @@
 from django.shortcuts import redirect
 from django.http import JsonResponse
+from django.middleware.csrf import CsrfViewMiddleware
+
+
+class SessionRevocationCsrfMiddleware(CsrfViewMiddleware):
+    def _origin_verified(self, request):
+        path = request.path_info
+        is_revocation_path = (
+            path.startswith('/sesion-no-reconocida/')
+            or path.startswith('/login/sesion-no-reconocida/')
+        )
+        if (
+            request.method == 'POST'
+            and is_revocation_path
+            and request.META.get('HTTP_ORIGIN') == 'null'
+        ):
+            return True
+        return super()._origin_verified(request)
 
 
 class RoleAccessMiddleware:

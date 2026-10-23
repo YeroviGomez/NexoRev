@@ -11,15 +11,24 @@
   const sortSelect = byId('dashboardSort');
   const patientRows = byId('dashboardPatientRows');
   const pendingRows = byId('dashboardPendingSessions');
+  const rescheduleRows = byId('dashboardRescheduleRequests');
+  const rescheduleEmpty = byId('dashboardRescheduleRequestsEmpty');
+  const rescheduleData = byId('dashboard-reschedule-request-data');
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const colors = ['#119b72', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
   let patients = [];
+  let rescheduleRequests = [];
   let refreshing = false;
 
   try {
     patients = JSON.parse(dataElement.textContent || '[]');
   } catch (error) {
     console.error('No se pudieron leer los datos del dashboard médico.', error);
+  }
+  try {
+    rescheduleRequests = JSON.parse(rescheduleData?.textContent || '[]');
+  } catch (error) {
+    console.error('No se pudieron leer las solicitudes de reagendamiento.', error);
   }
 
   const svgElement = (name, attributes = {}, text = '') => {
@@ -35,6 +44,11 @@
 
   const formatDate = (date) => date
     ? new Intl.DateTimeFormat('es-SV', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(date))
+    : 'Sin registro';
+  const formatDateTime = (date) => date
+    ? new Intl.DateTimeFormat('es-SV', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    }).format(new Date(date))
     : 'Sin registro';
 
   const withinDateRange = (date) => {
@@ -319,7 +333,7 @@
     });
 
     const pending = records.flatMap((patient) => patient.visibleSessions
-      .filter((session) => !session.completed && new Date(session.scheduledDate) <= new Date())
+      .filter((session) => !session.completed)
       .map((session) => ({ patient, session })))
       .sort((left, right) => left.session.scheduledDate.localeCompare(right.session.scheduledDate));
     pendingRows.replaceChildren();
@@ -331,22 +345,26 @@
       const objective = document.createElement('td');
       objective.textContent = session.objective;
       const date = document.createElement('td');
-      date.textContent = formatDate(session.scheduledDate);
+      date.textContent = formatDateTime(session.scheduledDate);
       const actionCell = document.createElement('td');
-      const form = document.createElement('form');
-      form.method = 'post';
-      form.action = root.dataset.completeUrl.replace('/0/', `/${session.id}/`);
-      form.className = 'session-complete-form';
-      const csrf = document.createElement('input');
-      csrf.type = 'hidden';
-      csrf.name = 'csrfmiddlewaretoken';
-      csrf.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
-      const button = document.createElement('button');
-      button.type = 'submit';
-      button.className = 'session-complete-button';
-      button.textContent = 'Marcar realizada';
-      form.append(csrf, button);
-      actionCell.append(form);
+      if (new Date(session.scheduledDate) <= new Date()) {
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = root.dataset.completeUrl.replace('/0/', `/${session.id}/`);
+        form.className = 'session-complete-form';
+        const csrf = document.createElement('input');
+        csrf.type = 'hidden';
+        csrf.name = 'csrfmiddlewaretoken';
+        csrf.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        const button = document.createElement('button');
+        button.type = 'submit';
+        button.className = 'session-complete-button';
+        button.textContent = 'Marcar realizada';
+        form.append(csrf, button);
+        actionCell.append(form);
+      } else {
+        actionCell.textContent = 'Próxima sesión';
+      }
       row.append(patientName, objective, date, actionCell);
       pendingRows.append(row);
     });
@@ -354,6 +372,112 @@
     byId('dashboardSessionsEmpty').hidden = pending.length > 0;
     byId('dashboardPatientCount').textContent = `${sorted.length} ${sorted.length === 1 ? 'paciente' : 'pacientes'}`;
   };
+
+  const renderRescheduleRequests = () => {
+    if (!rescheduleRows || !rescheduleEmpty) return;
+    rescheduleRows.replaceChildren();
+    rescheduleRequests.forEach((request) => {
+      const row = document.createElement('tr');
+      const patientCell = document.createElement('th');
+      patientCell.scope = 'row';
+      const patientName = document.createElement('span');
+      patientName.className = 'request-patient-name';
+      patientName.textContent = request.patient;
+      const sessionName = document.createElement('span');
+      sessionName.className = 'request-session-name';
+      sessionName.textContent = request.session;
+      patientCell.append(patientName, sessionName);
+      row.append(patientCell);
+      [request.current_date, request.requested_date, request.reason].forEach((value, index) => {
+        const cell = document.createElement('td');
+        if (index === 2) cell.className = 'reschedule-reason-cell';
+        cell.textContent = value;
+        row.append(cell);
+      });
+      const actions = document.createElement('td');
+      const controls = document.createElement('div');
+      controls.className = 'reschedule-review-actions';
+      const alternative = document.createElement('input');
+      alternative.type = 'datetime-local';
+      alternative.setAttribute('aria-label', 'Fecha alternativa propuesta');
+      alternative.min = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+        .toISOString().slice(0, 16);
+      const alternativeLabel = document.createElement('label');
+      alternativeLabel.textContent = 'Proponer otra fecha';
+      alternativeLabel.append(alternative);
+      const response = document.createElement('input');
+      response.type = 'text';
+      response.maxLength = 1000;
+      response.placeholder = 'Respuesta opcional';
+      response.setAttribute('aria-label', 'Respuesta al paciente');
+      const responseLabel = document.createElement('label');
+      responseLabel.textContent = 'Respuesta al paciente';
+      responseLabel.append(response);
+      const approve = document.createElement('button');
+      approve.type = 'button';
+      approve.dataset.requestId = String(request.id);
+      approve.dataset.requestAction = 'aprobar';
+      approve.textContent = 'Aprobar';
+      const reject = document.createElement('button');
+      reject.type = 'button';
+      reject.dataset.requestId = String(request.id);
+      reject.dataset.requestAction = 'rechazar';
+      reject.textContent = 'Rechazar';
+      const propose = document.createElement('button');
+      propose.type = 'button';
+      propose.dataset.requestId = String(request.id);
+      propose.dataset.requestAction = 'proponer';
+      propose.textContent = 'Proponer fecha';
+      const buttons = document.createElement('div');
+      buttons.className = 'reschedule-review-buttons';
+      buttons.append(approve, reject, propose);
+      controls.append(alternativeLabel, responseLabel, buttons);
+      actions.append(controls);
+      row.append(actions);
+      rescheduleRows.append(row);
+    });
+    rescheduleEmpty.hidden = rescheduleRequests.length > 0;
+    const count = byId('rescheduleRequestCount');
+    if (count) {
+      count.textContent = `${rescheduleRequests.length} pendiente${rescheduleRequests.length === 1 ? '' : 's'}`;
+    }
+  };
+
+  rescheduleRows?.addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-request-action]');
+    if (!button) return;
+    const controls = button.closest('.reschedule-review-actions');
+    const alternative = controls.querySelector('input[type="datetime-local"]');
+    const responseInput = controls.querySelector('input[type="text"]');
+    if (button.dataset.requestAction === 'proponer' && !alternative.value) {
+      alternative.focus();
+      return;
+    }
+    button.disabled = true;
+    const body = new URLSearchParams({
+      accion: button.dataset.requestAction,
+      respuesta: responseInput.value,
+      fecha_alternativa: alternative.value,
+    });
+    try {
+      const url = root.dataset.rescheduleReviewUrl
+        .replace('/0/revisar/', `/${button.dataset.requestId}/revisar/`);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        },
+        body,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo actualizar la solicitud.');
+      window.location.reload();
+    } catch (error) {
+      button.disabled = false;
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  });
 
   const render = () => {
     const records = filteredPatients();
@@ -387,6 +511,7 @@
     drawProgressChart(records);
     drawComparisonChart(goals);
     renderTable(records, goals);
+    renderRescheduleRequests();
   };
 
   document.querySelectorAll('.dashboard-form').forEach((form) => {
@@ -444,6 +569,9 @@
       if (!response.ok) throw new Error(`No se pudo actualizar el dashboard (${response.status}).`);
       const data = await response.json();
       if (!Array.isArray(data.patients)) throw new Error('La respuesta de datos del dashboard no es válida.');
+      if (Array.isArray(data.pending_reschedule_requests)) {
+        rescheduleRequests = data.pending_reschedule_requests;
+      }
       updatePatients(data.patients);
     } catch (error) {
       console.error('Error al actualizar los datos clínicos del dashboard.', error);

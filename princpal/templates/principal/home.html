@@ -29,6 +29,14 @@
 
       <article class="panel quick-panel">
         <h2>Acceso rápido</h2>
+        {% if usuario and usuario.role == 'paciente' %}
+          <button class="quick-link" type="button" data-nav="calendario">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 6h16v15H4zM8 3v6m8-6v6M4 11h16M8 15h3m-3 3h6" />
+            </svg>
+            <span>Solicitar cambio de fecha de una sesión</span>
+          </button>
+        {% endif %}
         <button class="quick-link" type="button" data-nav="videos">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M5 12h14M13 6l6 6-6 6" />

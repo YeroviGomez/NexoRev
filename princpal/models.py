@@ -1,5 +1,6 @@
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -108,6 +109,58 @@ class Sesion(models.Model):
 
     def __str__(self):
         return f"{self.paciente.nombre} — {self.fecha:%Y-%m-%d}"
+
+
+class SolicitudReagendamiento(models.Model):
+    ESTADO_PENDIENTE = 'pendiente'
+    ESTADO_APROBADA = 'aprobada'
+    ESTADO_RECHAZADA = 'rechazada'
+    ESTADO_CHOICES = [
+        (ESTADO_PENDIENTE, 'Pendiente'),
+        (ESTADO_APROBADA, 'Aprobada'),
+        (ESTADO_RECHAZADA, 'Rechazada'),
+    ]
+
+    sesion = models.ForeignKey(
+        Sesion,
+        on_delete=models.CASCADE,
+        related_name='solicitudes_reagendamiento',
+    )
+    motivo = models.TextField('motivo')
+    fecha_original = models.DateTimeField('fecha original')
+    fecha_propuesta = models.DateTimeField('fecha propuesta')
+    fecha_alternativa = models.DateTimeField('fecha alternativa', null=True, blank=True)
+    estado = models.CharField(
+        'estado',
+        max_length=12,
+        choices=ESTADO_CHOICES,
+        default=ESTADO_PENDIENTE,
+    )
+    respuesta_medico = models.TextField('respuesta del médico', blank=True)
+    creada_en = models.DateTimeField('creada el', auto_now_add=True)
+    actualizada_en = models.DateTimeField('actualizada el', auto_now=True)
+    revisada_por = models.ForeignKey(
+        'crear_cuenta.Usuario',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='solicitudes_reagendamiento_revisadas',
+    )
+
+    class Meta:
+        ordering = ['-creada_en', '-pk']
+        verbose_name = 'Solicitud de reagendamiento'
+        verbose_name_plural = 'Solicitudes de reagendamiento'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['sesion'],
+                condition=Q(estado='pendiente'),
+                name='unique_pending_reschedule_per_session',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.sesion.paciente.nombre} — {self.get_estado_display()}'
 
 
 class EvaluacionClinica(models.Model):

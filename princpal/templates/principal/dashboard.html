@@ -1,5 +1,5 @@
 {% if usuario and usuario.role == 'doctor' %}
-<section class="app-view dashboard-view" id="dashboardView" data-view="dashboard" data-today="{{ today }}" data-refresh-url="{% url 'doctor_dashboard_data' %}" data-complete-url="{% url 'complete_session' 0 %}">
+<section class="app-view dashboard-view" id="dashboardView" data-view="dashboard" data-today="{{ today }}" data-refresh-url="{% url 'doctor_dashboard_data' %}" data-complete-url="{% url 'complete_session' 0 %}" data-reschedule-review-url="{% url 'review_reschedule_request' 0 %}">
   <header class="page-head dashboard-heading">
     <div>
       <p class="dashboard-eyebrow">PANEL CLÍNICO</p>
@@ -13,6 +13,52 @@
       {% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}
     </ul>
   {% endif %}
+
+  <article class="dashboard-card dashboard-table-card reschedule-requests-card" id="rescheduleRequestsCard">
+    <div class="dashboard-card-heading">
+      <div>
+        <h2>Solicitudes de cambio de sesión</h2>
+        <p>Tickets enviados por tus pacientes. Revisa el motivo y responde con una decisión.</p>
+      </div>
+      <span class="reschedule-request-count" id="rescheduleRequestCount">{{ pending_reschedule_requests|length }} pendiente{{ pending_reschedule_requests|length|pluralize:"s" }}</span>
+    </div>
+    <div class="dashboard-table-scroll">
+      <table class="dashboard-table reschedule-requests-table">
+        <thead><tr><th>Paciente y sesión</th><th>Horario actual</th><th>Fecha solicitada</th><th>Motivo</th><th>Decisión</th></tr></thead>
+        <tbody id="dashboardRescheduleRequests">
+          {% for request in pending_reschedule_requests %}
+            <tr>
+              <th scope="row">
+                <span class="request-patient-name">{{ request.patient }}</span>
+                <span class="request-session-name">{{ request.session }}</span>
+              </th>
+              <td>{{ request.current_date }}</td>
+              <td>{{ request.requested_date }}</td>
+              <td class="reschedule-reason-cell">{{ request.reason }}</td>
+              <td>
+                <div class="reschedule-review-actions">
+                  <label>Proponer otra fecha
+                    <input type="datetime-local" aria-label="Fecha alternativa propuesta" min="{{ today }}T00:00">
+                  </label>
+                  <label>Respuesta al paciente
+                    <input type="text" maxlength="1000" placeholder="Opcional" aria-label="Respuesta al paciente">
+                  </label>
+                  <div class="reschedule-review-buttons">
+                    <button type="button" data-request-id="{{ request.id }}" data-request-action="aprobar">Aprobar</button>
+                    <button type="button" data-request-id="{{ request.id }}" data-request-action="rechazar">Rechazar</button>
+                    <button type="button" data-request-id="{{ request.id }}" data-request-action="proponer">Proponer fecha</button>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr class="reschedule-empty-row"><td colspan="5">No hay tickets pendientes de revisión.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="dashboard-empty" id="dashboardRescheduleRequestsEmpty" hidden>No hay tickets pendientes de revisión.</p>
+    </div>
+  </article>
 
   <section class="dashboard-kpis" aria-label="Métricas clave">
     <article class="dashboard-kpi kpi-patients">
@@ -204,5 +250,6 @@
   </article>
 
   {{ dashboard_patients|json_script:"dashboard-patient-data" }}
+  {{ pending_reschedule_requests|json_script:"dashboard-reschedule-request-data" }}
 </section>
 {% endif %}

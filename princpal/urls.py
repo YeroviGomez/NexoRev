@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path('', views.principal_view, name='principal'),
+    path('api/session-status/', views.session_status_api, name='session_status_api'),
     path('pacientes/agregar/', views.add_paciente_view, name='agregar_paciente'),
     path('medicos/<int:doctor_id>/pacientes/', views.doctor_patients_api, name='doctor_patients_api'),
     path('pacientes/<int:paciente_id>/', views.paciente_detail_api, name='paciente_detail_api'),
@@ -15,6 +16,9 @@ urlpatterns = [
     path('pacientes/<int:paciente_id>/rutinas/', views.assign_routine_view, name='assign_routine'),
     path('sesiones/<int:sesion_id>/completar/', views.complete_session, name='complete_session'),
     path('pacientes/<int:paciente_id>/sesiones/<int:sesion_id>/reagendar/', views.reschedule_session_view, name='reschedule_session'),
+    path('sesiones/<int:sesion_id>/solicitar-reagendamiento/', views.create_reschedule_request, name='create_reschedule_request'),
+    path('solicitudes-reagendamiento/<int:solicitud_id>/revisar/', views.review_reschedule_request, name='review_reschedule_request'),
+    path('solicitudes-reagendamiento/<int:solicitud_id>/responder/', views.respond_to_reschedule_proposal, name='respond_to_reschedule_proposal'),
     path('videos/<int:video_index>/', views.video_detail_view, name='video_detail'),
     path('videos/<int:video_index>/complete/', views.complete_video_view, name='complete_video'),
     path('api/videos/page/', views.videos_page_view, name='videos_page'),

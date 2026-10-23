@@ -1,12 +1,13 @@
 from django.contrib import messages
+from django.core.mail import send_mail
 from django.http import Http404, HttpResponseForbidden, JsonResponse, StreamingHttpResponse
 from django.conf import settings
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import cache_control
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_POST
-from django.db import transaction
-from django.db.models import Count, Max
+from django.views.decorators.http import require_GET, require_POST
+from django.db import IntegrityError, transaction
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 from django.urls import reverse
 from functools import wraps
@@ -38,6 +39,7 @@ from .models import (
     Paciente,
     RutinaAsignada,
     Sesion,
+    SolicitudReagendamiento,
     Video,
     VideoView,
 )
@@ -248,6 +250,17 @@ def require_login(view_func):
     return _wrapped_view
 
 
+@require_GET
+@cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
+def session_status_api(request):
+    if not request.session.get('current_user'):
+        return JsonResponse(
+            {'authenticated': False, 'error': 'Tu sesión terminó. Inicia sesión nuevamente.'},
+            status=401,
+        )
+    return JsonResponse({'authenticated': True})
+
+
 def doctor_dashboard_data(doctor):
     patients = list(
         Paciente.objects.filter(doctor=doctor).select_related('usuario').order_by('nombre', 'pk')
@@ -314,6 +327,54 @@ def doctor_dashboard_data(doctor):
             'sessions': sessions_by_patient[patient.pk],
         })
     return data
+
+
+def reschedule_request_payloads(doctor):
+    requests = SolicitudReagendamiento.objects.filter(
+        sesion__paciente__doctor=doctor,
+        estado=SolicitudReagendamiento.ESTADO_PENDIENTE,
+    ).select_related('sesion', 'sesion__paciente').order_by('creada_en', 'pk')
+    return [
+        {
+            'id': item.pk,
+            'patient': item.sesion.paciente.nombre,
+            'session': item.sesion.objetivo,
+            'current_date': timezone.localtime(item.sesion.fecha).strftime('%d/%m/%Y %H:%M'),
+            'original_date': timezone.localtime(item.fecha_original).strftime('%d/%m/%Y %H:%M'),
+            'requested_date': timezone.localtime(item.fecha_propuesta).strftime('%d/%m/%Y %H:%M'),
+            'alternative_date': (
+                timezone.localtime(item.fecha_alternativa).strftime('%d/%m/%Y %H:%M')
+                if item.fecha_alternativa else ''
+            ),
+            'reason': item.motivo,
+            'response': item.respuesta_medico,
+        }
+        for item in requests
+    ]
+
+
+def patient_reschedule_request_payloads(paciente):
+    requests = SolicitudReagendamiento.objects.filter(
+        sesion__paciente=paciente,
+    ).select_related('sesion').order_by('-creada_en', '-pk')
+    return [
+        {
+            'id': item.pk,
+            'session': item.sesion.objetivo,
+            'status': item.estado,
+            'status_display': item.get_estado_display(),
+            'original_date': timezone.localtime(item.fecha_original).strftime('%d/%m/%Y %H:%M'),
+            'current_date': timezone.localtime(item.sesion.fecha).strftime('%d/%m/%Y %H:%M'),
+            'requested_date': timezone.localtime(item.fecha_propuesta).strftime('%d/%m/%Y %H:%M'),
+            'alternative_date': (
+                timezone.localtime(item.fecha_alternativa).strftime('%d/%m/%Y %H:%M')
+                if item.fecha_alternativa else ''
+            ),
+            'reason': item.motivo,
+            'response': item.respuesta_medico,
+        }
+        for item in requests
+    ]
 
 
 def patient_progress_payload(paciente):
@@ -694,14 +755,40 @@ def principal_view(request):
         if usuario.is_paciente:
             refresh_patient_progress(paciente)
         patient_progress_series = paciente.get_progress_series()
-        if usuario.is_paciente:
-            for sesion in Sesion.objects.filter(paciente=paciente, activo=True).order_by('fecha'):
-                fecha_local = timezone.localtime(sesion.fecha)
-                calendar_sessions.append({
-                    'date': fecha_local.date().isoformat(),
-                    'time': fecha_local.strftime('%H:%M'),
-                    'objective': sesion.objetivo,
-                })
+    if usuario.is_paciente and paciente:
+        calendar_queryset = Sesion.objects.filter(paciente=paciente, activo=True)
+    elif usuario.is_doctor:
+        calendar_queryset = Sesion.objects.filter(paciente__doctor=usuario, activo=True)
+    else:
+        calendar_queryset = Sesion.objects.none()
+    for sesion in calendar_queryset.select_related('paciente').prefetch_related(
+        'solicitudes_reagendamiento'
+    ).order_by('fecha'):
+        fecha_local = timezone.localtime(sesion.fecha)
+        solicitud = sesion.solicitudes_reagendamiento.first()
+        calendar_entry = {
+            'id': sesion.pk,
+            'date': fecha_local.date().isoformat(),
+            'time': fecha_local.strftime('%H:%M'),
+            'objective': sesion.objetivo,
+            'patient': sesion.paciente.nombre if usuario.is_doctor else '',
+            'request': None,
+        }
+        if solicitud:
+            calendar_entry['request'] = {
+                'id': solicitud.pk,
+                'status': solicitud.estado,
+                'status_display': solicitud.get_estado_display(),
+                'reason': solicitud.motivo,
+                'original_date': timezone.localtime(solicitud.fecha_original).strftime('%d/%m/%Y %H:%M'),
+                'requested_date': timezone.localtime(solicitud.fecha_propuesta).strftime('%d/%m/%Y %H:%M'),
+                'alternative_date': (
+                    timezone.localtime(solicitud.fecha_alternativa).strftime('%d/%m/%Y %H:%M')
+                    if solicitud.fecha_alternativa else ''
+                ),
+                'response': solicitud.respuesta_medico,
+            }
+        calendar_sessions.append(calendar_entry)
 
     videos = []
     categories = ['Todas', 'Rodilla', 'Hombro', 'Espalda', 'Cuello', 'Tobillo', 'Cadera']
@@ -734,6 +821,13 @@ def principal_view(request):
         'paciente': paciente,
         'doctor_patients': doctor_patients,
         'dashboard_patients': dashboard_patients,
+        'pending_reschedule_requests': (
+            reschedule_request_payloads(usuario) if usuario.is_doctor else []
+        ),
+        'patient_reschedule_requests': (
+            patient_reschedule_request_payloads(paciente)
+            if usuario.is_paciente and paciente else []
+        ),
         'available_patients': available_patients,
         'security_question_items': security_question_items,
         'security_predefined_questions': [
@@ -945,6 +1039,14 @@ def reschedule_session_view(request, paciente_id, sesion_id):
     )
     if not sesion.activo:
         return JsonResponse({'success': False, 'error': 'Esta cita ya no está activa.'}, status=409)
+    if SolicitudReagendamiento.objects.filter(
+        sesion=sesion,
+        estado=SolicitudReagendamiento.ESTADO_PENDIENTE,
+    ).exists():
+        return JsonResponse({
+            'success': False,
+            'error': 'Resuelve primero la solicitud pendiente de esta cita.',
+        }, status=409)
 
     form = RescheduleSessionForm(request.POST)
     if not form.is_valid():
@@ -964,6 +1066,225 @@ def reschedule_session_view(request, paciente_id, sesion_id):
     })
 
 
+def notify_reschedule_patient(solicitud):
+    paciente = solicitud.sesion.paciente
+    fecha_original = timezone.localtime(solicitud.fecha_original).strftime('%d/%m/%Y %H:%M')
+    medico = solicitud.revisada_por.nombre if solicitud.revisada_por else 'asignado'
+    if solicitud.estado == SolicitudReagendamiento.ESTADO_PENDIENTE and solicitud.fecha_alternativa:
+        message = f'El médico {medico} propuso otra fecha para tu solicitud de sesión del {fecha_original}.'
+        message += (
+            f' La fecha alternativa es el '
+            f'{timezone.localtime(solicitud.fecha_alternativa).strftime("%d/%m/%Y %H:%M")}.'
+        )
+    elif solicitud.estado == SolicitudReagendamiento.ESTADO_APROBADA:
+        message = f'El médico {medico} aprobó tu solicitud de cambio de sesión del {fecha_original}.'
+        message += (
+            f' La nueva sesión será el '
+            f'{timezone.localtime(solicitud.sesion.fecha).strftime("%d/%m/%Y %H:%M")}.'
+        )
+    else:
+        message = f'El médico {medico} rechazó tu solicitud de cambio de sesión del {fecha_original}.'
+    if solicitud.respuesta_medico:
+        message += f'\n\nRespuesta: {solicitud.respuesta_medico}'
+
+    try:
+        send_mail(
+            'Actualización de tu solicitud de sesión - Nexo ReV',
+            f'Hola {paciente.nombre},\n\n{message}\n\nSaludos,\nEl equipo de Nexo ReV',
+            settings.DEFAULT_FROM_EMAIL,
+            [paciente.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception(
+            'No se pudo notificar al paciente %s sobre la solicitud de reagendamiento %s.',
+            paciente.email,
+            solicitud.pk,
+        )
+
+
+@require_login
+@require_POST
+def create_reschedule_request(request, sesion_id):
+    usuario = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        role=Usuario.ROLE_PACIENTE,
+        is_active=True,
+    ).first()
+    if not usuario:
+        return JsonResponse({'success': False, 'error': 'Solo el paciente puede solicitar un cambio.'}, status=403)
+
+    paciente = Paciente.objects.filter(
+        Q(usuario=usuario) | Q(email=usuario.email, usuario__isnull=True)
+    ).first()
+    if not paciente:
+        return JsonResponse({'success': False, 'error': 'No se encontró tu expediente de paciente.'}, status=404)
+    sesion = get_object_or_404(Sesion, pk=sesion_id, paciente=paciente, activo=True)
+    if sesion.fecha <= timezone.now():
+        return JsonResponse({'success': False, 'error': 'Solo puedes solicitar cambios para sesiones futuras.'}, status=409)
+
+    form = RescheduleSessionForm({'fecha': request.POST.get('fecha_propuesta', '')})
+    motivo = request.POST.get('motivo', '').strip()
+    if not motivo or len(motivo) > 2000:
+        return JsonResponse({
+            'success': False,
+            'error': 'Indica un motivo de hasta 2000 caracteres.',
+        }, status=400)
+    if not form.is_valid():
+        return JsonResponse({
+            'success': False,
+            'error': form.errors.get('fecha', ['Ingresa una fecha propuesta válida.'])[0],
+        }, status=400)
+
+    if SolicitudReagendamiento.objects.filter(
+        sesion=sesion,
+        estado=SolicitudReagendamiento.ESTADO_PENDIENTE,
+    ).exists():
+        return JsonResponse({
+            'success': False,
+            'error': 'Esta sesión ya tiene una solicitud pendiente.',
+        }, status=409)
+    try:
+        with transaction.atomic():
+            solicitud = SolicitudReagendamiento.objects.create(
+                sesion=sesion,
+                motivo=motivo,
+                fecha_original=sesion.fecha,
+                fecha_propuesta=form.cleaned_data['fecha'],
+            )
+    except IntegrityError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Esta sesión ya tiene una solicitud pendiente.',
+        }, status=409)
+
+    return JsonResponse({
+        'success': True,
+        'request': {
+            'id': solicitud.pk,
+            'status': solicitud.estado,
+            'status_display': solicitud.get_estado_display(),
+            'reason': solicitud.motivo,
+            'original_date': timezone.localtime(solicitud.fecha_original).strftime('%d/%m/%Y %H:%M'),
+            'requested_date': timezone.localtime(solicitud.fecha_propuesta).strftime('%d/%m/%Y %H:%M'),
+            'alternative_date': '',
+            'response': '',
+        },
+    }, status=201)
+
+
+@require_login
+@require_POST
+@transaction.atomic
+def review_reschedule_request(request, solicitud_id):
+    doctor = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        role=Usuario.ROLE_DOCTOR,
+        is_active=True,
+    ).first()
+    if not doctor:
+        return JsonResponse({'success': False, 'error': 'Solo el médico asignado puede revisar solicitudes.'}, status=403)
+
+    solicitud = get_object_or_404(
+        SolicitudReagendamiento.objects.select_for_update().select_related('sesion', 'sesion__paciente'),
+        pk=solicitud_id,
+        sesion__paciente__doctor=doctor,
+    )
+    if solicitud.estado != SolicitudReagendamiento.ESTADO_PENDIENTE:
+        return JsonResponse({'success': False, 'error': 'La solicitud ya fue resuelta.'}, status=409)
+
+    accion = request.POST.get('accion', '')
+    respuesta = request.POST.get('respuesta', '').strip()
+    if len(respuesta) > 1000:
+        return JsonResponse({'success': False, 'error': 'La respuesta no puede superar 1000 caracteres.'}, status=400)
+    if accion == 'proponer':
+        form = RescheduleSessionForm({'fecha': request.POST.get('fecha_alternativa', '')})
+        if not form.is_valid():
+            return JsonResponse({
+                'success': False,
+                'error': form.errors.get('fecha', ['Ingresa una fecha alternativa válida.'])[0],
+            }, status=400)
+        solicitud.fecha_alternativa = form.cleaned_data['fecha']
+        solicitud.respuesta_medico = respuesta
+    elif accion in {'aprobar', 'rechazar'}:
+        if accion == 'aprobar':
+            fecha_aprobada = solicitud.fecha_alternativa or solicitud.fecha_propuesta
+            if fecha_aprobada <= timezone.now():
+                return JsonResponse({
+                    'success': False,
+                    'error': 'La fecha propuesta ya pasó; solicita una nueva fecha.',
+                }, status=409)
+            solicitud.sesion.fecha = fecha_aprobada
+            solicitud.sesion.save(update_fields=['fecha'])
+            solicitud.estado = SolicitudReagendamiento.ESTADO_APROBADA
+        else:
+            solicitud.estado = SolicitudReagendamiento.ESTADO_RECHAZADA
+        solicitud.respuesta_medico = respuesta
+    else:
+        return JsonResponse({'success': False, 'error': 'Selecciona una decisión válida.'}, status=400)
+
+    solicitud.revisada_por = doctor
+    solicitud.save()
+    notify_reschedule_patient(solicitud)
+    return JsonResponse({
+        'success': True,
+        'status': solicitud.estado,
+        'status_display': solicitud.get_estado_display(),
+        'alternative_date': (
+            timezone.localtime(solicitud.fecha_alternativa).strftime('%d/%m/%Y %H:%M')
+            if solicitud.fecha_alternativa else ''
+        ),
+    })
+
+
+@require_login
+@require_POST
+@transaction.atomic
+def respond_to_reschedule_proposal(request, solicitud_id):
+    usuario = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        role=Usuario.ROLE_PACIENTE,
+        is_active=True,
+    ).first()
+    if not usuario:
+        return JsonResponse({'success': False, 'error': 'Solo el paciente puede responder a la propuesta.'}, status=403)
+
+    paciente = Paciente.objects.filter(
+        Q(usuario=usuario) | Q(email=usuario.email, usuario__isnull=True)
+    ).first()
+    solicitud = get_object_or_404(
+        SolicitudReagendamiento.objects.select_for_update().select_related('sesion', 'sesion__paciente'),
+        pk=solicitud_id,
+        sesion__paciente=paciente,
+    )
+    if (
+        solicitud.estado != SolicitudReagendamiento.ESTADO_PENDIENTE
+        or solicitud.fecha_alternativa is None
+    ):
+        return JsonResponse({'success': False, 'error': 'No hay una propuesta pendiente para responder.'}, status=409)
+
+    accion = request.POST.get('accion', '')
+    if accion == 'aceptar':
+        if solicitud.fecha_alternativa <= timezone.now():
+            return JsonResponse({
+                'success': False,
+                'error': 'La fecha propuesta ya pasó; solicita una nueva fecha.',
+            }, status=409)
+        solicitud.sesion.fecha = solicitud.fecha_alternativa
+        solicitud.sesion.save(update_fields=['fecha'])
+        solicitud.estado = SolicitudReagendamiento.ESTADO_APROBADA
+    elif accion == 'rechazar':
+        solicitud.estado = SolicitudReagendamiento.ESTADO_RECHAZADA
+    else:
+        return JsonResponse({'success': False, 'error': 'Selecciona una respuesta válida.'}, status=400)
+    solicitud.save(update_fields=['estado', 'actualizada_en'])
+    return JsonResponse({
+        'success': True,
+        'status': solicitud.estado,
+        'status_display': solicitud.get_estado_display(),
+    })
+
+
 @require_login
 @cache_control(no_cache=True, no_store=True, must_revalidate=True, max_age=0)
 def doctor_dashboard_data_api(request):
@@ -974,7 +1295,10 @@ def doctor_dashboard_data_api(request):
     ).first()
     if not doctor:
         return JsonResponse({'error': 'Solo un especialista puede consultar el dashboard.'}, status=403)
-    return JsonResponse({'patients': doctor_dashboard_data(doctor)})
+    return JsonResponse({
+        'patients': doctor_dashboard_data(doctor),
+        'pending_reschedule_requests': reschedule_request_payloads(doctor),
+    })
 
 
 def dashboard_patient_for_doctor(request, paciente_id):

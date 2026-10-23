@@ -18,6 +18,7 @@ from .models import (
 	Paciente,
 	RutinaAsignada,
 	Sesion,
+	SolicitudReagendamiento,
 	VideoView,
 )
 
@@ -121,6 +122,10 @@ class DiagnosticFormTests(TestCase):
 		self.assertEqual(sesiones[0]['time'], timezone.localtime(fecha).strftime('%H:%M'))
 		self.assertEqual(sesiones[0]['objective'], 'Rutina de movilidad')
 		self.assertContains(response, 'calendarSessionsData')
+		self.assertContains(response, 'Solicitar cambio de fecha de una sesión')
+		self.assertContains(response, 'Sesiones y cambios de fecha')
+		content = response.content.decode()
+		self.assertLess(content.index('calendar-layout'), content.index('reschedule-history'))
 
 
 class SessionRescheduleTests(TestCase):
@@ -212,6 +217,265 @@ class SessionRescheduleTests(TestCase):
 
 		self.assertEqual(response.status_code, 400)
 		self.assertFalse(response.json()['success'])
+		self.sesion.refresh_from_db()
+		self.assertEqual(self.sesion.fecha, fecha_original)
+
+
+class RescheduleRequestTests(TestCase):
+	def setUp(self):
+		self.doctor = Usuario.objects.create(
+			email='medico-solicitud@example.com',
+			nombre='Médico de prueba',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		self.usuario = Usuario.objects.create(
+			email='paciente-solicitud@example.com',
+			nombre='Paciente de prueba',
+		)
+		self.paciente = Paciente.objects.create(
+			usuario=self.usuario,
+			doctor=self.doctor,
+			nombre=self.usuario.nombre,
+			email=self.usuario.email,
+		)
+		self.sesion = Sesion.objects.create(
+			paciente=self.paciente,
+			fecha=timezone.now() + timedelta(days=2),
+			objetivo='Terapia de movilidad',
+		)
+		self.patient_client = Client()
+		self.doctor_client = Client()
+		self.autenticar(self.patient_client, self.usuario)
+		self.autenticar(self.doctor_client, self.doctor)
+
+	def autenticar(self, client, usuario):
+		session = client.session
+		session['current_user'] = usuario.email
+		session.save()
+
+	def fecha_futura(self, dias):
+		return timezone.localtime(
+			timezone.now() + timedelta(days=dias)
+		).replace(second=0, microsecond=0)
+
+	def solicitar_cambio(self, cliente=None):
+		propuesta = self.fecha_futura(6)
+		response = (cliente or self.patient_client).post(
+			reverse('create_reschedule_request', args=[self.sesion.pk]),
+			{
+				'motivo': 'Tengo una cita médica ese día.',
+				'fecha_propuesta': propuesta.strftime('%Y-%m-%dT%H:%M'),
+			},
+		)
+		return response, propuesta
+
+	def test_paciente_solicita_cambio_sin_modificar_el_horario_original(self):
+		fecha_original = self.sesion.fecha
+		response, propuesta = self.solicitar_cambio()
+
+		self.assertEqual(response.status_code, 201)
+		self.assertTrue(response.json()['success'])
+		solicitud = SolicitudReagendamiento.objects.get(sesion=self.sesion)
+		self.assertEqual(solicitud.estado, SolicitudReagendamiento.ESTADO_PENDIENTE)
+		self.assertEqual(solicitud.motivo, 'Tengo una cita médica ese día.')
+		self.assertEqual(timezone.localtime(solicitud.fecha_propuesta), propuesta)
+		self.sesion.refresh_from_db()
+		self.assertEqual(self.sesion.fecha, fecha_original)
+
+	def test_paciente_no_puede_cambiar_horario_por_la_ruta_directa(self):
+		fecha_original = self.sesion.fecha
+		propuesta = self.fecha_futura(6)
+		response = self.patient_client.post(
+			reverse('reschedule_session', args=[self.paciente.pk, self.sesion.pk]),
+			{'fecha': propuesta.strftime('%Y-%m-%dT%H:%M')},
+		)
+		schedule_response = self.patient_client.post(
+			reverse('schedule_session', args=[self.paciente.pk]),
+			{
+				'fecha': propuesta.strftime('%Y-%m-%dT%H:%M'),
+				'objetivo': 'Sesión agregada por paciente',
+			},
+		)
+
+		self.assertEqual(response.status_code, 403)
+		self.assertEqual(schedule_response.status_code, 403)
+		self.assertFalse(SolicitudReagendamiento.objects.exists())
+		self.assertEqual(Sesion.objects.filter(paciente=self.paciente).count(), 1)
+		self.sesion.refresh_from_db()
+		self.assertEqual(self.sesion.fecha, fecha_original)
+
+	def test_calendario_y_dashboard_medico_muestran_fecha_y_estado_de_solicitud(self):
+		response, _ = self.solicitar_cambio()
+		request_id = response.json()['request']['id']
+
+		calendar_response = self.doctor_client.get(reverse('principal'))
+		calendar_session = calendar_response.context['calendar_sessions'][0]
+		self.assertEqual(calendar_session['patient'], self.paciente.nombre)
+		self.assertEqual(calendar_session['request']['id'], request_id)
+		self.assertEqual(calendar_session['request']['status'], SolicitudReagendamiento.ESTADO_PENDIENTE)
+		self.assertContains(calendar_response, 'Solicitudes de cambio de sesión')
+		self.assertContains(calendar_response, 'Tengo una cita médica ese día.')
+		self.assertContains(calendar_response, self.paciente.nombre)
+
+		dashboard_response = self.doctor_client.get(reverse('doctor_dashboard_data'))
+		session_data = dashboard_response.json()['patients'][0]['sessions'][0]
+		self.assertEqual(
+			session_data['scheduledDate'],
+			timezone.localtime(self.sesion.fecha).isoformat(),
+		)
+		self.assertEqual(
+			dashboard_response.json()['pending_reschedule_requests'][0]['id'],
+			request_id,
+		)
+
+	def test_medico_aprueba_y_sesiones_del_calendario_actualizan_fecha(self):
+		response, propuesta = self.solicitar_cambio()
+		solicitud_id = response.json()['request']['id']
+
+		with patch('princpal.views.send_mail') as send_mail:
+			decision = self.doctor_client.post(
+				reverse('review_reschedule_request', args=[solicitud_id]),
+				{'accion': 'aprobar'},
+			)
+
+		self.assertEqual(decision.status_code, 200)
+		self.sesion.refresh_from_db()
+		self.assertEqual(timezone.localtime(self.sesion.fecha), propuesta)
+		solicitud = SolicitudReagendamiento.objects.get(pk=solicitud_id)
+		self.assertEqual(solicitud.estado, SolicitudReagendamiento.ESTADO_APROBADA)
+		send_mail.assert_called_once()
+		self.assertEqual(send_mail.call_args.args[3], [self.usuario.email])
+		self.assertIn('aprobó tu solicitud', send_mail.call_args.args[1])
+		patient_response = self.patient_client.get(reverse('principal'))
+		self.assertEqual(patient_response.context['calendar_sessions'][0]['date'], propuesta.date().isoformat())
+		self.assertEqual(
+			patient_response.context['calendar_sessions'][0]['request']['status'],
+			SolicitudReagendamiento.ESTADO_APROBADA,
+		)
+		self.assertContains(patient_response, 'Cambio aprobado')
+		self.assertContains(patient_response, 'Nueva fecha confirmada')
+		doctor_response = self.doctor_client.get(reverse('principal'))
+		self.assertEqual(
+			doctor_response.context['calendar_sessions'][0]['date'],
+			propuesta.date().isoformat(),
+		)
+
+	def test_medico_puede_proponer_fecha_y_paciente_debe_aceptarla(self):
+		response, _ = self.solicitar_cambio()
+		solicitud_id = response.json()['request']['id']
+		propuesta_alternativa = self.fecha_futura(8)
+		fecha_original = self.sesion.fecha
+
+		with patch('princpal.views.send_mail'):
+			decision = self.doctor_client.post(
+				reverse('review_reschedule_request', args=[solicitud_id]),
+				{
+					'accion': 'proponer',
+					'fecha_alternativa': propuesta_alternativa.strftime('%Y-%m-%dT%H:%M'),
+					'respuesta': 'Este horario está disponible.',
+				},
+			)
+
+		self.assertEqual(decision.status_code, 200)
+		self.assertEqual(decision.json()['status'], SolicitudReagendamiento.ESTADO_PENDIENTE)
+		self.sesion.refresh_from_db()
+		self.assertEqual(self.sesion.fecha, fecha_original)
+		accepted = self.patient_client.post(
+			reverse('respond_to_reschedule_proposal', args=[solicitud_id]),
+			{'accion': 'aceptar'},
+		)
+		self.assertEqual(accepted.status_code, 200)
+		self.sesion.refresh_from_db()
+		self.assertEqual(timezone.localtime(self.sesion.fecha), propuesta_alternativa)
+		self.assertEqual(
+			SolicitudReagendamiento.objects.get(pk=solicitud_id).estado,
+			SolicitudReagendamiento.ESTADO_APROBADA,
+		)
+
+	def test_paciente_ve_propuesta_alternativa_y_solicitudes_rechazadas_en_su_historial(self):
+		response, _ = self.solicitar_cambio()
+		solicitud_id = response.json()['request']['id']
+		fecha_alternativa = self.fecha_futura(8)
+		with patch('princpal.views.send_mail'):
+			self.doctor_client.post(
+				reverse('review_reschedule_request', args=[solicitud_id]),
+				{
+					'accion': 'proponer',
+					'fecha_alternativa': fecha_alternativa.strftime('%Y-%m-%dT%H:%M'),
+				},
+			)
+
+		pending_response = self.patient_client.get(reverse('principal'))
+		self.assertContains(pending_response, 'Mis solicitudes de cambio')
+		self.assertContains(pending_response, 'Nueva fecha propuesta')
+		self.assertContains(pending_response, fecha_alternativa.strftime('%d/%m/%Y'))
+		self.assertContains(pending_response, 'Aceptar propuesta')
+		self.assertContains(pending_response, 'La fecha actual sigue vigente')
+
+		otra_sesion = Sesion.objects.create(
+			paciente=self.paciente,
+			fecha=self.fecha_futura(3),
+			objetivo='Ejercicios de equilibrio',
+		)
+		otra_solicitud_response = self.patient_client.post(
+			reverse('create_reschedule_request', args=[otra_sesion.pk]),
+			{
+				'motivo': 'No puedo asistir ese día.',
+				'fecha_propuesta': self.fecha_futura(9).strftime('%Y-%m-%dT%H:%M'),
+			},
+		)
+		with patch('princpal.views.send_mail'):
+			rejected = self.doctor_client.post(
+				reverse(
+					'review_reschedule_request',
+					args=[otra_solicitud_response.json()['request']['id']],
+				),
+				{'accion': 'rechazar', 'respuesta': 'No hay horario disponible.'},
+			)
+
+		self.assertEqual(rejected.status_code, 200)
+		rejected_response = self.patient_client.get(reverse('principal'))
+		self.assertContains(rejected_response, 'Rechazada')
+		self.assertContains(rejected_response, 'La solicitud fue rechazada')
+		self.assertContains(rejected_response, 'No hay horario disponible.')
+
+	def test_medico_rechaza_sin_alterar_horario_y_notifica_al_paciente(self):
+		response, _ = self.solicitar_cambio()
+		solicitud_id = response.json()['request']['id']
+		fecha_original = self.sesion.fecha
+
+		with patch('princpal.views.send_mail') as send_mail:
+			decision = self.doctor_client.post(
+				reverse('review_reschedule_request', args=[solicitud_id]),
+				{'accion': 'rechazar', 'respuesta': 'No hay disponibilidad.'},
+			)
+
+		self.assertEqual(decision.status_code, 200)
+		self.sesion.refresh_from_db()
+		self.assertEqual(self.sesion.fecha, fecha_original)
+		send_mail.assert_called_once()
+		self.assertEqual(
+			SolicitudReagendamiento.objects.get(pk=solicitud_id).estado,
+			SolicitudReagendamiento.ESTADO_RECHAZADA,
+		)
+
+	def test_otro_medico_no_puede_revisar_la_solicitud(self):
+		response, _ = self.solicitar_cambio()
+		fecha_original = self.sesion.fecha
+		otro_medico = Usuario.objects.create(
+			email='medico-ajeno@example.com',
+			nombre='Médico ajeno',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		otro_cliente = Client()
+		self.autenticar(otro_cliente, otro_medico)
+
+		decision = otro_cliente.post(
+			reverse('review_reschedule_request', args=[response.json()['request']['id']]),
+			{'accion': 'aprobar'},
+		)
+
+		self.assertEqual(decision.status_code, 404)
 		self.sesion.refresh_from_db()
 		self.assertEqual(self.sesion.fecha, fecha_original)
 
