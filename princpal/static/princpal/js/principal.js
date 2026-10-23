@@ -38,7 +38,7 @@ const checkSessionStatus = async () => {
   }
 };
 
-window.setInterval(checkSessionStatus, 3000);
+window.setInterval(checkSessionStatus, 20000);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') checkSessionStatus();
 });
