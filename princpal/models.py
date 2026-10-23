@@ -94,9 +94,41 @@ class Paciente(models.Model):
 
 
 class Sesion(models.Model):
+    ESTADO_PROGRAMADA = 'programada'
+    ESTADO_COMPLETADA = 'completada'
+    ESTADO_CANCELADA = 'cancelada'
+    ESTADO_NO_ASISTIO = 'no_asistio'
+    ESTADO_CHOICES = [
+        (ESTADO_PROGRAMADA, 'Programada'),
+        (ESTADO_COMPLETADA, 'Completada'),
+        (ESTADO_CANCELADA, 'Cancelada'),
+        (ESTADO_NO_ASISTIO, 'No asistió'),
+    ]
+
     paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name='sesiones')
     fecha = models.DateTimeField('fecha de sesión')
     objetivo = models.CharField('objetivo', max_length=255)
+    objetivo_terapeutico = models.ForeignKey(
+        'ObjetivoTerapeutico',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sesiones',
+        verbose_name='objetivo terapéutico',
+    )
+    nota_objetivo = models.TextField('nota del objetivo', blank=True)
+    duracion_minutos = models.PositiveSmallIntegerField(
+        'duración en minutos',
+        default=45,
+        validators=[MinValueValidator(1)],
+    )
+    enlace_ubicacion = models.CharField('enlace o ubicación', max_length=500, blank=True)
+    estado = models.CharField(
+        'estado',
+        max_length=15,
+        choices=ESTADO_CHOICES,
+        default=ESTADO_PROGRAMADA,
+    )
     avance = models.TextField('avance', blank=True)
     activo = models.BooleanField('activa', default=True)
     realizada = models.BooleanField('realizada', default=False)
@@ -109,6 +141,16 @@ class Sesion(models.Model):
 
     def __str__(self):
         return f"{self.paciente.nombre} — {self.fecha:%Y-%m-%d}"
+
+    def save(self, *args, **kwargs):
+        if self.estado == self.ESTADO_PROGRAMADA:
+            if not self.activo:
+                self.estado = self.ESTADO_CANCELADA
+            elif self.realizada:
+                self.estado = self.ESTADO_COMPLETADA
+        self.activo = self.estado != self.ESTADO_CANCELADA
+        self.realizada = self.estado == self.ESTADO_COMPLETADA
+        super().save(*args, **kwargs)
 
 
 class SolicitudReagendamiento(models.Model):
@@ -225,6 +267,53 @@ class ObjetivoTerapeutico(models.Model):
         return f'{self.paciente.nombre} — {self.nombre}'
 
 
+class PlantillaRutina(models.Model):
+    doctor = models.ForeignKey(
+        'crear_cuenta.Usuario',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='plantillas_rutina',
+        limit_choices_to={'role': 'doctor'},
+        verbose_name='médico',
+    )
+    nombre = models.CharField('nombre', max_length=150)
+    descripcion = models.TextField('descripción', blank=True)
+    activa = models.BooleanField('activa', default=True)
+    creada_en = models.DateTimeField('creada el', auto_now_add=True)
+    actualizada_en = models.DateTimeField('actualizada el', auto_now=True)
+
+    class Meta:
+        ordering = ['nombre', 'pk']
+        verbose_name = 'Plantilla de rutina'
+        verbose_name_plural = 'Plantillas de rutina'
+
+    def __str__(self):
+        return self.nombre
+
+
+class EjercicioPlantillaRutina(models.Model):
+    plantilla = models.ForeignKey(
+        PlantillaRutina,
+        on_delete=models.CASCADE,
+        related_name='ejercicios',
+    )
+    video_id = models.CharField('ID del video', max_length=128)
+    titulo = models.CharField('ejercicio', max_length=150)
+    orden = models.PositiveSmallIntegerField('orden', default=1)
+
+    class Meta:
+        ordering = ['orden', 'pk']
+        verbose_name = 'Ejercicio de plantilla'
+        verbose_name_plural = 'Ejercicios de plantilla'
+        constraints = [
+            models.UniqueConstraint(fields=['plantilla', 'video_id'], name='unique_video_per_routine_template'),
+        ]
+
+    def __str__(self):
+        return f'{self.plantilla.nombre} — {self.titulo}'
+
+
 class RutinaAsignada(models.Model):
     paciente = models.ForeignKey(
         Paciente,
@@ -234,6 +323,17 @@ class RutinaAsignada(models.Model):
     video_id = models.CharField('ID de rutina', max_length=128)
     titulo = models.CharField('rutina', max_length=150)
     fecha_programada = models.DateField('fecha programada')
+    plantilla = models.ForeignKey(
+        PlantillaRutina,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='asignaciones',
+        verbose_name='plantilla',
+    )
+    fecha_inicio = models.DateField('fecha de inicio')
+    fecha_fin = models.DateField('fecha de fin')
+    dias_semana = models.JSONField('días de la semana', default=list, blank=True)
     asignada_en = models.DateTimeField('asignada el', auto_now_add=True)
     completada_en = models.DateTimeField('completada el', null=True, blank=True)
 
@@ -241,19 +341,99 @@ class RutinaAsignada(models.Model):
         ordering = ['fecha_programada', 'pk']
         verbose_name = 'Rutina asignada'
         verbose_name_plural = 'Rutinas asignadas'
-        constraints = [
-            models.UniqueConstraint(
-                fields=['paciente', 'video_id', 'fecha_programada'],
-                name='unique_routine_assignment_per_day',
-            ),
-        ]
         indexes = [
             models.Index(fields=['paciente', 'fecha_programada']),
+            models.Index(fields=['paciente', 'fecha_inicio', 'fecha_fin']),
         ]
 
     def __str__(self):
         return f'{self.paciente.nombre} — {self.titulo} ({self.fecha_programada:%Y-%m-%d})'
 
+    def save(self, *args, **kwargs):
+        if self.fecha_inicio is None:
+            self.fecha_inicio = self.fecha_programada
+        if self.fecha_fin is None:
+            self.fecha_fin = self.fecha_programada
+        if not self.dias_semana:
+            self.dias_semana = [self.fecha_programada.weekday()]
+        super().save(*args, **kwargs)
+
+
+class EjercicioRutinaAsignada(models.Model):
+    asignacion = models.ForeignKey(
+        RutinaAsignada,
+        on_delete=models.CASCADE,
+        related_name='ejercicios',
+    )
+    video_id = models.CharField('ID del video', max_length=128)
+    titulo = models.CharField('ejercicio', max_length=150)
+    orden = models.PositiveSmallIntegerField('orden', default=1)
+    series = models.PositiveSmallIntegerField(
+        'series',
+        validators=[MinValueValidator(1)],
+    )
+    repeticiones = models.CharField('repeticiones', max_length=100, blank=True)
+    duracion_minutos = models.PositiveSmallIntegerField(
+        'duración en minutos',
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1)],
+    )
+    notas_medico = models.TextField('notas del médico', blank=True)
+
+    class Meta:
+        ordering = ['orden', 'pk']
+        verbose_name = 'Ejercicio de rutina asignada'
+        verbose_name_plural = 'Ejercicios de rutina asignada'
+
+    def __str__(self):
+        return f'{self.asignacion.titulo} — {self.titulo}'
+
+
+class OcurrenciaRutina(models.Model):
+    DIFICULTAD_FACIL = 'facil'
+    DIFICULTAD_ADECUADA = 'adecuada'
+    DIFICULTAD_DIFICIL = 'dificil'
+    DIFICULTAD_CHOICES = [
+        (DIFICULTAD_FACIL, 'Fácil'),
+        (DIFICULTAD_ADECUADA, 'Adecuada'),
+        (DIFICULTAD_DIFICIL, 'Difícil'),
+    ]
+
+    asignacion = models.ForeignKey(
+        RutinaAsignada,
+        on_delete=models.CASCADE,
+        related_name='ocurrencias',
+    )
+    fecha = models.DateField('fecha')
+    completada_en = models.DateTimeField('completada el', null=True, blank=True)
+    nivel_dolor = models.PositiveSmallIntegerField(
+        'dolor (EVA)',
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+    )
+    dificultad = models.CharField(
+        'dificultad',
+        max_length=10,
+        choices=DIFICULTAD_CHOICES,
+        blank=True,
+    )
+    comentario = models.TextField('comentario', blank=True)
+
+    class Meta:
+        ordering = ['fecha', 'pk']
+        verbose_name = 'Ocurrencia de rutina'
+        verbose_name_plural = 'Ocurrencias de rutina'
+        constraints = [
+            models.UniqueConstraint(fields=['asignacion', 'fecha'], name='unique_routine_occurrence_per_day'),
+        ]
+        indexes = [
+            models.Index(fields=['fecha', 'completada_en']),
+        ]
+
+    def __str__(self):
+        return f'{self.asignacion.titulo} — {self.fecha:%Y-%m-%d}'
 
 
 class Diagnostico(models.Model):

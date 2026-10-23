@@ -18,7 +18,7 @@
   };
   const percentage = (value) => `${Math.max(0, Math.min(100, Number(value) || 0))}%`;
   const formatDate = (value) => value
-    ? new Intl.DateTimeFormat('es-SV', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value))
+    ? new Intl.DateTimeFormat('es-SV', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value))
     : 'Aún no hay sesiones';
 
   const updateBar = (trackId, barId, value) => {
@@ -81,16 +81,98 @@
     data.routines.forEach((routine) => {
       const item = document.createElement('li');
       item.className = routine.completed ? 'is-complete' : 'is-pending';
-      const name = document.createElement('span');
+      item.classList.add('patient-routine-item');
+      const heading = document.createElement('div');
+      heading.className = 'patient-routine-heading';
+      const name = document.createElement('strong');
       name.textContent = routine.title;
       const date = document.createElement('time');
       date.dateTime = routine.date;
       date.textContent = new Intl.DateTimeFormat('es-SV', {
-        day: 'numeric', month: 'short',
+        day: '2-digit', month: '2-digit', year: 'numeric',
       }).format(new Date(`${routine.date}T12:00:00`));
       const status = document.createElement('small');
       status.textContent = routine.completed ? 'Completada' : 'Pendiente';
-      item.append(name, date, status);
+      heading.append(name, date, status);
+      item.append(heading);
+
+      if (routine.exercises?.length) {
+        const exercises = document.createElement('ul');
+        exercises.className = 'patient-routine-exercises';
+        routine.exercises.forEach((exercise) => {
+          const exerciseItem = document.createElement('li');
+          const exerciseTitle = exercise.videoUrl
+            ? document.createElement('a')
+            : document.createElement('strong');
+          exerciseTitle.textContent = exercise.title;
+          if (exercise.videoUrl) {
+            exerciseTitle.href = exercise.videoUrl;
+            exerciseTitle.className = 'patient-routine-video-link';
+          }
+          const dose = document.createElement('span');
+          const doseParts = [`${exercise.series} series`];
+          if (exercise.repetitions) doseParts.push(`${exercise.repetitions} repeticiones`);
+          if (exercise.duration) doseParts.push(`${exercise.duration} min`);
+          dose.textContent = doseParts.join(' · ');
+          exerciseItem.append(exerciseTitle, dose);
+          if (exercise.notes) {
+            const notes = document.createElement('small');
+            notes.textContent = exercise.notes;
+            exerciseItem.append(notes);
+          }
+          exercises.append(exerciseItem);
+        });
+        item.append(exercises);
+      }
+
+      if (routine.completed && routine.pain !== null) {
+        const feedback = document.createElement('p');
+        feedback.className = 'patient-routine-feedback';
+        feedback.textContent = `Dolor: ${routine.pain}/10 · Dificultad: ${routine.difficulty || '—'}${routine.comment ? ` · ${routine.comment}` : ''}`;
+        item.append(feedback);
+      } else if (!routine.completed && routine.id !== null) {
+        const form = document.createElement('form');
+        form.className = 'patient-routine-feedback-form';
+        form.dataset.occurrenceId = String(routine.id);
+        const painLabel = document.createElement('label');
+        painLabel.textContent = 'Dolor (0 a 10)';
+        const pain = document.createElement('input');
+        pain.name = 'nivel_dolor';
+        pain.type = 'number';
+        pain.min = '0';
+        pain.max = '10';
+        pain.required = true;
+        painLabel.append(pain);
+        const difficultyLabel = document.createElement('label');
+        difficultyLabel.textContent = 'Dificultad';
+        const difficulty = document.createElement('select');
+        difficulty.name = 'dificultad';
+        difficulty.required = true;
+        [
+          ['', 'Selecciona'],
+          ['facil', 'Fácil'],
+          ['adecuada', 'Adecuada'],
+          ['dificil', 'Difícil'],
+        ].forEach(([value, label]) => difficulty.add(new Option(label, value)));
+        difficultyLabel.append(difficulty);
+        const commentLabel = document.createElement('label');
+        commentLabel.textContent = 'Comentario (opcional)';
+        const comment = document.createElement('textarea');
+        comment.name = 'comentario';
+        comment.rows = 2;
+        comment.maxLength = 2000;
+        commentLabel.append(comment);
+        const submit = document.createElement('button');
+        submit.type = 'submit';
+        submit.className = 'patient-routine-complete-button';
+        submit.textContent = 'Completar rutina';
+        const statusMessage = document.createElement('p');
+        statusMessage.className = 'patient-routine-feedback-message';
+        statusMessage.setAttribute('role', 'status');
+        statusMessage.hidden = true;
+        form.append(painLabel, difficultyLabel, commentLabel, submit, statusMessage);
+        item.append(form);
+      }
       list.append(item);
     });
   };
@@ -219,6 +301,37 @@
       refreshing = false;
     }
   };
+
+  byId('patientRoutinesList').addEventListener('submit', async (event) => {
+    const form = event.target.closest('.patient-routine-feedback-form');
+    if (!form) return;
+    event.preventDefault();
+    const submit = form.querySelector('button[type="submit"]');
+    const message = form.querySelector('.patient-routine-feedback-message');
+    submit.disabled = true;
+    message.hidden = true;
+    try {
+      const url = root.dataset.completeRoutineUrl.replace(
+        '/0/completar/',
+        `/${form.dataset.occurrenceId}/completar/`,
+      );
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
+          Accept: 'application/json',
+        },
+        body: new FormData(form),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo completar la rutina.');
+      await refreshProgress();
+    } catch (error) {
+      message.textContent = error instanceof Error ? error.message : String(error);
+      message.hidden = false;
+      submit.disabled = false;
+    }
+  });
 
   window.setInterval(refreshProgress, 60000);
 })();

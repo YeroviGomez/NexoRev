@@ -23,20 +23,26 @@ import shutil
 import subprocess
 from urllib.parse import parse_qs, urlparse
 from .forms import (
+    AssignRoutineForm,
     DiagnosticoForm,
     EvaluacionClinicaForm,
     FotoPerfilForm,
     ObjetivoTerapeuticoForm,
     ProfileUpdateForm,
     RescheduleSessionForm,
+    SaveRoutineTemplateForm,
     ScheduleSessionForm,
     VideoUploadForm,
 )
 from .models import (
     Diagnostico,
+    EjercicioPlantillaRutina,
+    EjercicioRutinaAsignada,
     EvaluacionClinica,
+    OcurrenciaRutina,
     ObjetivoTerapeutico,
     Paciente,
+    PlantillaRutina,
     RutinaAsignada,
     Sesion,
     SolicitudReagendamiento,
@@ -282,6 +288,7 @@ def doctor_dashboard_data(doctor):
     goals_by_patient = {patient_id: [] for patient_id in patient_ids}
     for goal in ObjetivoTerapeutico.objects.filter(paciente_id__in=patient_ids):
         goals_by_patient[goal.paciente_id].append({
+            'id': goal.pk,
             'name': goal.nombre,
             'metric': goal.metrica,
             'direction': goal.direccion,
@@ -293,7 +300,11 @@ def doctor_dashboard_data(doctor):
     sessions_by_patient = {patient_id: [] for patient_id in patient_ids}
     for session in Sesion.objects.filter(
         paciente_id__in=patient_ids,
-        activo=True,
+        estado__in=(
+            Sesion.ESTADO_PROGRAMADA,
+            Sesion.ESTADO_COMPLETADA,
+            Sesion.ESTADO_NO_ASISTIO,
+        ),
     ).order_by('fecha', 'pk'):
         event_date = session.realizada_en or session.fecha
         sessions_by_patient[session.paciente_id].append({
@@ -301,7 +312,22 @@ def doctor_dashboard_data(doctor):
             'date': timezone.localtime(event_date).isoformat(),
             'scheduledDate': timezone.localtime(session.fecha).isoformat(),
             'objective': session.objetivo,
-            'completed': session.realizada,
+            'status': session.estado,
+            'completed': session.estado == Sesion.ESTADO_COMPLETADA,
+        })
+
+    routine_feedback_by_patient = {patient_id: [] for patient_id in patient_ids}
+    for occurrence in OcurrenciaRutina.objects.filter(
+        asignacion__paciente_id__in=patient_ids,
+        completada_en__isnull=False,
+    ).select_related('asignacion', 'asignacion__paciente').order_by('-completada_en', '-pk'):
+        routine_feedback_by_patient[occurrence.asignacion.paciente_id].append({
+            'routine': occurrence.asignacion.titulo,
+            'date': timezone.localtime(occurrence.completada_en).date().isoformat(),
+            'dateDisplay': timezone.localtime(occurrence.completada_en).strftime('%d/%m/%Y'),
+            'pain': occurrence.nivel_dolor,
+            'difficulty': occurrence.get_dificultad_display(),
+            'comment': occurrence.comentario,
         })
 
     diagnoses_by_user = {
@@ -325,6 +351,7 @@ def doctor_dashboard_data(doctor):
             'evaluations': evaluations_by_patient[patient.pk],
             'goals': goals_by_patient[patient.pk],
             'sessions': sessions_by_patient[patient.pk],
+            'routineFeedback': routine_feedback_by_patient[patient.pk],
         })
     return data
 
@@ -337,6 +364,7 @@ def reschedule_request_payloads(doctor):
     return [
         {
             'id': item.pk,
+            'patient_id': item.sesion.paciente_id,
             'patient': item.sesion.paciente.nombre,
             'session': item.sesion.objetivo,
             'current_date': timezone.localtime(item.sesion.fecha).strftime('%d/%m/%Y %H:%M'),
@@ -377,7 +405,32 @@ def patient_reschedule_request_payloads(paciente):
     ]
 
 
-def patient_progress_payload(paciente):
+def routine_template_payloads(doctor):
+    templates = list(
+        PlantillaRutina.objects.filter(doctor=doctor)
+        .prefetch_related('ejercicios')
+        .order_by('nombre', 'pk')
+    )
+    template_data = {}
+    for template in templates:
+        template_data[str(template.pk)] = {
+            'name': template.nombre,
+            'description': template.descripcion,
+            'active': template.activa,
+            'exercises': [
+                {
+                    'id': exercise.pk,
+                    'video_id': exercise.video_id,
+                    'title': exercise.titulo,
+                    'order': exercise.orden,
+                }
+                for exercise in template.ejercicios.all()
+            ],
+        }
+    return templates, template_data
+
+
+def patient_progress_payload(paciente, videos=None):
     evaluations = list(paciente.evaluaciones.order_by('fecha', 'pk'))
     latest_values = {}
     for evaluation in evaluations:
@@ -401,21 +454,90 @@ def patient_progress_payload(paciente):
             'completed': completed,
         })
 
-    sessions = list(Sesion.objects.filter(paciente=paciente, activo=True))
-    completed_sessions = sum(session.realizada for session in sessions)
-    routine_assignments = list(RutinaAsignada.objects.filter(paciente=paciente))
-    today = timezone.localdate()
-    todays_routines = [routine for routine in routine_assignments if routine.fecha_programada == today]
-    completed_routines = [routine for routine in routine_assignments if routine.completada_en]
-    completed_today = sum(
-        routine.completada_en is not None
-        and timezone.localtime(routine.completada_en).date() == today
-        for routine in todays_routines
+    sessions = list(Sesion.objects.filter(
+        paciente=paciente,
+        estado__in=(
+            Sesion.ESTADO_PROGRAMADA,
+            Sesion.ESTADO_COMPLETADA,
+            Sesion.ESTADO_NO_ASISTIO,
+        ),
+    ))
+    due_sessions = [
+        session for session in sessions
+        if session.fecha <= timezone.now()
+    ]
+    completed_sessions = sum(
+        session.estado == Sesion.ESTADO_COMPLETADA
+        for session in due_sessions
     )
+    today = timezone.localdate()
+    routine_assignments = list(
+        RutinaAsignada.objects.filter(paciente=paciente)
+        .prefetch_related('ejercicios', 'ocurrencias')
+    )
+    occurrences = list(
+        OcurrenciaRutina.objects.filter(asignacion__paciente=paciente)
+        .select_related('asignacion')
+        .prefetch_related('asignacion__ejercicios')
+        .order_by('fecha', 'pk')
+    )
+    assignments_with_occurrences = {occurrence.asignacion_id for occurrence in occurrences}
+    video_indexes = {
+        video['video_id']: index
+        for index, video in enumerate(videos or [])
+    }
 
+    def exercise_payload(exercise):
+        video_index = video_indexes.get(exercise.video_id)
+        return {
+            'title': exercise.titulo,
+            'series': exercise.series,
+            'repetitions': exercise.repeticiones,
+            'duration': exercise.duracion_minutos,
+            'notes': exercise.notas_medico,
+            'videoUrl': reverse('video_detail', args=[video_index]) if video_index is not None else '',
+        }
+
+    routine_items = [{
+        'id': occurrence.pk,
+        'title': occurrence.asignacion.titulo,
+        'date': occurrence.fecha.isoformat(),
+        'completed': occurrence.completada_en is not None,
+        'pain': occurrence.nivel_dolor,
+        'difficulty': occurrence.get_dificultad_display(),
+        'comment': occurrence.comentario,
+        'exercises': [
+            exercise_payload(exercise)
+            for exercise in occurrence.asignacion.ejercicios.all()
+        ],
+    } for occurrence in occurrences]
+    for assignment in routine_assignments:
+        if assignment.pk in assignments_with_occurrences:
+            continue
+        routine_items.append({
+            'id': None,
+            'title': assignment.titulo,
+            'date': assignment.fecha_programada.isoformat(),
+            'completed': assignment.completada_en is not None,
+            'pain': None,
+            'difficulty': '',
+            'comment': '',
+            'exercises': [
+                exercise_payload(exercise)
+                for exercise in assignment.ejercicios.all()
+            ],
+        })
+    routine_items.sort(key=lambda item: (item['date'], item['title']))
+    todays_routines = [routine for routine in routine_items if routine['date'] == today.isoformat()]
+    due_routines = [routine for routine in routine_items if date.fromisoformat(routine['date']) <= today]
+    completed_today = sum(routine['completed'] for routine in todays_routines)
     activity_days = sorted({
-        timezone.localtime(routine.completada_en).date()
-        for routine in completed_routines
+        timezone.localtime(occurrence.completada_en).date()
+        for occurrence in occurrences if occurrence.completada_en
+    } | {
+        timezone.localtime(assignment.completada_en).date()
+        for assignment in routine_assignments
+        if assignment.completada_en and assignment.pk not in assignments_with_occurrences
     }, reverse=True)
     streak = 0
     expected_day = today
@@ -433,29 +555,25 @@ def patient_progress_payload(paciente):
     )
     evaluation_comparisons = max(len(evaluations) - 1, 0)
     goal_percent = round(sum(goal['completed'] for goal in goals) * 100 / len(goals)) if goals else 0
-    session_percent = round(completed_sessions * 100 / len(sessions)) if sessions else 0
-    due_routines = [
-        routine for routine in routine_assignments
-        if routine.fecha_programada <= today
-    ]
-    completed_due_routines = sum(routine.completada_en is not None for routine in due_routines)
+    session_percent = round(completed_sessions * 100 / len(due_sessions)) if due_sessions else 0
+    completed_due_routines = sum(routine['completed'] for routine in due_routines)
     routine_percent = round(completed_due_routines * 100 / len(due_routines)) if due_routines else 0
     evaluation_percent = round(favorable_evaluations * 100 / evaluation_comparisons) if evaluation_comparisons else 0
     recovery_percent = round((goal_percent + session_percent + routine_percent + evaluation_percent) / 4)
 
     last_session = max(
-        (session.realizada_en or session.fecha for session in sessions if session.realizada),
+        (
+            session.realizada_en or session.fecha
+            for session in sessions
+            if session.estado == Sesion.ESTADO_COMPLETADA
+        ),
         default=None,
     )
     progress_history = paciente.historial_avance or [{
         'fecha': timezone.localtime(paciente.fecha_registro).isoformat(),
         'avance': paciente.avance,
     }]
-    routines = [{
-        'title': routine.titulo,
-        'date': routine.fecha_programada.isoformat(),
-        'completed': routine.completada_en is not None,
-    } for routine in routine_assignments]
+    routines = routine_items
     return {
         'recoveryPercent': recovery_percent,
         'stage': paciente.estado,
@@ -465,16 +583,16 @@ def patient_progress_payload(paciente):
         'goalCompleted': sum(goal['completed'] for goal in goals),
         'goalTotal': len(goals),
         'sessionsCompleted': completed_sessions,
-        'sessionsPlanned': len(sessions),
-        'routinesCompleted': len(completed_routines),
-        'routinesAssigned': len(routine_assignments),
+        'sessionsPlanned': len(due_sessions),
+        'routinesCompleted': completed_due_routines,
+        'routinesAssigned': len(due_routines),
         'streak': streak,
         'lastSession': timezone.localtime(last_session).isoformat() if last_session else None,
         'dailyRoutinesAssigned': len(todays_routines),
         'dailyRoutinesCompleted': completed_today,
         'dailyPercent': round(completed_today * 100 / len(todays_routines)) if todays_routines else 0,
         'dailyHasAssignments': bool(todays_routines),
-        'dailyPendingAssignments': sum(routine.completada_en is None for routine in todays_routines),
+        'dailyPendingAssignments': sum(not routine['completed'] for routine in todays_routines),
         'evaluationFavorable': favorable_evaluations,
         'evaluationTotal': evaluation_comparisons,
         'routines': routines,
@@ -505,7 +623,110 @@ def patient_progress_data_api(request):
     if not paciente:
         return JsonResponse({'success': False, 'error': 'No se encontró el progreso de este paciente.'}, status=404)
     refresh_patient_progress(paciente)
-    return JsonResponse({'success': True, 'progress': patient_progress_payload(paciente)})
+    return JsonResponse({'success': True, 'progress': patient_progress_payload(paciente, load_videos())})
+
+
+@require_login
+@require_POST
+def save_routine_template(request):
+    doctor = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        is_active=True,
+        role=Usuario.ROLE_DOCTOR,
+    ).first()
+    if not doctor:
+        return HttpResponseForbidden('Solo el médico puede gestionar plantillas de rutina.')
+
+    template_id = request.POST.get('plantilla_id', '').strip()
+    template = None
+    if template_id:
+        if not template_id.isdecimal():
+            messages.error(request, 'La plantilla seleccionada no es válida.')
+            return redirect('/principal/#dashboard')
+        template = get_object_or_404(PlantillaRutina, pk=int(template_id), doctor=doctor)
+
+    form = SaveRoutineTemplateForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, 'Revisa el nombre y la descripción de la plantilla.')
+        return redirect('/principal/#dashboard')
+
+    video_catalog = load_videos()
+    videos_by_id = {video['video_id']: (index, video) for index, video in enumerate(video_catalog)}
+    selected_ids = request.POST.getlist('video_ids')
+    if not selected_ids:
+        messages.error(request, 'Selecciona al menos un video para la plantilla.')
+        return redirect('/principal/#dashboard')
+    if len(selected_ids) != len(set(selected_ids)) or any(video_id not in videos_by_id for video_id in selected_ids):
+        messages.error(request, 'La selección de videos no es válida.')
+        return redirect('/principal/#dashboard')
+
+    ordered_videos = []
+    seen_orders = set()
+    for video_id in selected_ids:
+        catalog_index, video = videos_by_id[video_id]
+        order_text = request.POST.get(f'orden_{catalog_index}', '').strip()
+        if not order_text.isdecimal() or int(order_text) < 1 or int(order_text) in seen_orders:
+            messages.error(request, 'Define un orden único y válido para cada video seleccionado.')
+            return redirect('/principal/#dashboard')
+        order = int(order_text)
+        seen_orders.add(order)
+        ordered_videos.append((order, video))
+    ordered_videos.sort(key=lambda item: item[0])
+
+    with transaction.atomic():
+        if template is None:
+            template = PlantillaRutina.objects.create(
+                doctor=doctor,
+                nombre=form.cleaned_data['nombre'].strip(),
+                descripcion=form.cleaned_data['descripcion'].strip(),
+            )
+        else:
+            template.nombre = form.cleaned_data['nombre'].strip()
+            template.descripcion = form.cleaned_data['descripcion'].strip()
+            template.save(update_fields=['nombre', 'descripcion', 'actualizada_en'])
+            template.ejercicios.all().delete()
+        EjercicioPlantillaRutina.objects.bulk_create([
+            EjercicioPlantillaRutina(
+                plantilla=template,
+                video_id=video['video_id'],
+                titulo=video['title'][:150],
+                orden=order,
+            )
+            for order, video in ordered_videos
+        ])
+    messages.success(request, f'Plantilla «{template.nombre}» guardada.')
+    return redirect('/principal/#dashboard')
+
+
+@require_login
+@require_POST
+def manage_routine_template(request, plantilla_id):
+    doctor = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        is_active=True,
+        role=Usuario.ROLE_DOCTOR,
+    ).first()
+    if not doctor:
+        return HttpResponseForbidden('Solo el médico puede gestionar plantillas de rutina.')
+    template = get_object_or_404(PlantillaRutina, pk=plantilla_id, doctor=doctor)
+    action = request.POST.get('action')
+    if action == 'delete':
+        if template.asignaciones.exists():
+            messages.error(request, 'Esta plantilla ya tiene asignaciones y no se puede eliminar; puedes desactivarla.')
+        else:
+            template.delete()
+            messages.success(request, 'Plantilla eliminada.')
+    elif action == 'deactivate':
+        template.activa = False
+        template.save(update_fields=['activa', 'actualizada_en'])
+        messages.success(request, 'Plantilla desactivada.')
+    elif action == 'activate':
+        template.activa = True
+        template.save(update_fields=['activa', 'actualizada_en'])
+        messages.success(request, 'Plantilla activada.')
+    else:
+        messages.error(request, 'La acción solicitada no es válida.')
+    return redirect('/principal/#dashboard')
 
 
 @require_login
@@ -517,36 +738,132 @@ def assign_routine_view(request, paciente_id):
         role=Usuario.ROLE_DOCTOR,
     ).first()
     if not doctor:
-        return HttpResponseForbidden('Solo el especialista puede asignar rutinas.')
+        return JsonResponse({'success': False, 'error': 'Solo el médico puede asignar rutinas.'}, status=403)
     paciente = get_object_or_404(Paciente, pk=paciente_id, doctor=doctor)
-    video_id = request.POST.get('video_id', '').strip()
-    try:
-        scheduled_date = date.fromisoformat(request.POST.get('fecha_programada', ''))
-    except (TypeError, ValueError):
-        messages.error(request, 'Selecciona una fecha válida para la rutina.')
-        return redirect('/principal/#dashboard')
-    if scheduled_date < timezone.localdate():
-        messages.error(request, 'No se puede asignar una rutina para una fecha pasada.')
-        return redirect('/principal/#dashboard')
+    template_id = request.POST.get('plantilla', '').strip()
+    template = None
+    if template_id.isdecimal():
+        template = get_object_or_404(PlantillaRutina, pk=int(template_id), doctor=doctor)
+        if not template.activa:
+            return JsonResponse({'success': False, 'error': 'La plantilla está desactivada y no se puede asignar.'}, status=400)
+        if not template.ejercicios.exists():
+            return JsonResponse({'success': False, 'error': 'La plantilla no tiene ejercicios y no se puede asignar.'}, status=400)
 
-    video = next((item for item in load_videos() if item['video_id'] == video_id), None)
-    if not video:
-        messages.error(request, 'Selecciona una rutina válida.')
-        return redirect('/principal/#dashboard')
-
-    _, created = RutinaAsignada.objects.get_or_create(
-        paciente=paciente,
-        video_id=video['video_id'],
-        fecha_programada=scheduled_date,
-        defaults={'titulo': video['title'][:150]},
+    plantillas = PlantillaRutina.objects.filter(doctor=doctor, activa=True)
+    ejercicios = list(template.ejercicios.all()) if template else []
+    form = AssignRoutineForm(
+        request.POST,
+        plantillas=plantillas,
+        ejercicios=ejercicios,
     )
-    if not created:
-        messages.error(request, 'Esa rutina ya está asignada a ese paciente para esa fecha.')
-    else:
-        refresh_patient_progress(paciente)
-        logger.info('routine_assigned doctor_id=%s patient_id=%s video_id=%s date=%s', doctor.pk, paciente.pk, video_id, scheduled_date)
-        messages.success(request, f'Rutina asignada a {paciente.nombre}.')
-    return redirect('/principal/#dashboard')
+    if not form.is_valid():
+        error = next(
+            (message for messages_list in form.errors.values() for message in messages_list),
+            'Revisa los datos de la asignación.',
+        )
+        return JsonResponse({'success': False, 'error': error}, status=400)
+
+    if template is None or form.cleaned_data['plantilla'].pk != template.pk:
+        return JsonResponse({'success': False, 'error': 'Selecciona una plantilla activa y válida.'}, status=400)
+    if form.cleaned_data['fecha_inicio'] < timezone.localdate():
+        return JsonResponse({'success': False, 'error': 'La fecha de inicio no puede ser anterior a hoy.'}, status=400)
+
+    start_date = form.cleaned_data['fecha_inicio']
+    end_date = form.cleaned_data['fecha_fin']
+    weekdays = form.cleaned_data['dias_semana']
+    occurrence_dates = []
+    current_date = start_date
+    while current_date <= end_date:
+        if current_date.weekday() in weekdays:
+            occurrence_dates.append(current_date)
+        current_date += timedelta(days=1)
+    if not occurrence_dates:
+        return JsonResponse({'success': False, 'error': 'No hay sesiones en el intervalo con los días seleccionados.'}, status=400)
+
+    exercises = list(template.ejercicios.all())
+    with transaction.atomic():
+        assignment = RutinaAsignada.objects.create(
+            paciente=paciente,
+            video_id=exercises[0].video_id,
+            titulo=template.nombre,
+            fecha_programada=occurrence_dates[0],
+            plantilla=template,
+            fecha_inicio=start_date,
+            fecha_fin=end_date,
+            dias_semana=weekdays,
+        )
+        EjercicioRutinaAsignada.objects.bulk_create([
+            EjercicioRutinaAsignada(
+                asignacion=assignment,
+                video_id=exercise.video_id,
+                titulo=exercise.titulo,
+                orden=exercise.orden,
+                series=form.cleaned_data[f'ejercicio_{exercise.pk}_series'],
+                repeticiones=form.cleaned_data[f'ejercicio_{exercise.pk}_repeticiones'].strip(),
+                duracion_minutos=form.cleaned_data[f'ejercicio_{exercise.pk}_duracion'],
+                notas_medico=form.cleaned_data[f'ejercicio_{exercise.pk}_notas'].strip(),
+            )
+            for exercise in exercises
+        ])
+        OcurrenciaRutina.objects.bulk_create([
+            OcurrenciaRutina(asignacion=assignment, fecha=occurrence_date)
+            for occurrence_date in occurrence_dates
+        ])
+    refresh_patient_progress(paciente)
+    weekday_labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+    selected_days = '-'.join(weekday_labels[day] for day in weekdays)
+    message = (
+        f'Rutina asignada a {paciente.nombre}: {selected_days} hasta '
+        f'{end_date.strftime("%d/%m/%Y")} ({len(occurrence_dates)} sesiones).'
+    )
+    logger.info(
+        'routine_assigned doctor_id=%s patient_id=%s template_id=%s occurrences=%s',
+        doctor.pk,
+        paciente.pk,
+        template.pk,
+        len(occurrence_dates),
+    )
+    return JsonResponse({'success': True, 'message': message})
+
+
+@require_login
+@require_POST
+def complete_routine_occurrence(request, ocurrencia_id):
+    usuario = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        is_active=True,
+        role=Usuario.ROLE_PACIENTE,
+    ).first()
+    paciente = Paciente.objects.filter(usuario=usuario).first() if usuario else None
+    if not paciente:
+        return JsonResponse({'success': False, 'error': 'No se encontró tu perfil de paciente.'}, status=404)
+    occurrence = get_object_or_404(
+        OcurrenciaRutina.objects.select_related('asignacion'),
+        pk=ocurrencia_id,
+        asignacion__paciente=paciente,
+    )
+    if occurrence.completada_en:
+        return JsonResponse({'success': False, 'error': 'Esta rutina ya está marcada como completada.'}, status=400)
+
+    pain_text = request.POST.get('nivel_dolor', '').strip()
+    difficulty = request.POST.get('dificultad', '').strip()
+    comment = request.POST.get('comentario', '').strip()
+    if not pain_text.isdecimal() or not 0 <= int(pain_text) <= 10:
+        return JsonResponse({'success': False, 'error': 'El dolor debe estar entre 0 y 10.'}, status=400)
+    if difficulty not in dict(OcurrenciaRutina.DIFICULTAD_CHOICES):
+        return JsonResponse({'success': False, 'error': 'Selecciona una dificultad válida.'}, status=400)
+
+    occurrence.nivel_dolor = int(pain_text)
+    occurrence.dificultad = difficulty
+    occurrence.comentario = comment
+    occurrence.completada_en = timezone.now()
+    occurrence.save(update_fields=['nivel_dolor', 'dificultad', 'comentario', 'completada_en'])
+    refresh_patient_progress(paciente)
+    return JsonResponse({
+        'success': True,
+        'message': 'Rutina marcada como completada.',
+        'completed_at': timezone.localtime(occurrence.completada_en).isoformat(),
+    })
 
 
 @require_login
@@ -756,22 +1073,38 @@ def principal_view(request):
             refresh_patient_progress(paciente)
         patient_progress_series = paciente.get_progress_series()
     if usuario.is_paciente and paciente:
-        calendar_queryset = Sesion.objects.filter(paciente=paciente, activo=True)
+        calendar_queryset = Sesion.objects.filter(paciente=paciente)
     elif usuario.is_doctor:
-        calendar_queryset = Sesion.objects.filter(paciente__doctor=usuario, activo=True)
+        calendar_queryset = Sesion.objects.filter(paciente__doctor=usuario)
     else:
         calendar_queryset = Sesion.objects.none()
     for sesion in calendar_queryset.select_related('paciente').prefetch_related(
         'solicitudes_reagendamiento'
     ).order_by('fecha'):
         fecha_local = timezone.localtime(sesion.fecha)
-        solicitud = sesion.solicitudes_reagendamiento.first()
+        solicitudes = list(sesion.solicitudes_reagendamiento.all())
+        solicitud_pendiente = next((
+            item for item in solicitudes
+            if item.estado == SolicitudReagendamiento.ESTADO_PENDIENTE
+        ), None)
+        solicitud = solicitud_pendiente or (solicitudes[0] if solicitudes else None)
         calendar_entry = {
             'id': sesion.pk,
             'date': fecha_local.date().isoformat(),
             'time': fecha_local.strftime('%H:%M'),
             'objective': sesion.objetivo,
             'patient': sesion.paciente.nombre if usuario.is_doctor else '',
+            'status': (
+                'reagendamiento_solicitado'
+                if solicitud_pendiente and sesion.estado == Sesion.ESTADO_PROGRAMADA else sesion.estado
+            ),
+            'status_display': (
+                'Reagendamiento solicitado'
+                if solicitud_pendiente and sesion.estado == Sesion.ESTADO_PROGRAMADA else sesion.get_estado_display()
+            ),
+            'duration': sesion.duracion_minutos,
+            'location': sesion.enlace_ubicacion,
+            'note': sesion.nota_objetivo,
             'request': None,
         }
         if solicitud:
@@ -812,7 +1145,11 @@ def principal_view(request):
         completed=True,
         completed_at__isnull=False,
     ).count()
-    patient_progress = patient_progress_payload(paciente) if paciente and usuario.is_paciente else None
+    patient_progress = patient_progress_payload(paciente, videos) if paciente and usuario.is_paciente else None
+    if usuario.is_doctor:
+        routine_templates, routine_template_data = routine_template_payloads(usuario)
+    else:
+        routine_templates, routine_template_data = [], {}
 
     return render(request, 'principal.html', {
         'show_security_tips': show_security_tips,
@@ -854,6 +1191,13 @@ def principal_view(request):
             {'video_id': video['video_id'], 'title': video['title']}
             for video in videos
         ] if usuario.is_doctor else [],
+        'routine_videos': [
+            {'video_id': video['video_id'], 'title': video['title'], 'catalog_index': index}
+            for index, video in enumerate(videos)
+        ] if usuario.is_doctor else [],
+        'routine_templates': routine_templates,
+        'routine_template_data': routine_template_data,
+        'routine_weekdays': [(0, 'L'), (1, 'M'), (2, 'X'), (3, 'J'), (4, 'V'), (5, 'S'), (6, 'D')],
         'recent_videos': recent_history['items'],
         'recent_history_pagination': recent_history,
     })
@@ -1022,6 +1366,7 @@ def paciente_detail_api(request, paciente_id):
 
 @require_login
 @require_POST
+@transaction.atomic
 def reschedule_session_view(request, paciente_id, sesion_id):
     doctor = Usuario.objects.filter(
         email=request.session.get('current_user', ''),
@@ -1032,13 +1377,13 @@ def reschedule_session_view(request, paciente_id, sesion_id):
         return JsonResponse({'success': False, 'error': 'Solo el especialista asignado puede reagendar esta cita.'}, status=403)
 
     sesion = get_object_or_404(
-        Sesion,
+        Sesion.objects.select_for_update(),
         pk=sesion_id,
         paciente_id=paciente_id,
         paciente__doctor=doctor,
     )
-    if not sesion.activo:
-        return JsonResponse({'success': False, 'error': 'Esta cita ya no está activa.'}, status=409)
+    if sesion.estado != Sesion.ESTADO_PROGRAMADA:
+        return JsonResponse({'success': False, 'error': 'Solo se pueden reagendar sesiones programadas.'}, status=409)
     if SolicitudReagendamiento.objects.filter(
         sesion=sesion,
         estado=SolicitudReagendamiento.ESTADO_PENDIENTE,
@@ -1055,6 +1400,15 @@ def reschedule_session_view(request, paciente_id, sesion_id):
             'error': form.errors.get('fecha', ['Ingresa una fecha válida.'])[0],
         }, status=400)
 
+    conflicto = session_schedule_conflict(
+        sesion.paciente,
+        form.cleaned_data['fecha'],
+        sesion.duracion_minutos,
+        exclude_session_id=sesion.pk,
+    )
+    if conflicto:
+        return JsonResponse({'success': False, 'error': conflicto}, status=409)
+
     sesion.fecha = form.cleaned_data['fecha']
     sesion.save(update_fields=['fecha'])
     fecha_local = timezone.localtime(sesion.fecha)
@@ -1064,6 +1418,32 @@ def reschedule_session_view(request, paciente_id, sesion_id):
         'fecha_local': fecha_local.strftime('%Y-%m-%dT%H:%M'),
         'fecha_display': fecha_local.strftime('%d/%m/%Y %H:%M'),
     })
+
+
+def session_schedule_conflict(paciente, fecha, duracion_minutos, exclude_session_id=None):
+    candidate_end = fecha + timedelta(minutes=duracion_minutos)
+    if paciente.doctor_id:
+        Usuario.objects.select_for_update().get(pk=paciente.doctor_id)
+    overlapping_sessions = Sesion.objects.filter(
+        estado=Sesion.ESTADO_PROGRAMADA,
+    ).filter(
+        Q(paciente=paciente) | Q(paciente__doctor_id=paciente.doctor_id)
+        if paciente.doctor_id else Q(paciente=paciente)
+    )
+    if exclude_session_id is not None:
+        overlapping_sessions = overlapping_sessions.exclude(pk=exclude_session_id)
+
+    for existing in overlapping_sessions.select_related('paciente'):
+        existing_end = existing.fecha + timedelta(minutes=existing.duracion_minutos)
+        if fecha < existing_end and existing.fecha < candidate_end:
+            same_patient = existing.paciente_id == paciente.pk
+            same_doctor = bool(paciente.doctor_id and existing.paciente.doctor_id == paciente.doctor_id)
+            if same_patient and same_doctor:
+                return 'El horario se cruza con otra sesión del paciente y del médico asignado.'
+            if same_patient:
+                return 'El paciente ya tiene otra sesión en ese horario.'
+            return 'El médico ya tiene otra sesión en ese horario.'
+    return None
 
 
 def notify_reschedule_patient(solicitud):
@@ -1119,7 +1499,12 @@ def create_reschedule_request(request, sesion_id):
     ).first()
     if not paciente:
         return JsonResponse({'success': False, 'error': 'No se encontró tu expediente de paciente.'}, status=404)
-    sesion = get_object_or_404(Sesion, pk=sesion_id, paciente=paciente, activo=True)
+    sesion = get_object_or_404(
+        Sesion,
+        pk=sesion_id,
+        paciente=paciente,
+        estado=Sesion.ESTADO_PROGRAMADA,
+    )
     if sesion.fecha <= timezone.now():
         return JsonResponse({'success': False, 'error': 'Solo puedes solicitar cambios para sesiones futuras.'}, status=409)
 
@@ -1214,8 +1599,22 @@ def review_reschedule_request(request, solicitud_id):
                     'success': False,
                     'error': 'La fecha propuesta ya pasó; solicita una nueva fecha.',
                 }, status=409)
-            solicitud.sesion.fecha = fecha_aprobada
-            solicitud.sesion.save(update_fields=['fecha'])
+            sesion = Sesion.objects.select_for_update().get(pk=solicitud.sesion_id)
+            if sesion.estado != Sesion.ESTADO_PROGRAMADA:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Esta sesión ya no está programada y no puede reagendarse.',
+                }, status=409)
+            conflicto = session_schedule_conflict(
+                sesion.paciente,
+                fecha_aprobada,
+                sesion.duracion_minutos,
+                exclude_session_id=sesion.pk,
+            )
+            if conflicto:
+                return JsonResponse({'success': False, 'error': conflicto}, status=409)
+            sesion.fecha = fecha_aprobada
+            sesion.save(update_fields=['fecha'])
             solicitud.estado = SolicitudReagendamiento.ESTADO_APROBADA
         else:
             solicitud.estado = SolicitudReagendamiento.ESTADO_RECHAZADA
@@ -1270,8 +1669,22 @@ def respond_to_reschedule_proposal(request, solicitud_id):
                 'success': False,
                 'error': 'La fecha propuesta ya pasó; solicita una nueva fecha.',
             }, status=409)
-        solicitud.sesion.fecha = solicitud.fecha_alternativa
-        solicitud.sesion.save(update_fields=['fecha'])
+        sesion = Sesion.objects.select_for_update().get(pk=solicitud.sesion_id)
+        if sesion.estado != Sesion.ESTADO_PROGRAMADA:
+            return JsonResponse({
+                'success': False,
+                'error': 'Esta sesión ya no está programada y no puede reagendarse.',
+            }, status=409)
+        conflicto = session_schedule_conflict(
+            sesion.paciente,
+            solicitud.fecha_alternativa,
+            sesion.duracion_minutos,
+            exclude_session_id=sesion.pk,
+        )
+        if conflicto:
+            return JsonResponse({'success': False, 'error': conflicto}, status=409)
+        sesion.fecha = solicitud.fecha_alternativa
+        sesion.save(update_fields=['fecha'])
         solicitud.estado = SolicitudReagendamiento.ESTADO_APROBADA
     elif accion == 'rechazar':
         solicitud.estado = SolicitudReagendamiento.ESTADO_RECHAZADA
@@ -1356,15 +1769,25 @@ def add_therapeutic_goal(request, paciente_id):
 
 @require_login
 @require_POST
+@transaction.atomic
 def schedule_session(request, paciente_id):
     paciente = dashboard_patient_for_doctor(request, paciente_id)
     if not paciente:
         return HttpResponseForbidden('Solo el especialista asignado puede agendar sesiones.')
 
-    form = ScheduleSessionForm(request.POST)
+    form = ScheduleSessionForm(request.POST, paciente=paciente)
     if form.is_valid():
         session = form.save(commit=False)
         session.paciente = paciente
+        session.objetivo = session.objetivo_terapeutico.nombre
+        conflicto = session_schedule_conflict(
+            paciente,
+            session.fecha,
+            session.duracion_minutos,
+        )
+        if conflicto:
+            messages.error(request, 'No se pudo agendar la sesión: ' + conflicto)
+            return redirect('/principal/#dashboard')
         session.save()
         refresh_patient_progress(paciente)
         messages.success(request, f'Sesión agendada para {paciente.nombre}.')
@@ -1377,6 +1800,7 @@ def schedule_session(request, paciente_id):
 
 @require_login
 @require_POST
+@transaction.atomic
 def complete_session(request, sesion_id):
     doctor = Usuario.objects.filter(
         email=request.session.get('current_user', ''),
@@ -1386,32 +1810,123 @@ def complete_session(request, sesion_id):
     if not doctor:
         return HttpResponseForbidden('Solo un especialista puede registrar sesiones.')
 
-    session = get_object_or_404(Sesion, pk=sesion_id, paciente__doctor=doctor, activo=True)
-    if session.realizada:
-        messages.info(request, 'La sesión ya estaba registrada como realizada.')
-    elif session.fecha > timezone.now():
-        return HttpResponseForbidden('No se puede registrar como realizada una sesión futura.')
-    else:
-        session.realizada = True
-        session.realizada_en = timezone.now()
-        session.save(update_fields=['realizada', 'realizada_en'])
-        refresh_patient_progress(session.paciente)
-        messages.success(request, f'Sesión de {session.paciente.nombre} registrada como realizada.')
+    session = get_object_or_404(
+        Sesion.objects.select_for_update(),
+        pk=sesion_id,
+        paciente__doctor=doctor,
+    )
+    if session.estado != Sesion.ESTADO_PROGRAMADA:
+        messages.info(request, 'La sesión ya no está programada.')
+        return redirect('/principal/#dashboard')
+
+    new_status = request.POST.get('estado', Sesion.ESTADO_COMPLETADA)
+    if new_status not in {
+        Sesion.ESTADO_COMPLETADA,
+        Sesion.ESTADO_CANCELADA,
+        Sesion.ESTADO_NO_ASISTIO,
+    }:
+        return HttpResponseForbidden('Selecciona un estado válido para la sesión.')
+    if new_status in {Sesion.ESTADO_COMPLETADA, Sesion.ESTADO_NO_ASISTIO} and session.fecha > timezone.now():
+        return HttpResponseForbidden('No se puede registrar este estado antes de la fecha de la sesión.')
+
+    session.estado = new_status
+    session.realizada = new_status == Sesion.ESTADO_COMPLETADA
+    session.activo = new_status != Sesion.ESTADO_CANCELADA
+    session.realizada_en = timezone.now() if session.realizada else None
+    session.save(update_fields=['estado', 'realizada', 'activo', 'realizada_en'])
+    refresh_patient_progress(session.paciente)
+    status_label = session.get_estado_display().lower()
+    messages.success(request, f'Sesión de {session.paciente.nombre} actualizada: {status_label}.')
     return redirect('/principal/#dashboard')
 
 
 def paciente_detail_payload(paciente):
+    evaluations = [
+        {
+            'date': timezone.localtime(item.fecha).strftime('%d/%m/%Y %H:%M'),
+            'date_iso': timezone.localtime(item.fecha).isoformat(),
+            'pain': item.nivel_dolor,
+            'metric': item.metrica,
+            'value': float(item.valor_actual) if item.valor_actual is not None else None,
+            'unit': item.unidad,
+        }
+        for item in paciente.evaluaciones.order_by('-fecha', '-pk')
+    ]
+    goals = [
+        {
+            'id': item.pk,
+            'name': item.nombre,
+            'metric': item.metrica,
+            'direction': item.get_direccion_display(),
+            'target': float(item.valor_objetivo),
+            'unit': item.unidad,
+        }
+        for item in paciente.objetivos.all()
+    ]
+    routines = []
+    assignments = paciente.rutinas_asignadas.prefetch_related(
+        'ejercicios',
+        'ocurrencias',
+    ).order_by('-fecha_inicio', '-pk')
+    for assignment in assignments:
+        routines.append({
+            'title': assignment.titulo,
+            'start': assignment.fecha_inicio.strftime('%d/%m/%Y'),
+            'end': assignment.fecha_fin.strftime('%d/%m/%Y'),
+            'weekdays': assignment.dias_semana,
+            'exercises': [
+                {
+                    'title': exercise.titulo,
+                    'series': exercise.series,
+                    'repetitions': exercise.repeticiones,
+                    'duration': exercise.duracion_minutos,
+                    'notes': exercise.notas_medico,
+                }
+                for exercise in assignment.ejercicios.all()
+            ],
+            'occurrences': [
+                {
+                    'date': occurrence.fecha.strftime('%d/%m/%Y'),
+                    'completed': bool(occurrence.completada_en),
+                    'pain': occurrence.nivel_dolor,
+                    'difficulty': occurrence.get_dificultad_display(),
+                    'comment': occurrence.comentario,
+                }
+                for occurrence in assignment.ocurrencias.all()
+            ],
+        })
+
     sesiones = []
-    for sesion in paciente.sesiones.all():
+    for sesion in paciente.sesiones.prefetch_related('solicitudes_reagendamiento').all():
         fecha_local = timezone.localtime(sesion.fecha)
+        solicitud_pendiente = next((
+            item for item in sesion.solicitudes_reagendamiento.all()
+            if item.estado == SolicitudReagendamiento.ESTADO_PENDIENTE
+        ), None)
         sesiones.append({
             'id': sesion.pk,
             'fecha': sesion.fecha.isoformat(),
             'fecha_local': fecha_local.strftime('%Y-%m-%dT%H:%M'),
             'fecha_display': fecha_local.strftime('%d/%m/%Y %H:%M'),
             'objetivo': sesion.objetivo,
+            'duracion_minutos': sesion.duracion_minutos,
+            'enlace_ubicacion': sesion.enlace_ubicacion,
+            'estado': sesion.estado,
+            'estado_display': sesion.get_estado_display(),
             'avance': sesion.avance,
             'activo': sesion.activo,
+            'nota_objetivo': sesion.nota_objetivo,
+            'solicitud_pendiente': (
+                {
+                    'id': solicitud_pendiente.pk,
+                    'motivo': solicitud_pendiente.motivo,
+                    'fecha_actual': fecha_local.strftime('%d/%m/%Y %H:%M'),
+                    'fecha_solicitada': timezone.localtime(
+                        solicitud_pendiente.fecha_propuesta,
+                    ).strftime('%d/%m/%Y %H:%M'),
+                }
+                if solicitud_pendiente else None
+            ),
         })
 
     return {
@@ -1426,6 +1941,9 @@ def paciente_detail_payload(paciente):
         'color_estado': paciente.color_estado,
         'doctor_id': paciente.doctor_id,
         'historial_avance': paciente.get_progress_series(),
+        'evaluaciones': evaluations,
+        'objetivos': goals,
+        'rutinas': routines,
         'sesiones': sesiones,
     }
 
@@ -1558,6 +2076,21 @@ def video_detail_view(request, video_index):
         user_email=request.session.get('current_user', ''), video_id=video['video_id'],
         completed=True, completed_at__date=timezone.localdate(),
     ).exists()
+    assigned_routine_occurrence = None
+    if usuario and usuario.role == Usuario.ROLE_PACIENTE:
+        paciente = Paciente.objects.filter(usuario=usuario).first()
+        occurrences = OcurrenciaRutina.objects.filter(
+            asignacion__paciente=paciente,
+            asignacion__ejercicios__video_id=video['video_id'],
+            fecha=timezone.localdate(),
+        ).select_related('asignacion').order_by('pk')
+        assigned_routine_occurrence = (
+            occurrences.filter(completada_en__isnull=True).first()
+            or occurrences.filter(completada_en__isnull=False).first()
+        ) if paciente else None
+        completed_today = completed_today or bool(
+            assigned_routine_occurrence and assigned_routine_occurrence.completada_en
+        )
     VideoView.objects.create(
         user_email=request.session.get('current_user', ''),
         video_id=video['video_id'],
@@ -1578,6 +2111,7 @@ def video_detail_view(request, video_index):
         'current_user_email': request.session.get('current_user', ''),
         'usuario': usuario,
         'completed_today': completed_today,
+        'assigned_routine_occurrence': assigned_routine_occurrence,
     })
 
 
@@ -1595,7 +2129,7 @@ def complete_video_view(request, video_index):
         completed_at__date=timezone.localdate(),
     ).order_by('-completed_at').first()
     if completed_today:
-        if completed_today.rutina_asignada_id:
+        if completed_today.rutina_asignada_id and not completed_today.rutina_asignada.plantilla_id:
             assigned_routine = completed_today.rutina_asignada
             assigned_routine.completada_en = None
             assigned_routine.save(update_fields=['completada_en'])
@@ -1619,6 +2153,7 @@ def complete_video_view(request, video_index):
         video_id=video['video_id'],
         fecha_programada__lte=timezone.localdate(),
         completada_en__isnull=True,
+        plantilla__isnull=True,
     ).order_by('fecha_programada', 'pk').first() if paciente else None
     if viewed_video:
         viewed_video.completed = True

@@ -4,6 +4,7 @@
   id="patientProgressView"
   data-view="progreso"
   data-refresh-url="{% url 'patient_progress_data' %}"
+  data-complete-routine-url="{% url 'complete_routine_occurrence' 0 %}"
 >
   <header class="page-head patient-progress-heading">
     <div>
@@ -91,13 +92,13 @@
       <span class="summary-symbol" aria-hidden="true">◷</span>
       <p>Sesiones realizadas</p>
       <strong><span id="patientSessionsCompleted">{{ patient_progress.sessionsCompleted }}</span><small> / <span id="patientSessionsPlanned">{{ patient_progress.sessionsPlanned }}</span></small></strong>
-      <span>sesiones programadas</span>
+      <span>sesiones con fecha vigente cumplida</span>
     </article>
     <article class="patient-progress-card patient-summary-card summary-routines">
       <span class="summary-symbol" aria-hidden="true">✓</span>
       <p>Rutinas completadas</p>
       <strong><span id="patientRoutinesCompleted">{{ patient_progress.routinesCompleted }}</span><small> / <span id="patientRoutinesAssigned">{{ patient_progress.routinesAssigned }}</span></small></strong>
-      <span>rutinas asignadas</span>
+      <span>rutinas programadas hasta hoy</span>
     </article>
     <article class="patient-progress-card patient-summary-card summary-streak">
       <span class="summary-symbol" aria-hidden="true">↗</span>

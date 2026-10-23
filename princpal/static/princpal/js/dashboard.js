@@ -14,11 +14,14 @@
   const rescheduleRows = byId('dashboardRescheduleRequests');
   const rescheduleEmpty = byId('dashboardRescheduleRequestsEmpty');
   const rescheduleData = byId('dashboard-reschedule-request-data');
+  const routineTemplateDataElement = byId('routine-template-data');
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const colors = ['#119b72', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
   let patients = [];
   let rescheduleRequests = [];
+  let routineTemplates = {};
   let refreshing = false;
+  let profilePatientId = '';
 
   try {
     patients = JSON.parse(dataElement.textContent || '[]');
@@ -29,6 +32,11 @@
     rescheduleRequests = JSON.parse(rescheduleData?.textContent || '[]');
   } catch (error) {
     console.error('No se pudieron leer las solicitudes de reagendamiento.', error);
+  }
+  try {
+    routineTemplates = JSON.parse(routineTemplateDataElement?.textContent || '{}');
+  } catch (error) {
+    console.error('No se pudieron leer las plantillas de rutina.', error);
   }
 
   const svgElement = (name, attributes = {}, text = '') => {
@@ -43,11 +51,11 @@
   });
 
   const formatDate = (date) => date
-    ? new Intl.DateTimeFormat('es-SV', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(date))
+    ? new Intl.DateTimeFormat('es-SV', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(date))
     : 'Sin registro';
   const formatDateTime = (date) => date
     ? new Intl.DateTimeFormat('es-SV', {
-      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
     }).format(new Date(date))
     : 'Sin registro';
 
@@ -75,7 +83,7 @@
       visibleProgress: patient.progressHistory
         .filter((point) => withinDateRange(point.fecha))
         .at(-1)?.avance ?? (dateFrom.value || dateTo.value ? null : patient.progress),
-      visibleSessions: patient.sessions.filter((session) => withinDateRange(session.date)),
+      visibleSessions: patient.sessions.filter((session) => withinDateRange(session.scheduledDate || session.date)),
       visibleEvaluations: patientEvaluations(patient),
       visibleGoals: patient.goals.filter((goal) => !dateTo.value || goal.createdAt.slice(0, 10) <= dateTo.value),
     }));
@@ -106,13 +114,60 @@
       patientFilter.value = selectedPatient;
     }
     document.querySelectorAll('.dashboard-form [name="patient_id"]').forEach((select) => {
-      const selected = select.value;
+      const selected = profilePatientId || select.value;
       select.replaceChildren(new Option('Selecciona un paciente', ''));
       patients.forEach((patient) => select.add(new Option(patient.name, String(patient.id))));
       if (patients.some((patient) => String(patient.id) === selected)) select.value = selected;
-      select.disabled = patients.length === 0;
+      select.disabled = Boolean(profilePatientId) || patients.length === 0;
+      select.closest('label')?.classList.toggle('profile-patient-selector', Boolean(profilePatientId));
+      if (select.form?.id === 'sessionForm') {
+        updateSessionGoalOptions(select.value, select.form.elements.namedItem('objetivo_terapeutico'));
+      }
     });
   };
+
+  const updateSessionGoalOptions = (patientId, goalSelect) => {
+    const selectedRecord = patients.find((patient) => String(patient.id) === patientId);
+    const goals = selectedRecord?.goals || [];
+    goalSelect.replaceChildren(new Option(
+      goals.length ? 'Selecciona un objetivo' : 'Este paciente aún no tiene objetivos',
+      '',
+    ));
+    goals.forEach((goal) => goalSelect.add(new Option(goal.name, String(goal.id))));
+    goalSelect.disabled = goals.length === 0;
+  };
+
+  const setProfilePatient = (patientId, patientName) => {
+    profilePatientId = patientId || '';
+    const context = byId('dashboardProfileContext');
+    context.hidden = !profilePatientId;
+    byId('dashboardProfilePatientName').textContent = patientName || '';
+    root.classList.toggle('has-locked-profile-patient', Boolean(profilePatientId));
+    updateSelectOptions();
+    document.querySelectorAll('.dashboard-form [name="patient_id"]').forEach((select) => {
+      select.dispatchEvent(new Event('change'));
+    });
+  };
+
+  document.addEventListener('patient-profile-open', (event) => {
+    setProfilePatient(event.detail.patientId, event.detail.patientName);
+  });
+  document.addEventListener('patient-profile-exit', () => setProfilePatient('', ''));
+  document.addEventListener('patient-profile-action', (event) => {
+    if (!profilePatientId) return;
+    document.querySelector(`[data-nav="dashboard"]`)?.click();
+    const form = byId(event.detail.formName);
+    form?.scrollIntoView({
+      behavior: document.documentElement.dataset.motion === 'off' ? 'auto' : 'smooth',
+      block: 'center',
+    });
+    form?.querySelector('input:not([type="hidden"]), select:not([name="patient_id"]), textarea')?.focus({
+      preventScroll: true,
+    });
+  });
+  byId('dashboardProfileUnlock')?.addEventListener('click', () => {
+    setProfilePatient('', '');
+  });
 
   const drawDonut = (svgId, legendId, completed, total, completedLabel, pendingLabel) => {
     const svg = byId(svgId);
@@ -187,7 +242,9 @@
         svgElement('text', { x: left - 12, y: y + 4, 'text-anchor': 'end', class: 'chart-axis-label' }, pain),
       );
     }
-    const dateFormatter = new Intl.DateTimeFormat('es-SV', { day: '2-digit', month: 'short' });
+    const dateFormatter = new Intl.DateTimeFormat('es-SV', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+    });
     datedRecords.forEach((patient, index) => {
       const color = colors[index % colors.length];
       const coordinates = patient.points.map((point, pointIndex) => ({
@@ -283,10 +340,15 @@
   const renderTable = (records, goals) => {
     patientRows.replaceChildren();
     const sorted = [...records];
-    const lastCompletedDate = (patient) => patient.visibleSessions
+    const isSessionDue = (session) => new Date(session.scheduledDate || session.date) <= new Date();
+    const attendanceSessions = (patient) => patient.visibleSessions.filter(isSessionDue);
+    const lastCompletedDate = (patient) => attendanceSessions(patient)
       .filter((session) => session.completed)
       .reduce((latest, session) => !latest || session.date > latest ? session.date : latest, '');
-    const sessionCounts = (patient) => patient.visibleSessions.reduce((count, session) => count + Number(session.completed), 0);
+    const sessionCounts = (patient) => attendanceSessions(patient).reduce(
+      (count, session) => count + Number(session.completed),
+      0,
+    );
     const sortValue = sortSelect.value;
     sorted.sort((left, right) => {
       if (sortValue === 'progress_asc') return (left.visibleProgress ?? 101) - (right.visibleProgress ?? 101)
@@ -301,7 +363,7 @@
     const latestPain = (patient) => patient.visibleEvaluations.at(-1);
     sorted.forEach((patient) => {
       const completed = sessionCounts(patient);
-      const total = patient.visibleSessions.length;
+      const total = attendanceSessions(patient).length;
       const lastSession = lastCompletedDate(patient);
       const pain = latestPain(patient);
       const row = document.createElement('tr');
@@ -333,7 +395,7 @@
     });
 
     const pending = records.flatMap((patient) => patient.visibleSessions
-      .filter((session) => !session.completed)
+      .filter((session) => session.status === 'programada')
       .map((session) => ({ patient, session })))
       .sort((left, right) => left.session.scheduledDate.localeCompare(right.session.scheduledDate));
     pendingRows.replaceChildren();
@@ -346,31 +408,70 @@
       objective.textContent = session.objective;
       const date = document.createElement('td');
       date.textContent = formatDateTime(session.scheduledDate);
+      const status = document.createElement('td');
+      status.textContent = 'Programada';
       const actionCell = document.createElement('td');
-      if (new Date(session.scheduledDate) <= new Date()) {
-        const form = document.createElement('form');
-        form.method = 'post';
-        form.action = root.dataset.completeUrl.replace('/0/', `/${session.id}/`);
-        form.className = 'session-complete-form';
-        const csrf = document.createElement('input');
-        csrf.type = 'hidden';
-        csrf.name = 'csrfmiddlewaretoken';
-        csrf.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
+      const form = document.createElement('form');
+      form.method = 'post';
+      form.action = root.dataset.completeUrl.replace('/0/', `/${session.id}/`);
+      form.className = 'session-complete-form';
+      const csrf = document.createElement('input');
+      csrf.type = 'hidden';
+      csrf.name = 'csrfmiddlewaretoken';
+      csrf.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
+      form.append(csrf);
+      const addStatusButton = (value, label) => {
         const button = document.createElement('button');
         button.type = 'submit';
+        button.name = 'estado';
+        button.value = value;
         button.className = 'session-complete-button';
-        button.textContent = 'Marcar realizada';
-        form.append(csrf, button);
-        actionCell.append(form);
-      } else {
-        actionCell.textContent = 'Próxima sesión';
+        button.textContent = label;
+        form.append(button);
+      };
+      if (new Date(session.scheduledDate) <= new Date()) {
+        addStatusButton('completada', 'Marcar completada');
+        addStatusButton('no_asistio', 'No asistió');
       }
-      row.append(patientName, objective, date, actionCell);
+      if (session.status === 'programada') {
+        addStatusButton('cancelada', 'Cancelar');
+      }
+      actionCell.append(form);
+      row.append(patientName, objective, date, status, actionCell);
       pendingRows.append(row);
     });
     byId('dashboardEmpty').hidden = sorted.length > 0;
     byId('dashboardSessionsEmpty').hidden = pending.length > 0;
     byId('dashboardPatientCount').textContent = `${sorted.length} ${sorted.length === 1 ? 'paciente' : 'pacientes'}`;
+  };
+
+  const renderRoutineFeedback = (records) => {
+    const tbody = byId('dashboardRoutineFeedback');
+    const empty = byId('dashboardRoutineFeedbackEmpty');
+    if (!tbody || !empty) return;
+    const feedback = records.flatMap((patient) => (patient.routineFeedback || [])
+      .filter((item) => withinDateRange(item.date))
+      .map((item) => ({ ...item, patientName: patient.name })))
+      .sort((left, right) => right.date.localeCompare(left.date));
+    tbody.replaceChildren();
+    feedback.forEach((item) => {
+      const row = document.createElement('tr');
+      [
+        item.patientName,
+        item.routine,
+        item.dateDisplay,
+        item.pain === null ? '—' : `${item.pain} / 10`,
+        item.difficulty || '—',
+        item.comment || '—',
+      ].forEach((value, index) => {
+        const cell = index === 0 ? document.createElement('th') : document.createElement('td');
+        if (index === 0) cell.scope = 'row';
+        cell.textContent = value;
+        row.append(cell);
+      });
+      tbody.append(row);
+    });
+    empty.hidden = feedback.length > 0;
   };
 
   const renderRescheduleRequests = () => {
@@ -443,9 +544,9 @@
     }
   };
 
-  rescheduleRows?.addEventListener('click', async (event) => {
+  document.addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-request-action]');
-    if (!button) return;
+    if (!button || !button.closest('#dashboardView, #doctorRecordView')) return;
     const controls = button.closest('.reschedule-review-actions');
     const alternative = controls.querySelector('input[type="datetime-local"]');
     const responseInput = controls.querySelector('input[type="text"]');
@@ -483,7 +584,8 @@
     const records = filteredPatients();
     const goals = goalResults(records);
     const sessions = records.flatMap((patient) => patient.visibleSessions);
-    const completedSessions = sessions.filter((session) => session.completed).length;
+    const dueSessions = sessions.filter((session) => new Date(session.scheduledDate || session.date) <= new Date());
+    const completedSessions = dueSessions.filter((session) => session.completed).length;
     const currentPain = records.map((patient) => patient.visibleEvaluations.at(-1)?.pain).filter(Number.isFinite);
     const painAverage = currentPain.length
       ? currentPain.reduce((total, pain) => total + pain, 0) / currentPain.length
@@ -507,23 +609,24 @@
     const chartPatients = records.map((patient) => ({ ...patient, visibleEvaluations: patient.visibleEvaluations }));
     drawPainChart(chartPatients);
     drawDonut('goalsChart', 'goalsLegend', completedGoals, goals.length, 'Completados', 'Pendientes');
-    drawDonut('sessionsChart', 'sessionsLegend', completedSessions, sessions.length, 'Realizadas', 'Planificadas');
+    drawDonut('sessionsChart', 'sessionsLegend', completedSessions, dueSessions.length, 'Atendidas', 'Programadas vencidas');
     drawProgressChart(records);
     drawComparisonChart(goals);
     renderTable(records, goals);
+    renderRoutineFeedback(records);
     renderRescheduleRequests();
   };
 
-  document.querySelectorAll('.dashboard-form').forEach((form) => {
-    const patientSelect = form.elements.namedItem('patient_id');
-    const scheduledDate = form.elements.namedItem('fecha_programada');
-    if (scheduledDate) {
-      const todayKey = root.dataset.today;
-      scheduledDate.min = todayKey;
-      scheduledDate.value = todayKey;
-    }
+  document.querySelectorAll('.dashboard-form [name="patient_id"]').forEach((patientSelect) => {
+    const form = patientSelect.form;
     patientSelect.addEventListener('change', () => {
       form.action = form.dataset.actionTemplate.replace('/0/', `/${patientSelect.value}/`);
+      if (form.id === 'sessionForm') {
+        updateSessionGoalOptions(
+          patientSelect.value,
+          form.elements.namedItem('objetivo_terapeutico'),
+        );
+      }
     });
     form.addEventListener('submit', (event) => {
       if (!patientSelect.value) {
@@ -534,6 +637,237 @@
     });
     patientSelect.addEventListener('input', () => patientSelect.setCustomValidity(''));
   });
+
+  const routineForm = byId('routineForm');
+  const routineTemplateSelect = byId('routineTemplateSelect');
+  const doseList = byId('routineDoseList');
+  const scheduleSummary = byId('routineScheduleSummary');
+  const assignmentMessage = byId('routineAssignmentMessage');
+  const routineStart = routineForm.elements.namedItem('fecha_inicio');
+  const routineEnd = routineForm.elements.namedItem('fecha_fin');
+  const dayCheckboxes = [...routineForm.querySelectorAll('[name="dias_semana"]')];
+  const formatLocalDate = (value) => {
+    const [year, month, day] = value.split('-');
+    return `${day}/${month}/${year}`;
+  };
+  const updateScheduleSummary = () => {
+    const selectedDays = dayCheckboxes
+      .filter((checkbox) => checkbox.checked)
+      .map((checkbox) => Number(checkbox.value));
+    const start = routineStart.value;
+    const end = routineEnd.value;
+    if (!start || !end || !selectedDays.length) {
+      scheduleSummary.textContent = 'Selecciona fechas y días para ver el número de sesiones.';
+      routineEnd.setCustomValidity('');
+      return;
+    }
+    if (end < start) {
+      routineEnd.setCustomValidity('La fecha de fin no puede ser anterior a la fecha de inicio.');
+      scheduleSummary.textContent = 'La fecha de fin no puede ser anterior a la fecha de inicio.';
+      return;
+    }
+    routineEnd.setCustomValidity('');
+    const [startYear, startMonth, startDay] = start.split('-').map(Number);
+    const [endYear, endMonth, endDay] = end.split('-').map(Number);
+    const current = new Date(startYear, startMonth - 1, startDay);
+    const last = new Date(endYear, endMonth - 1, endDay);
+    let count = 0;
+    while (current <= last) {
+      const weekday = (current.getDay() + 6) % 7;
+      if (selectedDays.includes(weekday)) count += 1;
+      current.setDate(current.getDate() + 1);
+    }
+    scheduleSummary.textContent = `${count} sesiones entre ${formatLocalDate(start)} y ${formatLocalDate(end)}`;
+  };
+  const renderRoutineExercises = () => {
+    doseList.replaceChildren();
+    const template = routineTemplates[routineTemplateSelect.value];
+    if (!template || !template.active || !template.exercises.length) {
+      const empty = document.createElement('p');
+      empty.className = 'routine-dose-empty';
+      empty.textContent = template && !template.active
+        ? 'Esta plantilla está desactivada y no se puede asignar.'
+        : 'Selecciona una plantilla con ejercicios para indicar la dosis.';
+      doseList.append(empty);
+      return;
+    }
+    template.exercises.forEach((exercise) => {
+      const card = document.createElement('section');
+      card.className = 'routine-exercise-card';
+      const title = document.createElement('h4');
+      title.textContent = exercise.title;
+      const fields = document.createElement('div');
+      fields.className = 'routine-exercise-dose-row';
+      const field = (labelText, suffix, type, value, placeholder) => {
+        const label = document.createElement('label');
+        label.textContent = labelText;
+        const input = document.createElement(type === 'textarea' ? 'textarea' : 'input');
+        input.name = `ejercicio_${exercise.id}_${suffix}`;
+        if (type !== 'textarea') input.type = type;
+        if (type === 'number') {
+          input.min = suffix === 'series' || suffix === 'duracion' ? '1' : '0';
+          if (value !== '') input.value = value;
+          if (suffix === 'series') input.required = true;
+        } else if (value) {
+          input.value = value;
+        }
+        input.placeholder = placeholder;
+        label.append(input);
+        return label;
+      };
+      fields.append(
+        field('Series', 'series', 'number', '3', 'Ej. 3'),
+        field('Repeticiones', 'repeticiones', 'text', '10', 'Ej. 10 por lado'),
+        field('Duración (minutos)', 'duracion', 'number', '', 'Ej. 15'),
+      );
+      const notes = field(
+        'Notas del médico',
+        'notas',
+        'textarea',
+        '',
+        'Ej. Detener si el dolor supera 5/10',
+      );
+      card.append(title, fields, notes);
+      doseList.append(card);
+    });
+  };
+
+  const updateRoutineAction = () => {
+    const patientSelect = routineForm.elements.namedItem('patient_id');
+    if (patientSelect.value) {
+      routineForm.action = routineForm.dataset.actionTemplate.replace('/0/', `/${patientSelect.value}/`);
+    }
+  };
+  routineForm.elements.namedItem('patient_id').addEventListener('change', updateRoutineAction);
+  routineTemplateSelect.addEventListener('change', renderRoutineExercises);
+  [routineStart, routineEnd].forEach((input) => {
+    input.min = root.dataset.today;
+    input.addEventListener('input', updateScheduleSummary);
+    input.addEventListener('change', updateScheduleSummary);
+  });
+  dayCheckboxes.forEach((checkbox) => checkbox.addEventListener('change', updateScheduleSummary));
+  document.querySelectorAll('[data-weekday-preset]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const presets = {
+        weekdays: [0, 1, 2, 3, 4],
+        alternate: [0, 2, 4],
+        all: [0, 1, 2, 3, 4, 5, 6],
+      };
+      const days = presets[button.dataset.weekdayPreset];
+      dayCheckboxes.forEach((checkbox) => {
+        checkbox.checked = days.includes(Number(checkbox.value));
+      });
+      updateScheduleSummary();
+    });
+  });
+  routineForm.addEventListener('input', (event) => {
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      event.target.setCustomValidity('');
+    }
+  });
+  routineForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    assignmentMessage.hidden = true;
+    assignmentMessage.classList.remove('is-error');
+    const patientSelect = routineForm.elements.namedItem('patient_id');
+    if (!patientSelect.value) {
+      patientSelect.setCustomValidity('Selecciona un paciente asignado.');
+      patientSelect.reportValidity();
+      return;
+    }
+    if (!routineTemplateSelect.value || !routineTemplates[routineTemplateSelect.value]?.active
+      || !routineTemplates[routineTemplateSelect.value]?.exercises.length) {
+      routineTemplateSelect.setCustomValidity('Selecciona una plantilla activa que tenga ejercicios.');
+      routineTemplateSelect.reportValidity();
+      return;
+    }
+    if (!dayCheckboxes.some((checkbox) => checkbox.checked)) {
+      window.alert('Selecciona al menos un día de la semana.');
+      return;
+    }
+    updateScheduleSummary();
+    if (routineEnd.validationMessage) {
+      routineEnd.reportValidity();
+      return;
+    }
+    for (const card of doseList.querySelectorAll('.routine-exercise-card')) {
+      const repetitions = card.querySelector('[name$="_repeticiones"]');
+      const duration = card.querySelector('[name$="_duracion"]');
+      repetitions.setCustomValidity(
+        !repetitions.value.trim() && (!duration.value || Number(duration.value) <= 0)
+          ? 'Indica repeticiones o una duración mayor que 0.'
+          : '',
+      );
+      if (!card.querySelector('[name$="_series"]').reportValidity()
+        || !repetitions.reportValidity()
+        || !duration.reportValidity()) return;
+    }
+
+    try {
+      const response = await fetch(routineForm.action, {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        body: new FormData(routineForm),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo asignar la rutina.');
+      window.alert(data.message);
+      routineForm.reset();
+      routineTemplateSelect.dispatchEvent(new Event('change'));
+      updateScheduleSummary();
+      updateRoutineAction();
+    } catch (error) {
+      assignmentMessage.textContent = error instanceof Error ? error.message : String(error);
+      assignmentMessage.classList.add('is-error');
+      assignmentMessage.hidden = false;
+    }
+  });
+
+  const templateForm = byId('routineTemplateForm');
+  const templateIdInput = byId('routineTemplateId');
+  const templateNameInput = byId('routineTemplateName');
+  const templateDescriptionInput = byId('routineTemplateDescription');
+  const templateSaveButton = byId('routineTemplateSave');
+  const templateCancelButton = byId('routineTemplateCancel');
+  const videoCheckboxes = [...templateForm.querySelectorAll('[name="video_ids"]')];
+  const clearTemplateEditor = () => {
+    templateForm.reset();
+    templateIdInput.value = '';
+    templateSaveButton.textContent = 'Guardar plantilla';
+    templateCancelButton.hidden = true;
+    videoCheckboxes.forEach((checkbox) => {
+      checkbox.checked = false;
+      checkbox.closest('.routine-video-option').querySelector('.routine-video-order input').disabled = true;
+    });
+  };
+  videoCheckboxes.forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      checkbox.closest('.routine-video-option').querySelector('.routine-video-order input').disabled = !checkbox.checked;
+    });
+  });
+  document.querySelectorAll('[data-edit-template]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const templateId = button.dataset.editTemplate;
+      const template = routineTemplates[templateId];
+      if (!template) return;
+      clearTemplateEditor();
+      templateIdInput.value = templateId;
+      templateNameInput.value = template.name;
+      templateDescriptionInput.value = template.description || '';
+      template.exercises.forEach((exercise) => {
+        const checkbox = videoCheckboxes.find((item) => item.value === exercise.video_id);
+        if (!checkbox) return;
+        checkbox.checked = true;
+        const orderInput = checkbox.closest('.routine-video-option').querySelector('.routine-video-order input');
+        orderInput.disabled = false;
+        orderInput.value = String(exercise.order);
+      });
+      templateSaveButton.textContent = 'Guardar cambios';
+      templateCancelButton.hidden = false;
+      templateNameInput.focus();
+    });
+  });
+  templateCancelButton.addEventListener('click', clearTemplateEditor);
 
   [patientFilter, statusFilter, dateFrom, dateTo, sortSelect].forEach((filter) => filter.addEventListener('change', render));
   byId('dashboardReset').addEventListener('click', () => {
@@ -552,10 +886,11 @@
   };
 
   updateSelectOptions();
-  document.querySelectorAll('.dashboard-form').forEach((form) => {
-    const patientSelect = form.elements.namedItem('patient_id');
+  document.querySelectorAll('.dashboard-form [name="patient_id"]').forEach((patientSelect) => {
     patientSelect.dispatchEvent(new Event('change'));
   });
+  routineTemplateSelect.dispatchEvent(new Event('change'));
+  updateScheduleSummary();
   render();
 
   window.setInterval(async () => {

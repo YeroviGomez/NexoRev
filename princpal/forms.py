@@ -2,7 +2,123 @@ from django import forms
 from django.utils import timezone
 from pathlib import Path
 
-from .models import Diagnostico, EvaluacionClinica, ObjetivoTerapeutico, Sesion, Video
+from .models import (
+    Diagnostico,
+    EvaluacionClinica,
+    ObjetivoTerapeutico,
+    PlantillaRutina,
+    Sesion,
+    Video,
+)
+
+
+class SaveRoutineTemplateForm(forms.Form):
+    nombre = forms.CharField(
+        max_length=150,
+        label='Nombre de la plantilla',
+        error_messages={'required': 'Escribe el nombre de la plantilla.'},
+    )
+    descripcion = forms.CharField(
+        required=False,
+        label='Descripción (opcional)',
+        widget=forms.Textarea(attrs={'rows': 2}),
+    )
+
+
+class AssignRoutineForm(forms.Form):
+    DIAS_SEMANA = [
+        ('0', 'L'),
+        ('1', 'M'),
+        ('2', 'X'),
+        ('3', 'J'),
+        ('4', 'V'),
+        ('5', 'S'),
+        ('6', 'D'),
+    ]
+
+    plantilla = forms.ModelChoiceField(
+        queryset=PlantillaRutina.objects.none(),
+        label='Rutina',
+        error_messages={'required': 'Selecciona una plantilla de rutina válida.'},
+    )
+    fecha_inicio = forms.DateField(
+        label='Fecha de inicio',
+        input_formats=['%Y-%m-%d'],
+        error_messages={'required': 'Indica la fecha de inicio.', 'invalid': 'Indica una fecha de inicio válida.'},
+        widget=forms.DateInput(attrs={'type': 'date', 'lang': 'es'}),
+    )
+    fecha_fin = forms.DateField(
+        label='Fecha de fin',
+        input_formats=['%Y-%m-%d'],
+        error_messages={'required': 'Indica la fecha de fin.', 'invalid': 'Indica una fecha de fin válida.'},
+        widget=forms.DateInput(attrs={'type': 'date', 'lang': 'es'}),
+    )
+    dias_semana = forms.MultipleChoiceField(
+        choices=DIAS_SEMANA,
+        label='Días de la semana',
+        error_messages={'required': 'Selecciona al menos un día de la semana.'},
+    )
+
+    def __init__(self, *args, plantillas=None, ejercicios=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['plantilla'].queryset = plantillas or PlantillaRutina.objects.none()
+        self.ejercicios = list(ejercicios)
+        for ejercicio in self.ejercicios:
+            prefix = f'ejercicio_{ejercicio.pk}'
+            self.fields[f'{prefix}_series'] = forms.IntegerField(
+                label='Series',
+                min_value=1,
+                error_messages={
+                    'required': 'Indica al menos una serie.',
+                    'min_value': 'Las series deben ser al menos 1.',
+                    'invalid': 'Indica un número válido de series.',
+                },
+            )
+            self.fields[f'{prefix}_repeticiones'] = forms.CharField(
+                label='Repeticiones',
+                required=False,
+                max_length=100,
+            )
+            self.fields[f'{prefix}_duracion'] = forms.IntegerField(
+                label='Duración (minutos)',
+                required=False,
+                min_value=1,
+                error_messages={
+                    'min_value': 'La duración debe ser mayor que 0.',
+                    'invalid': 'Indica una duración válida.',
+                },
+            )
+            self.fields[f'{prefix}_notas'] = forms.CharField(
+                label='Notas del médico',
+                required=False,
+                widget=forms.Textarea(attrs={'rows': 2}),
+            )
+
+    def clean_fecha_fin(self):
+        fecha_fin = self.cleaned_data['fecha_fin']
+        fecha_inicio = self.cleaned_data.get('fecha_inicio')
+        if fecha_inicio and fecha_fin < fecha_inicio:
+            raise forms.ValidationError('La fecha de fin no puede ser anterior a la fecha de inicio.')
+        return fecha_fin
+
+    def clean_dias_semana(self):
+        dias = self.cleaned_data['dias_semana']
+        if not dias:
+            raise forms.ValidationError('Selecciona al menos un día de la semana.')
+        return [int(dia) for dia in dias]
+
+    def clean(self):
+        cleaned_data = super().clean()
+        for ejercicio in self.ejercicios:
+            prefix = f'ejercicio_{ejercicio.pk}'
+            duration = cleaned_data.get(f'{prefix}_duracion')
+            repetitions = cleaned_data.get(f'{prefix}_repeticiones', '').strip()
+            if duration is None and not repetitions:
+                self.add_error(
+                    f'{prefix}_repeticiones',
+                    'Indica repeticiones o una duración mayor que 0.',
+                )
+        return cleaned_data
 
 
 class ProfileUpdateForm(forms.Form):
@@ -41,14 +157,14 @@ class DiagnosticoForm(forms.ModelForm):
 
     nivel_dolor = forms.IntegerField(
         label='Nivel de dolor',
-        min_value=1,
+        min_value=0,
         max_value=10,
         error_messages={'required': required_error},
         widget=forms.NumberInput(attrs={
             'type': 'range',
-            'min': '1',
+            'min': '0',
             'max': '10',
-            'value': '1',
+            'value': '0',
             'id': 'nivelDolor',
         }),
     )
@@ -95,7 +211,7 @@ class EvaluacionClinicaForm(forms.ModelForm):
         model = EvaluacionClinica
         fields = ['nivel_dolor', 'metrica', 'valor_actual', 'unidad']
         widgets = {
-            'nivel_dolor': forms.NumberInput(attrs={'min': 0, 'max': 10}),
+            'nivel_dolor': forms.NumberInput(attrs={'min': 0, 'max': 10, 'step': 1}),
             'valor_actual': forms.NumberInput(attrs={'min': 0, 'step': '0.01'}),
         }
 
@@ -116,15 +232,38 @@ class ObjetivoTerapeuticoForm(forms.ModelForm):
 
 
 class ScheduleSessionForm(forms.ModelForm):
+    objetivo_terapeutico = forms.ModelChoiceField(
+        queryset=ObjetivoTerapeutico.objects.none(),
+        label='Objetivo del paciente',
+        error_messages={'required': 'Selecciona uno de los objetivos del paciente.'},
+    )
+
     class Meta:
         model = Sesion
-        fields = ['fecha', 'objetivo']
+        fields = [
+            'fecha',
+            'objetivo_terapeutico',
+            'nota_objetivo',
+            'duracion_minutos',
+            'enlace_ubicacion',
+        ]
         widgets = {
             'fecha': forms.DateTimeInput(
                 format='%Y-%m-%dT%H:%M',
                 attrs={'type': 'datetime-local'},
             ),
+            'duracion_minutos': forms.NumberInput(attrs={'min': 1, 'value': 45}),
+            'nota_objetivo': forms.Textarea(attrs={'rows': 2}),
         }
+
+    def __init__(self, *args, paciente=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['objetivo_terapeutico'].queryset = (
+            ObjetivoTerapeutico.objects.filter(paciente=paciente)
+            if paciente else ObjetivoTerapeutico.objects.none()
+        )
+        self.fields['duracion_minutos'].initial = 45
+        self.fields['enlace_ubicacion'].required = False
 
     def clean_fecha(self):
         fecha = self.cleaned_data['fecha']

@@ -48,6 +48,9 @@ const initializeCalendar = () => {
 
   const monthFormatter = new Intl.DateTimeFormat('es-SV', { month: 'long', year: 'numeric' });
   const dateFormatter = new Intl.DateTimeFormat('es-SV', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  });
+  const dateLabelFormatter = new Intl.DateTimeFormat('es-SV', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
   const capitalizeFirst = (value) => `${value.charAt(0).toLocaleUpperCase('es-SV')}${value.slice(1)}`;
@@ -65,7 +68,7 @@ const initializeCalendar = () => {
   const today = new Date();
   const todayKey = getDateKey(today);
   const nextSession = calendarSessions
-    .filter((session) => `${session.date}T${session.time}` >= new Date(
+    .filter((session) => session.status === 'programada' && `${session.date}T${session.time}` >= new Date(
       today.getTime() - today.getTimezoneOffset() * 60000,
     ).toISOString().slice(0, 16))
     .sort((left, right) => `${left.date}T${left.time}`.localeCompare(`${right.date}T${right.time}`))[0];
@@ -89,10 +92,13 @@ const initializeCalendar = () => {
       time.className = 'calendar-session-time';
       time.dateTime = `${session.date}T${session.time}`;
       time.textContent = session.time;
+      const status = document.createElement('span');
+      status.className = `calendar-session-status is-${session.status}`;
+      status.textContent = session.status_display;
       const objective = document.createElement('p');
       objective.className = 'calendar-session-objective';
       objective.textContent = session.objective;
-      item.append(time);
+      item.append(time, status);
       if (session.patient) {
         const patient = document.createElement('p');
         patient.className = 'calendar-session-patient';
@@ -100,6 +106,31 @@ const initializeCalendar = () => {
         item.append(patient);
       }
       item.append(objective);
+      const duration = document.createElement('p');
+      duration.className = 'calendar-session-detail';
+      duration.textContent = `Duración: ${session.duration} minutos`;
+      item.append(duration);
+      if (session.location) {
+        const location = document.createElement('p');
+        location.className = 'calendar-session-detail';
+        if (/^https?:\/\//i.test(session.location)) {
+          const link = document.createElement('a');
+          link.href = session.location;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = session.location;
+          location.append('Enlace de videollamada: ', link);
+        } else {
+          location.textContent = `Ubicación: ${session.location}`;
+        }
+        item.append(location);
+      }
+      if (session.note) {
+        const note = document.createElement('p');
+        note.className = 'calendar-session-detail';
+        note.textContent = `Nota: ${session.note}`;
+        item.append(note);
+      }
 
       if (session.request) {
         const requestStatus = document.createElement('p');
@@ -126,8 +157,10 @@ const initializeCalendar = () => {
             item.append(actions);
           }
         }
-      } else if (
+      }
+      if (
         document.body.dataset.currentUserRole === 'paciente'
+        && session.status === 'programada'
         && (!session.request || session.request.status !== 'pendiente')
         && new Date(`${session.date}T${session.time}`) > new Date()
       ) {
@@ -255,7 +288,7 @@ const initializeCalendar = () => {
       dayNumber.className = 'calendar-day-number';
       dayNumber.textContent = String(date.getDate());
       dayButton.append(dayNumber);
-      dayButton.setAttribute('aria-label', `${dateFormatter.format(date)}${sessions.length ? `, ${sessions.length} ${sessions.length === 1 ? 'sesión agendada' : 'sesiones agendadas'}` : ''}`);
+      dayButton.setAttribute('aria-label', `${dateLabelFormatter.format(date)}${sessions.length ? `, ${sessions.length} ${sessions.length === 1 ? 'sesión agendada' : 'sesiones agendadas'}` : ''}`);
       dayButton.setAttribute('aria-pressed', String(dateKey === selectedDate));
       if (sessions.length) {
         const sessionCount = document.createElement('span');
@@ -501,6 +534,123 @@ const escapeRecordText = (value) => String(value ?? '').replace(/[&<>"']/g, (cha
   '"': '&quot;',
   "'": '&#039;',
 }[character]));
+const formatProfileHistoryDate = (value) => {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat('es-SV', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+    }).format(date)
+    : value;
+};
+
+const formatProfileList = (items, emptyText, renderItem) => (
+  items.length
+    ? `<ul class="doctor-profile-list">${items.map(renderItem).join('')}</ul>`
+    : `<p class="record-empty">${escapeRecordText(emptyText)}</p>`
+);
+const profileWeekdays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+const renderRoutineProfile = (routine) => `
+  <li class="doctor-profile-card">
+    <h3>${escapeRecordText(routine.title)}</h3>
+    <p>Del ${escapeRecordText(routine.start)} al ${escapeRecordText(routine.end)}</p>
+    <p>Días: ${escapeRecordText((routine.weekdays || []).map((day) => profileWeekdays[day]).join(', ') || 'Sin días definidos')}</p>
+    ${formatProfileList(routine.exercises, 'Sin ejercicios registrados.', (exercise) => `
+      <li><strong>${escapeRecordText(exercise.title)}</strong>
+        <span>${escapeRecordText(exercise.series)} series · ${escapeRecordText(exercise.repetitions || 'Sin repeticiones especificadas')}${exercise.duration ? ` · ${escapeRecordText(exercise.duration)} min` : ''}</span>
+        ${exercise.notes ? `<small>${escapeRecordText(exercise.notes)}</small>` : ''}
+      </li>
+    `)}
+    ${formatProfileList(routine.occurrences, 'Sin sesiones programadas.', (occurrence) => `
+      <li>${escapeRecordText(occurrence.date)} · ${occurrence.completed ? 'Completada' : 'Pendiente'}
+        ${occurrence.completed ? ` · Dolor ${escapeRecordText(occurrence.pain ?? 'sin registrar')}/10 · ${escapeRecordText(occurrence.difficulty || 'Dificultad sin registrar')}` : ''}
+        ${occurrence.comment ? `<small>${escapeRecordText(occurrence.comment)}</small>` : ''}
+      </li>
+    `)}
+  </li>
+`;
+
+const renderRescheduleReview = (request) => `
+  <div class="profile-reschedule-request">
+    <p><strong>Solicitud pendiente</strong> · Actual: ${escapeRecordText(request.current_date)}</p>
+    <p>Fecha solicitada: ${escapeRecordText(request.requested_date)}</p>
+    <p>Motivo: ${escapeRecordText(request.reason)}</p>
+    <div class="reschedule-review-actions">
+      <label>Proponer otra fecha<input type="datetime-local" aria-label="Fecha alternativa propuesta"></label>
+      <label>Respuesta al paciente<input type="text" maxlength="1000" placeholder="Respuesta opcional" aria-label="Respuesta al paciente"></label>
+      <div class="reschedule-review-buttons">
+        <button type="button" data-request-id="${escapeRecordText(request.id)}" data-request-action="aprobar">Aprobar</button>
+        <button type="button" data-request-id="${escapeRecordText(request.id)}" data-request-action="rechazar">Rechazar</button>
+        <button type="button" data-request-id="${escapeRecordText(request.id)}" data-request-action="proponer">Proponer fecha</button>
+      </div>
+    </div>
+  </div>
+`;
+
+const renderEvaluationChart = (svg, evaluations) => {
+  const namespace = 'http://www.w3.org/2000/svg';
+  const makeElement = (name, attributes = {}, text = '') => {
+    const element = document.createElementNS(namespace, name);
+    Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+    if (text) element.textContent = text;
+    return element;
+  };
+  const width = 720;
+  const height = 250;
+  const left = 42;
+  const right = 20;
+  const top = 20;
+  const bottom = 38;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const points = evaluations.map((evaluation) => ({
+    time: new Date(evaluation.date_iso).getTime(),
+    pain: Number(evaluation.pain),
+    date: evaluation.date,
+  })).filter((point) => Number.isFinite(point.time) && Number.isInteger(point.pain)
+    && point.pain >= 0 && point.pain <= 10)
+    .sort((first, second) => first.time - second.time);
+  svg.replaceChildren();
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+  [0, 5, 10].forEach((pain) => {
+    const y = top + plotHeight - (pain / 10) * plotHeight;
+    svg.append(
+      makeElement('line', { x1: left, y1: y, x2: width - right, y2: y, class: 'doctor-evaluation-grid' }),
+      makeElement('text', { x: left - 10, y: y + 4, 'text-anchor': 'end', class: 'doctor-evaluation-label' }, pain),
+    );
+  });
+  if (!points.length) {
+    svg.append(makeElement('text', {
+      x: width / 2, y: height / 2, 'text-anchor': 'middle', class: 'doctor-evaluation-empty',
+    }, 'No hay evaluaciones para graficar.'));
+    return;
+  }
+
+  const firstTime = points[0].time;
+  const span = Math.max(points[points.length - 1].time - firstTime, 1);
+  const coordinates = points.map((point) => ({
+    x: points.length === 1 ? left + plotWidth / 2 : left + ((point.time - firstTime) / span) * plotWidth,
+    y: top + plotHeight - (point.pain / 10) * plotHeight,
+    point,
+  }));
+  svg.append(makeElement('polyline', {
+    points: coordinates.map(({ x, y }) => `${x},${y}`).join(' '),
+    class: 'doctor-evaluation-line',
+  }));
+  coordinates.forEach(({ x, y, point }) => {
+    const circle = makeElement('circle', { cx: x, cy: y, r: 5, class: 'doctor-evaluation-point' });
+    circle.append(makeElement('title', {}, `Dolor EVA ${point.pain}/10 · ${point.date}`));
+    svg.append(circle);
+  });
+  [coordinates[0], coordinates[coordinates.length - 1]].forEach(({ x, point }, index) => {
+    svg.append(makeElement('text', {
+      x, y: height - 8,
+      'text-anchor': index ? 'end' : 'start',
+      class: 'doctor-evaluation-label',
+    }, point.date));
+  });
+};
 
 const loadPatientRecord = async (patientId) => {
   if (!doctorRecordView) return;
@@ -509,9 +659,13 @@ const loadPatientRecord = async (patientId) => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'No se pudo cargar el expediente.');
     const patient = data.paciente;
+    const profile = document.getElementById('doctorPatientProfile');
+    const profileHeading = document.getElementById('doctorProfileHeading');
     const now = new Date();
     const minimumSessionDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    doctorRecordView.innerHTML = `
+    profile.hidden = false;
+    doctorRecordView.querySelector(':scope > p')?.setAttribute('hidden', '');
+    profileHeading.innerHTML = `
       <div class="section-head">
         <h2>${escapeRecordText(patient.nombre)}</h2>
         <span class="patient-state" style="--state-color: ${escapeRecordText(patient.color_estado)}">${escapeRecordText(patient.estado_display)}</span>
@@ -522,35 +676,67 @@ const loadPatientRecord = async (patientId) => {
         <span>Zona afectada<strong>${escapeRecordText(patient.zona_afectada || 'Sin registrar')}</strong></span>
       </div>
       <p><strong>Correo:</strong> ${escapeRecordText(patient.email)}</p>
-      <h3>Notas de diagnóstico</h3>
-      <p class="record-empty">No hay notas de diagnóstico asociadas a este paciente.</p>
+      <button type="button" class="dashboard-manage-link doctor-profile-exit" data-profile-exit>Volver al dashboard general</button>
       <h3>Gráfica de progreso</h3>
       <svg class="doctor-record-chart" viewBox="0 0 320 150" preserveAspectRatio="none" aria-label="Gráfica de progreso">
         <polyline points="${(patient.historial_avance || []).map((item, index, values) => `${16 + index * ((320 - 32) / Math.max(values.length - 1, 1))},${134 - (Number(item.avance) || 0) * 1.18}`).join(' ')}" fill="none" stroke="${escapeRecordText(patient.color_estado)}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
       </svg>
       <h3>Historial de progreso</h3>
       <ul class="record-history">
-        ${(patient.historial_avance || []).map((item) => `<li>${escapeRecordText(item.fecha)} · ${escapeRecordText(item.avance)}%</li>`).join('') || '<li>Sin historial registrado.</li>'}
-      </ul>
-      <h3>Sesiones</h3>
-      <ul class="record-history record-session-list">
-        ${(patient.sesiones || []).map((session) => `
-          <li class="record-session-item">
-            <div><time class="record-session-date" datetime="${escapeRecordText(session.fecha)}">${escapeRecordText(session.fecha_display || session.fecha)}</time> · ${escapeRecordText(session.objetivo)}${session.avance ? ` · ${escapeRecordText(session.avance)}` : ''}</div>
-            ${session.activo ? `
-              <details class="session-reschedule">
-                <summary>Reagendar cita</summary>
-                <form class="session-reschedule-form" data-patient-id="${escapeRecordText(patient.id)}" data-session-id="${escapeRecordText(session.id)}">
-                  <label>Nueva fecha y hora<input type="datetime-local" name="fecha" min="${minimumSessionDate}" value="${escapeRecordText(session.fecha_local)}" required></label>
-                  <button class="session-reschedule-submit" type="submit">Guardar cambio</button>
-                  <span class="session-reschedule-feedback" role="status" aria-live="polite"></span>
-                </form>
-              </details>
-            ` : '<span class="session-inactive-label">Cita inactiva</span>'}
-          </li>
-        `).join('') || '<li>Sin sesiones registradas.</li>'}
+        ${(patient.historial_avance || []).map((item) => `<li>${escapeRecordText(formatProfileHistoryDate(item.fecha))} · ${escapeRecordText(item.avance)}%</li>`).join('') || '<li>Sin historial registrado.</li>'}
       </ul>
     `;
+    const evaluations = patient.evaluaciones || [];
+    const evaluationPanel = document.querySelector('[data-profile-panel="evaluations"]');
+    evaluationPanel.innerHTML = `
+      <div class="doctor-profile-panel-heading"><div><h3>Historial de evaluaciones</h3><p>Dolor EVA y métricas clínicas registradas.</p></div><button type="button" class="dashboard-submit" data-profile-form="evaluationForm">Registrar evaluación</button></div>
+      <svg class="doctor-evaluation-chart" role="img" aria-label="Evolución del dolor EVA del paciente"></svg>
+      ${formatProfileList(evaluations, 'No hay evaluaciones registradas.', (evaluation) => `
+        <li><strong>${escapeRecordText(evaluation.date)}</strong> · Dolor ${escapeRecordText(evaluation.pain)}/10
+          ${evaluation.metric ? `<span> · ${escapeRecordText(evaluation.metric)}: ${escapeRecordText(evaluation.value)} ${escapeRecordText(evaluation.unit)}</span>` : ''}
+        </li>
+      `)}
+    `;
+    renderEvaluationChart(evaluationPanel.querySelector('.doctor-evaluation-chart'), evaluations);
+    document.querySelector('[data-profile-panel="goals"]').innerHTML = `
+      <div class="doctor-profile-panel-heading"><div><h3>Objetivos terapéuticos</h3><p>Metas clínicas de este paciente.</p></div><button type="button" class="dashboard-submit" data-profile-form="goalForm">Añadir objetivo</button></div>
+      ${formatProfileList(patient.objetivos || [], 'No hay objetivos definidos.', (goal) => `
+        <li><strong>${escapeRecordText(goal.name)}</strong><span>${escapeRecordText(goal.metric)} · ${escapeRecordText(goal.direction)} ${escapeRecordText(goal.target)} ${escapeRecordText(goal.unit)}</span></li>
+      `)}
+    `;
+    document.querySelector('[data-profile-panel="routines"]').innerHTML = `
+      <div class="doctor-profile-panel-heading"><div><h3>Rutinas asignadas</h3><p>Programación, dosis y retroalimentación.</p></div><button type="button" class="dashboard-submit" data-profile-form="routineForm">Asignar rutina</button></div>
+      ${formatProfileList(patient.rutinas || [], 'No hay rutinas asignadas.', renderRoutineProfile)}
+    `;
+    document.querySelector('[data-profile-panel="sessions"]').innerHTML = `
+      <div class="doctor-profile-panel-heading"><div><h3>Sesiones</h3><p>Historial de citas y solicitudes pendientes de revisión.</p></div><button type="button" class="dashboard-submit" data-profile-form="sessionForm">Agendar sesión</button></div>
+      ${formatProfileList(patient.sesiones || [], 'No hay sesiones registradas.', (session) => `
+        <li class="doctor-profile-card">
+          <strong>${escapeRecordText(session.fecha_display)}</strong> · ${escapeRecordText(session.estado_display)} · ${escapeRecordText(session.duracion_minutos)} min
+          <span>${escapeRecordText(session.objetivo)}</span>
+          ${session.enlace_ubicacion ? `<small>${escapeRecordText(session.enlace_ubicacion)}</small>` : ''}
+          ${session.nota_objetivo ? `<small>${escapeRecordText(session.nota_objetivo)}</small>` : ''}
+          ${session.solicitud_pendiente ? renderRescheduleReview({
+            ...session.solicitud_pendiente,
+            session_id: session.id,
+          }) : ''}
+          ${session.estado === 'programada' && !session.solicitud_pendiente ? `
+            <details class="session-reschedule">
+              <summary>Reagendar sesión</summary>
+              <form class="session-reschedule-form" data-patient-id="${escapeRecordText(patient.id)}" data-session-id="${escapeRecordText(session.id)}">
+                <label>Nueva fecha y hora<input type="datetime-local" name="fecha" min="${minimumSessionDate}" value="${escapeRecordText(session.fecha_local)}" required></label>
+                <button class="session-reschedule-submit" type="submit">Guardar cambio</button>
+                <span class="session-reschedule-feedback" role="status" aria-live="polite"></span>
+              </form>
+            </details>
+          ` : ''}
+        </li>
+      `)}
+    `;
+    setPatientProfileTab('evaluations');
+    document.dispatchEvent(new CustomEvent('patient-profile-open', {
+      detail: { patientId: String(patient.id), patientName: patient.nombre },
+    }));
     showView('diagnostico');
     history.replaceState(null, "", '#diagnostico');
     doctorRecordView.scrollIntoView({
@@ -561,6 +747,61 @@ const loadPatientRecord = async (patientId) => {
     console.error(error);
   }
 };
+
+const setPatientProfileTab = (tabName) => {
+  document.querySelectorAll('[data-profile-tab]').forEach((tab) => {
+    const active = tab.dataset.profileTab === tabName;
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll('[data-profile-panel]').forEach((panel) => {
+    panel.hidden = panel.dataset.profilePanel !== tabName;
+  });
+};
+
+doctorRecordView?.addEventListener('click', (event) => {
+  const tab = event.target.closest('[data-profile-tab]');
+  if (tab) {
+    setPatientProfileTab(tab.dataset.profileTab);
+    return;
+  }
+  if (event.target.closest('[data-profile-exit]')) {
+    document.dispatchEvent(new CustomEvent('patient-profile-exit'));
+    showView('dashboard');
+    history.replaceState(null, '', '#dashboard');
+    return;
+  }
+  const formButton = event.target.closest('[data-profile-form]');
+  if (formButton) {
+    const formName = formButton.dataset.profileForm;
+    document.dispatchEvent(new CustomEvent('patient-profile-action', {
+      detail: { formName },
+    }));
+    return;
+  }
+  const reviewButton = event.target.closest('button[data-request-action]');
+  if (reviewButton) {
+    const reviewControls = reviewButton.closest('.reschedule-review-actions');
+    const inputDate = reviewControls?.querySelector('input[type="datetime-local"]');
+    if (inputDate) {
+      inputDate.min = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+        .toISOString().slice(0, 16);
+    }
+  }
+});
+
+doctorRecordView?.addEventListener('keydown', (event) => {
+  const tab = event.target.closest('[data-profile-tab]');
+  if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const tabs = [...doctorRecordView.querySelectorAll('[data-profile-tab]')];
+  const currentIndex = tabs.indexOf(tab);
+  const nextIndex = event.key === 'Home' ? 0
+    : event.key === 'End' ? tabs.length - 1
+      : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  tabs[nextIndex].focus();
+  setPatientProfileTab(tabs[nextIndex].dataset.profileTab);
+});
 
 doctorRecordView?.addEventListener('submit', async (event) => {
   const form = event.target.closest('.session-reschedule-form');
@@ -644,7 +885,7 @@ const renderProgress = () => {
   const historyList = document.getElementById('historyList');
   if (historyList && !historyList.dataset.serverHistory) {
     historyList.innerHTML = routines.length
-      ? routines.map((routine) => `<li><span>${routine}</span><time>${new Date().toLocaleDateString('es-ES')}</time></li>`).join('')
+      ? routines.map((routine) => `<li><span>${routine}</span><time>${new Intl.DateTimeFormat('es-SV', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())}</time></li>`).join('')
       : '<li>Aún no has completado rutinas.</li>';
   }
 };
@@ -1083,7 +1324,7 @@ const tutorialSteps = [
         "El expediente muestra información y progreso del paciente.",
       ]
       : [
-        "Indica tu nivel de dolor del 1 al 10 y responde las preguntas obligatorias.",
+        "Indica tu nivel de dolor del 0 al 10 y responde las preguntas obligatorias.",
         "Agrega un comentario si necesitas compartir más información.",
         "Pulsa “Guardar” para registrar la evaluación o “Actualizar” para editarla.",
         "“Cancelar” limpia los datos que todavía no hayas guardado.",
@@ -1292,7 +1533,7 @@ const proTourSteps = [
       view: "dashboard",
       selector: "#sessionForm",
       title: "Agenda una sesión",
-      description: "Selecciona al paciente, define la fecha y hora y especifica el objetivo de la sesión para agregarla al calendario.",
+      description: "Selecciona al paciente y uno de sus objetivos, define fecha, duración y enlace o ubicación para agregar la sesión al calendario.",
     },
     {
       view: "dashboard",
@@ -1303,8 +1544,8 @@ const proTourSteps = [
     {
       view: "dashboard",
       selector: "#dashboardPendingSessionsCard",
-      title: "Registra las sesiones realizadas",
-      description: "En esta tabla aparecen las sesiones pendientes de registrar. Marca las citas realizadas para actualizar la adherencia del tratamiento.",
+      title: "Actualiza el estado de las sesiones",
+      description: "Marca una sesión como completada, cancelada o no asistida. Solo las programadas pueden cambiar de estado.",
     },
   ] : []),
   ...(document.body.dataset.currentUserRole === "doctor" ? [] : [

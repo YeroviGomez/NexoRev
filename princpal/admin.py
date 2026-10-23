@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from .models import EvaluacionClinica, ObjetivoTerapeutico, Paciente, RutinaAsignada, Sesion
+from .models import (
+    EjercicioPlantillaRutina,
+    EjercicioRutinaAsignada,
+    EvaluacionClinica,
+    ObjetivoTerapeutico,
+    OcurrenciaRutina,
+    Paciente,
+    PlantillaRutina,
+    RutinaAsignada,
+    Sesion,
+)
 
 
 @admin.register(Paciente)
@@ -12,9 +22,9 @@ class PacienteAdmin(admin.ModelAdmin):
 
 @admin.register(Sesion)
 class SesionAdmin(admin.ModelAdmin):
-    list_display = ('paciente', 'fecha', 'objetivo', 'activo', 'realizada')
+    list_display = ('paciente', 'fecha', 'duracion_minutos', 'objetivo', 'estado')
     search_fields = ('paciente__nombre', 'objetivo')
-    list_filter = ('activo', 'realizada', 'fecha')
+    list_filter = ('estado', 'fecha')
 
 
 @admin.register(EvaluacionClinica)
@@ -35,3 +45,9 @@ class RutinaAsignadaAdmin(admin.ModelAdmin):
     list_display = ('paciente', 'titulo', 'fecha_programada', 'completada_en')
     search_fields = ('paciente__nombre', 'titulo')
     list_filter = ('fecha_programada', 'completada_en')
+
+
+admin.site.register(PlantillaRutina)
+admin.site.register(EjercicioPlantillaRutina)
+admin.site.register(EjercicioRutinaAsignada)
+admin.site.register(OcurrenciaRutina)

@@ -54,13 +54,26 @@
     <section class="routine-completion" aria-live="polite">
       <div>
         <span class="video-detail-kicker">Tu progreso</span>
-        <h2>¿Terminaste esta rutina?</h2>
-        <p>Marca el ejercicio como completado para registrar tu avance.</p>
+        {% if assigned_routine_occurrence %}
+          <h2>Ejercicio de una rutina asignada</h2>
+          {% if assigned_routine_occurrence.completada_en %}
+            <p>Esta rutina ya está completada. Puedes revisar el dolor y la dificultad que registraste en Mi progreso.</p>
+          {% else %}
+            <p>Cuando termines, marca la rutina y registra tu retroalimentación en Mi progreso.</p>
+          {% endif %}
+        {% else %}
+          <h2>¿Terminaste esta rutina?</h2>
+          <p>Marca el ejercicio como completado para registrar tu avance.</p>
+        {% endif %}
       </div>
-      <button id="completeRoutineButton" class="complete-routine-button{% if completed_today %} is-completed{% endif %}" type="button">
-        <span class="completion-check" aria-hidden="true">✓</span>
-        <span>{% if completed_today %}Desmarcar como completada{% else %}Marcar rutina como completada{% endif %}</span>
-      </button>
+      {% if assigned_routine_occurrence %}
+        <a class="history-link" href="{% url 'principal' %}#progreso">Ir a Mi progreso</a>
+      {% else %}
+        <button id="completeRoutineButton" class="complete-routine-button{% if completed_today %} is-completed{% endif %}" type="button">
+          <span class="completion-check" aria-hidden="true">✓</span>
+          <span>{% if completed_today %}Desmarcar como completada{% else %}Marcar rutina como completada{% endif %}</span>
+        </button>
+      {% endif %}
       <a class="history-link" href="{% url 'principal' %}?history_refresh=1#historial">Ver historial</a>
     </section>
 
@@ -477,7 +490,7 @@
     const completeUrl = "{% url 'complete_video' video.catalog_index %}";
     const csrfToken = "{{ csrf_token }}";
     const closeMotivation = () => { motivationModal.hidden = true; };
-    completeButton.addEventListener('click', async () => {
+    if (completeButton) completeButton.addEventListener('click', async () => {
       if (completeButton.disabled) return;
       completeButton.disabled = true;
       completeButton.classList.add('is-loading');

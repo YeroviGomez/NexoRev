@@ -9,6 +9,19 @@
     </header>
     <div class="doctor-record-view panel" id="doctorRecordView">
       <p>Selecciona un paciente desde el inicio para consultar su expediente.</p>
+      <div id="doctorPatientProfile" hidden>
+        <div class="doctor-profile-heading" id="doctorProfileHeading"></div>
+        <div class="doctor-profile-tabs" role="tablist" aria-label="Secciones del expediente del paciente">
+          <button type="button" role="tab" id="profileEvaluationsTab" aria-controls="profileEvaluationsPanel" aria-selected="true" tabindex="0" data-profile-tab="evaluations">Evaluaciones</button>
+          <button type="button" role="tab" id="profileGoalsTab" aria-controls="profileGoalsPanel" aria-selected="false" tabindex="-1" data-profile-tab="goals">Objetivos</button>
+          <button type="button" role="tab" id="profileRoutinesTab" aria-controls="profileRoutinesPanel" aria-selected="false" tabindex="-1" data-profile-tab="routines">Rutinas</button>
+          <button type="button" role="tab" id="profileSessionsTab" aria-controls="profileSessionsPanel" aria-selected="false" tabindex="-1" data-profile-tab="sessions">Sesiones</button>
+        </div>
+        <section class="doctor-profile-panel" role="tabpanel" id="profileEvaluationsPanel" aria-labelledby="profileEvaluationsTab" data-profile-panel="evaluations"></section>
+        <section class="doctor-profile-panel" role="tabpanel" id="profileGoalsPanel" aria-labelledby="profileGoalsTab" data-profile-panel="goals" hidden></section>
+        <section class="doctor-profile-panel" role="tabpanel" id="profileRoutinesPanel" aria-labelledby="profileRoutinesTab" data-profile-panel="routines" hidden></section>
+        <section class="doctor-profile-panel" role="tabpanel" id="profileSessionsPanel" aria-labelledby="profileSessionsTab" data-profile-panel="sessions" hidden></section>
+      </div>
     </div>
   {% else %}
   <header class="page-head compact section-guide-head">
@@ -27,11 +40,11 @@
     <div class="pain-scale{% if form.nivel_dolor.errors %} is-invalid{% endif %}" data-required-field>
       <div class="pain-scale-head">
         <label for="{{ form.nivel_dolor.id_for_label }}">Nivel de dolor</label>
-        <output id="nivelDolorValue" for="{{ form.nivel_dolor.id_for_label }}">{{ form.nivel_dolor.value|default:"1" }}</output>
+        <output id="nivelDolorValue" for="{{ form.nivel_dolor.id_for_label }}">{{ form.nivel_dolor.value|default_if_none:"0" }}</output>
       </div>
       {{ form.nivel_dolor }}
       <div class="pain-scale-labels" aria-hidden="true">
-        <span>Nivel 1 bajo</span>
+        <span>Nivel 0 sin dolor</span>
         <span>Nivel 10 muy alto</span>
       </div>
       {{ form.nivel_dolor.errors }}
@@ -85,6 +98,7 @@
     if (nivelDolor && nivelDolorValue) {
       const updatePainValue = () => {
         nivelDolorValue.textContent = nivelDolor.value;
+        nivelDolor.setCustomValidity("");
       };
 
       nivelDolor.addEventListener("input", updatePainValue);
@@ -108,15 +122,25 @@
         let hasErrors = false;
 
         requiredGroups.forEach((group) => {
-          const invalid = !fieldHasValue(group);
+          const painField = group.querySelector('#nivelDolor');
+          const painValue = Number(painField?.value);
+          const invalidPain = painField
+            && (!Number.isInteger(painValue) || painValue < 0 || painValue > 10);
+          const invalid = !fieldHasValue(group) || Boolean(invalidPain);
           group.classList.toggle("is-invalid", invalid);
           hasErrors = hasErrors || invalid;
+          if (invalidPain) {
+            painField.setCustomValidity("El dolor debe estar entre 0 y 10.");
+            painField.reportValidity();
+          } else if (painField) {
+            painField.setCustomValidity("");
+          }
         });
 
         if (hasErrors) {
           event.preventDefault();
           diagnosticClientMessage.hidden = false;
-          diagnosticClientMessage.textContent = "Por favor, complete todos los campos obligatorios.";
+          diagnosticClientMessage.textContent = "Verifica los campos obligatorios y que el dolor esté entre 0 y 10.";
         } else {
           diagnosticClientMessage.hidden = true;
         }

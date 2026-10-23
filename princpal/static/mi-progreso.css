@@ -223,6 +223,33 @@
 .daily-progress-track > span { background: linear-gradient(90deg, #398ed0, #60b4e9); }
 .patient-daily-note { margin: 0.55rem 0 0; color: var(--progress-muted); font-size: 0.82rem; }
 .patient-routines-list li { grid-template-columns: minmax(0, 1fr) auto auto; }
+.patient-routines-list li.patient-routine-item { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 0.65rem; }
+.patient-routine-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 0.65rem; }
+.patient-routine-heading strong { color: var(--progress-ink); font-size: 0.88rem; }
+.patient-routine-exercises { display: grid; gap: 0.45rem; margin: 0; padding: 0.65rem 0.8rem; list-style: none; border-radius: 0.6rem; background: var(--progress-blue-soft); }
+.patient-routine-exercises li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.15rem; padding: 0; border: 0; }
+.patient-routine-exercises strong { color: var(--progress-ink); font-size: 0.78rem; }
+.patient-routine-video-link { color: var(--progress-green); font-size: 0.78rem; font-weight: 700; text-decoration: underline; text-underline-offset: 0.15em; }
+.patient-routine-exercises span, .patient-routine-exercises small, .patient-routine-feedback { color: var(--progress-muted); font-size: 0.74rem; }
+.patient-routine-feedback { margin: 0; }
+.patient-routine-feedback-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; width: 100%; }
+.patient-routine-feedback-form label { display: grid; gap: 0.28rem; color: var(--progress-muted); font-size: 0.73rem; font-weight: 650; }
+.patient-routine-feedback-form input, .patient-routine-feedback-form select, .patient-routine-feedback-form textarea { width: 100%; min-width: 0; min-height: 2.2rem; padding: 0.4rem 0.55rem; border: 1px solid var(--progress-line); border-radius: 0.48rem; color: var(--progress-ink); background: var(--surface); font: inherit; font-size: 0.8rem; }
+.patient-routine-feedback-form textarea, .patient-routine-feedback-form label:nth-child(3) { grid-column: 1 / -1; }
+.patient-routine-complete-button { justify-self: start; min-height: 2.2rem; padding: 0.45rem 0.7rem; border: 0; border-radius: 0.55rem; color: #fff; background: #12856a; font-size: 0.76rem; font-weight: 700; cursor: pointer; }
+.patient-routine-complete-button:disabled { opacity: 0.65; cursor: wait; }
+.patient-routine-feedback-message { grid-column: 1 / -1; margin: 0; color: #a43b3b; font-size: 0.76rem; }
+
+body.dark-mode .patient-routine-heading strong, body.dark-mode .patient-routine-exercises strong { color: #e5f1f5; }
+body.dark-mode .patient-routine-exercises { background: #233341; }
+body.dark-mode .patient-routine-feedback-form input, body.dark-mode .patient-routine-feedback-form select, body.dark-mode .patient-routine-feedback-form textarea { border-color: #3d4b56; color: #e5f1f5; background: #202833; }
+
+@media (max-width: 599px) {
+  .patient-routine-heading { grid-template-columns: minmax(0, 1fr) auto; }
+  .patient-routine-heading small { grid-column: 1 / -1; }
+  .patient-routine-feedback-form { grid-template-columns: minmax(0, 1fr); }
+  .patient-routine-feedback-form textarea, .patient-routine-feedback-form label:nth-child(3) { grid-column: 1; }
+}
 
 .dashboard-notices { display: grid; gap: 0.4rem; margin: 0 0 1rem; padding: 0; list-style: none; }
 .dashboard-notices li { border-radius: 0.6rem; padding: 0.75rem 1rem; color: #176448; background: #eaf8ef; }

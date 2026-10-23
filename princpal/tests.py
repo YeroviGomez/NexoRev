@@ -13,9 +13,13 @@ from PIL import Image
 from crear_cuenta.models import Usuario
 from .models import (
 	Diagnostico,
+	EjercicioPlantillaRutina,
+	EjercicioRutinaAsignada,
 	EvaluacionClinica,
+	OcurrenciaRutina,
 	ObjetivoTerapeutico,
 	Paciente,
+	PlantillaRutina,
 	RutinaAsignada,
 	Sesion,
 	SolicitudReagendamiento,
@@ -67,6 +71,40 @@ class DiagnosticFormTests(TestCase):
 		self.assertEqual(Diagnostico.objects.filter(usuario=self.usuario).count(), 1)
 		self.assertEqual(Diagnostico.objects.get(usuario=self.usuario).nivel_dolor, 7)
 
+	def test_acepta_cero_en_la_escala_eva(self):
+		response = self.client.get(reverse('principal'))
+		self.assertContains(response, 'min="0"')
+		self.assertContains(response, 'Nivel 0 sin dolor')
+
+		submission = self.client.post(
+			reverse('principal'),
+			{**self.respuestas, 'nivel_dolor': '0'},
+		)
+
+		self.assertEqual(submission.status_code, 302)
+		self.assertEqual(Diagnostico.objects.get(usuario=self.usuario).nivel_dolor, 0)
+		self.assertEqual(
+			EvaluacionClinica.objects.get(paciente__usuario=self.usuario).nivel_dolor,
+			0,
+		)
+
+	def test_diagnostico_muestra_eva_de_cero_a_diez(self):
+		response = self.client.get(reverse('principal'))
+
+		self.assertContains(response, 'min="0"')
+		self.assertContains(response, 'max="10"')
+		self.assertContains(response, 'Nivel 0 sin dolor')
+
+	def test_rechaza_dolor_eva_negativo(self):
+		response = self.client.post(
+			reverse('principal'),
+			{**self.respuestas, 'nivel_dolor': '-1'},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('nivel_dolor', response.context['form'].errors)
+		self.assertFalse(Diagnostico.objects.exists())
+
 	def test_cada_paciente_solo_guarda_su_propio_formulario(self):
 		self.client.post('/principal/', self.respuestas)
 		otro_usuario = Usuario.objects.create(
@@ -117,10 +155,13 @@ class DiagnosticFormTests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 		sesiones = response.context['calendar_sessions']
-		self.assertEqual(len(sesiones), 1)
-		self.assertEqual(sesiones[0]['date'], timezone.localtime(fecha).date().isoformat())
-		self.assertEqual(sesiones[0]['time'], timezone.localtime(fecha).strftime('%H:%M'))
-		self.assertEqual(sesiones[0]['objective'], 'Rutina de movilidad')
+		self.assertEqual(len(sesiones), 2)
+		programada = next(item for item in sesiones if item['objective'] == 'Rutina de movilidad')
+		cancelada = next(item for item in sesiones if item['objective'] == 'Sesión cancelada')
+		self.assertEqual(programada['date'], timezone.localtime(fecha).date().isoformat())
+		self.assertEqual(programada['time'], timezone.localtime(fecha).strftime('%H:%M'))
+		self.assertEqual(programada['status'], Sesion.ESTADO_PROGRAMADA)
+		self.assertEqual(cancelada['status'], Sesion.ESTADO_CANCELADA)
 		self.assertContains(response, 'calendarSessionsData')
 		self.assertContains(response, 'Solicitar cambio de fecha de una sesión')
 		self.assertContains(response, 'Sesiones y cambios de fecha')
@@ -159,10 +200,82 @@ class SessionRescheduleTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		sesion = response.json()['paciente']['sesiones'][0]
 		self.assertEqual(sesion['id'], self.sesion.pk)
+		self.assertEqual(sesion['estado'], Sesion.ESTADO_PROGRAMADA)
+		self.assertEqual(sesion['duracion_minutos'], 45)
 		self.assertEqual(
 			sesion['fecha_local'],
 			timezone.localtime(self.sesion.fecha).strftime('%Y-%m-%dT%H:%M'),
 		)
+
+	def test_expediente_incluye_tabs_de_datos_clinicos_y_solicitudes_pendientes(self):
+		evaluation = EvaluacionClinica.objects.create(
+			paciente=self.paciente,
+			nivel_dolor=4,
+			metrica='Movilidad',
+			valor_actual=75,
+			unidad='grados',
+		)
+		goal = ObjetivoTerapeutico.objects.create(
+			paciente=self.paciente,
+			nombre='Recuperar movilidad',
+			metrica='Movilidad',
+			valor_objetivo=90,
+			unidad='grados',
+		)
+		template = PlantillaRutina.objects.create(
+			doctor=self.doctor,
+			nombre='Movilidad de rodilla',
+		)
+		assignment = RutinaAsignada.objects.create(
+			paciente=self.paciente,
+			video_id='movilidad',
+			titulo=template.nombre,
+			fecha_programada=timezone.localdate(),
+			plantilla=template,
+			fecha_inicio=timezone.localdate(),
+			fecha_fin=timezone.localdate() + timedelta(days=7),
+			dias_semana=[0, 2, 4],
+		)
+		EjercicioRutinaAsignada.objects.create(
+			asignacion=assignment,
+			video_id='movilidad',
+			titulo='Flexión de rodilla',
+			orden=1,
+			series=3,
+			repeticiones='10',
+		)
+		OcurrenciaRutina.objects.create(
+			asignacion=assignment,
+			fecha=timezone.localdate(),
+			nivel_dolor=2,
+			dificultad=OcurrenciaRutina.DIFICULTAD_FACIL,
+			comentario='Sin molestias.',
+		)
+		pending_request = SolicitudReagendamiento.objects.create(
+			sesion=self.sesion,
+			motivo='Necesito cambiar el horario.',
+			fecha_original=self.sesion.fecha,
+			fecha_propuesta=timezone.now() + timedelta(days=5),
+		)
+
+		response = self.doctor_client.get(reverse('paciente_detail_api', args=[self.paciente.pk]))
+
+		self.assertEqual(response.status_code, 200)
+		profile = response.json()['paciente']
+		self.assertEqual(profile['evaluaciones'][0]['pain'], evaluation.nivel_dolor)
+		self.assertEqual(
+			profile['evaluaciones'][0]['date'],
+			timezone.localtime(evaluation.fecha).strftime('%d/%m/%Y %H:%M'),
+		)
+		self.assertEqual(
+			profile['evaluaciones'][0]['date_iso'],
+			timezone.localtime(evaluation.fecha).isoformat(),
+		)
+		self.assertEqual(profile['objetivos'][0]['id'], goal.pk)
+		self.assertEqual(profile['rutinas'][0]['title'], template.nombre)
+		self.assertEqual(profile['rutinas'][0]['exercises'][0]['series'], 3)
+		self.assertEqual(profile['rutinas'][0]['occurrences'][0]['comment'], 'Sin molestias.')
+		self.assertEqual(profile['sesiones'][0]['solicitud_pendiente']['id'], pending_request.pk)
 
 	def autenticar(self, client, usuario):
 		session = client.session
@@ -219,6 +332,36 @@ class SessionRescheduleTests(TestCase):
 		self.assertFalse(response.json()['success'])
 		self.sesion.refresh_from_db()
 		self.assertEqual(self.sesion.fecha, fecha_original)
+
+	def test_rechaza_reagendar_si_choca_con_otra_sesion_del_medico(self):
+		fecha_objetivo = timezone.localtime(
+			timezone.now() + timedelta(days=5)
+		).replace(second=0, microsecond=0)
+		otro_usuario = Usuario.objects.create(
+			email='otro-paciente-choque@example.com',
+			nombre='Otro paciente',
+		)
+		otro_paciente = Paciente.objects.create(
+			usuario=otro_usuario,
+			doctor=self.doctor,
+			nombre=otro_usuario.nombre,
+			email=otro_usuario.email,
+		)
+		Sesion.objects.create(
+			paciente=otro_paciente,
+			fecha=fecha_objetivo,
+			objetivo='Otra sesión',
+		)
+
+		response = self.doctor_client.post(
+			reverse('reschedule_session', args=[self.paciente.pk, self.sesion.pk]),
+			{'fecha': fecha_objetivo.strftime('%Y-%m-%dT%H:%M')},
+		)
+
+		self.assertEqual(response.status_code, 409)
+		self.assertIn('médico', response.json()['error'])
+		self.sesion.refresh_from_db()
+		self.assertNotEqual(timezone.localtime(self.sesion.fecha), fecha_objetivo)
 
 
 class RescheduleRequestTests(TestCase):
@@ -307,12 +450,20 @@ class RescheduleRequestTests(TestCase):
 	def test_calendario_y_dashboard_medico_muestran_fecha_y_estado_de_solicitud(self):
 		response, _ = self.solicitar_cambio()
 		request_id = response.json()['request']['id']
+		patient_calendar = self.patient_client.get(reverse('principal'))
+		request_item = SolicitudReagendamiento.objects.get(pk=request_id)
+		self.assertContains(
+			patient_calendar,
+			timezone.localtime(request_item.fecha_propuesta).strftime('%d/%m/%Y %H:%M'),
+		)
 
 		calendar_response = self.doctor_client.get(reverse('principal'))
 		calendar_session = calendar_response.context['calendar_sessions'][0]
 		self.assertEqual(calendar_session['patient'], self.paciente.nombre)
 		self.assertEqual(calendar_session['request']['id'], request_id)
 		self.assertEqual(calendar_session['request']['status'], SolicitudReagendamiento.ESTADO_PENDIENTE)
+		self.assertEqual(calendar_session['status'], 'reagendamiento_solicitado')
+		self.assertEqual(self.sesion.estado, Sesion.ESTADO_PROGRAMADA)
 		self.assertContains(calendar_response, 'Solicitudes de cambio de sesión')
 		self.assertContains(calendar_response, 'Tengo una cita médica ese día.')
 		self.assertContains(calendar_response, self.paciente.nombre)
@@ -346,11 +497,20 @@ class RescheduleRequestTests(TestCase):
 		send_mail.assert_called_once()
 		self.assertEqual(send_mail.call_args.args[3], [self.usuario.email])
 		self.assertIn('aprobó tu solicitud', send_mail.call_args.args[1])
+		updated_dashboard = self.doctor_client.get(reverse('doctor_dashboard_data')).json()
+		self.assertEqual(
+			updated_dashboard['patients'][0]['sessions'][0]['scheduledDate'],
+			timezone.localtime(propuesta).isoformat(),
+		)
 		patient_response = self.patient_client.get(reverse('principal'))
 		self.assertEqual(patient_response.context['calendar_sessions'][0]['date'], propuesta.date().isoformat())
 		self.assertEqual(
 			patient_response.context['calendar_sessions'][0]['request']['status'],
 			SolicitudReagendamiento.ESTADO_APROBADA,
+		)
+		self.assertEqual(
+			patient_response.context['calendar_sessions'][0]['status'],
+			Sesion.ESTADO_PROGRAMADA,
 		)
 		self.assertContains(patient_response, 'Cambio aprobado')
 		self.assertContains(patient_response, 'Nueva fecha confirmada')
@@ -391,6 +551,55 @@ class RescheduleRequestTests(TestCase):
 			SolicitudReagendamiento.objects.get(pk=solicitud_id).estado,
 			SolicitudReagendamiento.ESTADO_APROBADA,
 		)
+
+	def test_medico_no_puede_aprobar_un_cambio_con_choque_de_horario(self):
+		response, propuesta = self.solicitar_cambio()
+		Sesion.objects.create(
+			paciente=self.paciente,
+			fecha=propuesta,
+			objetivo='Otra sesión del paciente',
+		)
+
+		decision = self.doctor_client.post(
+			reverse('review_reschedule_request', args=[response.json()['request']['id']]),
+			{'accion': 'aprobar'},
+		)
+
+		self.assertEqual(decision.status_code, 409)
+		self.assertIn('paciente', decision.json()['error'])
+		self.sesion.refresh_from_db()
+		self.assertNotEqual(timezone.localtime(self.sesion.fecha), propuesta)
+		self.assertEqual(
+			SolicitudReagendamiento.objects.get(pk=response.json()['request']['id']).estado,
+			SolicitudReagendamiento.ESTADO_PENDIENTE,
+		)
+
+	def test_paciente_no_puede_aceptar_una_alternativa_con_choque_de_horario(self):
+		response, _ = self.solicitar_cambio()
+		request_id = response.json()['request']['id']
+		alternativa = self.fecha_futura(8)
+		Sesion.objects.create(
+			paciente=self.paciente,
+			fecha=alternativa,
+			objetivo='Otra sesión del paciente',
+		)
+		self.doctor_client.post(
+			reverse('review_reschedule_request', args=[request_id]),
+			{
+				'accion': 'proponer',
+				'fecha_alternativa': alternativa.strftime('%Y-%m-%dT%H:%M'),
+			},
+		)
+
+		accepted = self.patient_client.post(
+			reverse('respond_to_reschedule_proposal', args=[request_id]),
+			{'accion': 'aceptar'},
+		)
+
+		self.assertEqual(accepted.status_code, 409)
+		self.assertIn('paciente', accepted.json()['error'])
+		self.sesion.refresh_from_db()
+		self.assertNotEqual(timezone.localtime(self.sesion.fecha), alternativa)
 
 	def test_paciente_ve_propuesta_alternativa_y_solicitudes_rechazadas_en_su_historial(self):
 		response, _ = self.solicitar_cambio()
@@ -928,6 +1137,7 @@ class MedicalDashboardTests(TestCase):
 			paciente=self.patient,
 			fecha=timezone.now() - timedelta(days=1),
 			objetivo='Ejercicios de movilidad',
+			estado=Sesion.ESTADO_COMPLETADA,
 			realizada=True,
 			realizada_en=timezone.now() - timedelta(hours=2),
 		)
@@ -967,10 +1177,17 @@ class MedicalDashboardTests(TestCase):
 				'unidad': 'kg',
 			},
 		)
+		goal = ObjetivoTerapeutico.objects.get(paciente=self.patient)
 		future_date = timezone.localtime(timezone.now() + timedelta(days=2)).strftime('%Y-%m-%dT%H:%M')
 		session_response = self.client.post(
 			reverse('schedule_session', args=[self.patient.pk]),
-			{'fecha': future_date, 'objetivo': 'Fortalecimiento'},
+			{
+				'fecha': future_date,
+				'objetivo_terapeutico': str(goal.pk),
+				'nota_objetivo': 'Progresar de forma gradual.',
+				'duracion_minutos': '45',
+				'enlace_ubicacion': 'Consultorio 2',
+			},
 		)
 
 		self.assertEqual(evaluation_response.status_code, 302)
@@ -979,6 +1196,70 @@ class MedicalDashboardTests(TestCase):
 		self.assertEqual(EvaluacionClinica.objects.filter(paciente=self.patient).count(), 1)
 		self.assertEqual(ObjetivoTerapeutico.objects.filter(paciente=self.patient).count(), 1)
 		self.assertEqual(Sesion.objects.filter(paciente=self.patient, activo=True).count(), 1)
+		session = Sesion.objects.get(paciente=self.patient)
+		self.assertEqual(session.objetivo, goal.nombre)
+		self.assertEqual(session.objetivo_terapeutico, goal)
+		self.assertEqual(session.nota_objetivo, 'Progresar de forma gradual.')
+		self.assertEqual(session.duracion_minutos, 45)
+		self.assertEqual(session.enlace_ubicacion, 'Consultorio 2')
+		self.assertEqual(session.estado, Sesion.ESTADO_PROGRAMADA)
+
+	def test_no_agenda_si_el_paciente_o_el_medico_tienen_un_choque(self):
+		goal = ObjetivoTerapeutico.objects.create(
+			paciente=self.patient,
+			nombre='Recuperar movilidad',
+			metrica='Movilidad',
+			valor_objetivo=90,
+		)
+		fecha = timezone.localtime(timezone.now() + timedelta(days=4)).replace(
+			hour=10, minute=0, second=0, microsecond=0,
+		)
+		Sesion.objects.create(
+			paciente=self.patient,
+			fecha=fecha,
+			objetivo='Sesión existente',
+			duracion_minutos=45,
+		)
+
+		response = self.client.post(
+			reverse('schedule_session', args=[self.patient.pk]),
+			{
+				'fecha': (fecha + timedelta(minutes=30)).strftime('%Y-%m-%dT%H:%M'),
+				'objetivo_terapeutico': str(goal.pk),
+				'duracion_minutos': '45',
+			},
+			follow=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(Sesion.objects.filter(paciente=self.patient).count(), 1)
+		self.assertContains(response, 'El horario se cruza con otra sesión del paciente y del médico asignado.')
+
+	def test_agendar_rechaza_objetivos_de_otro_paciente(self):
+		otro_paciente = Paciente.objects.create(
+			doctor=self.doctor,
+			nombre='Paciente distinto',
+			email='paciente-distinto@example.com',
+		)
+		otro_objetivo = ObjetivoTerapeutico.objects.create(
+			paciente=otro_paciente,
+			nombre='Objetivo privado',
+			metrica='Movilidad',
+			valor_objetivo=10,
+		)
+
+		response = self.client.post(
+			reverse('schedule_session', args=[self.patient.pk]),
+			{
+				'fecha': timezone.localtime(timezone.now() + timedelta(days=4)).strftime('%Y-%m-%dT%H:%M'),
+				'objetivo_terapeutico': str(otro_objetivo.pk),
+				'duracion_minutos': '45',
+			},
+			follow=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertFalse(Sesion.objects.filter(paciente=self.patient).exists())
 
 	def test_dashboard_and_clinical_write_routes_are_scoped_to_assigned_patients(self):
 		other_doctor = Usuario.objects.create(
@@ -1026,6 +1307,38 @@ class MedicalDashboardTests(TestCase):
 		self.assertTrue(due_session.realizada)
 		self.assertIsNotNone(due_session.realizada_en)
 		self.assertFalse(future_session.realizada)
+
+	def test_doctor_can_cancel_a_future_session_and_mark_a_past_one_as_no_show(self):
+		future_session = Sesion.objects.create(
+			paciente=self.patient,
+			fecha=timezone.now() + timedelta(days=1),
+			objetivo='Sesión futura',
+		)
+		past_session = Sesion.objects.create(
+			paciente=self.patient,
+			fecha=timezone.now() - timedelta(minutes=5),
+			objetivo='Sesión pasada',
+		)
+
+		cancelled = self.client.post(
+			reverse('complete_session', args=[future_session.pk]),
+			{'estado': Sesion.ESTADO_CANCELADA},
+		)
+		no_show = self.client.post(
+			reverse('complete_session', args=[past_session.pk]),
+			{'estado': Sesion.ESTADO_NO_ASISTIO},
+		)
+
+		self.assertEqual(cancelled.status_code, 302)
+		self.assertEqual(no_show.status_code, 302)
+		future_session.refresh_from_db()
+		past_session.refresh_from_db()
+		self.assertEqual(future_session.estado, Sesion.ESTADO_CANCELADA)
+		self.assertFalse(future_session.activo)
+		self.assertEqual(past_session.estado, Sesion.ESTADO_NO_ASISTIO)
+		self.assertTrue(past_session.activo)
+		self.assertFalse(past_session.realizada)
+		self.assertIsNone(past_session.realizada_en)
 
 
 class PatientProgressTests(TestCase):
@@ -1092,6 +1405,7 @@ class PatientProgressTests(TestCase):
 			paciente=self.patient,
 			fecha=timezone.now() - timedelta(days=1),
 			objetivo='Sesión realizada',
+			estado=Sesion.ESTADO_COMPLETADA,
 			realizada=True,
 			realizada_en=timezone.now() - timedelta(hours=1),
 		)
@@ -1099,6 +1413,18 @@ class PatientProgressTests(TestCase):
 			paciente=self.patient,
 			fecha=timezone.now() + timedelta(days=1),
 			objetivo='Sesión programada',
+		)
+		Sesion.objects.create(
+			paciente=self.patient,
+			fecha=timezone.now() - timedelta(days=2),
+			objetivo='Sesión no asistida',
+			estado=Sesion.ESTADO_NO_ASISTIO,
+		)
+		Sesion.objects.create(
+			paciente=self.patient,
+			fecha=timezone.now() - timedelta(days=3),
+			objetivo='Sesión cancelada',
+			estado=Sesion.ESTADO_CANCELADA,
 		)
 		RutinaAsignada.objects.create(
 			paciente=self.patient,
@@ -1130,6 +1456,21 @@ class PatientProgressTests(TestCase):
 		self.assertEqual((progress['dailyRoutinesCompleted'], progress['dailyRoutinesAssigned']), (1, 2))
 		self.assertEqual(progress['dailyPercent'], 50)
 		self.assertEqual(len(progress['progressHistory']), 1)
+
+	def test_clinical_evaluation_validates_eva_range_on_server(self):
+		url = reverse('register_clinical_evaluation', args=[self.patient.pk])
+		invalid_values = [
+			self.doctor_client.post(url, {'nivel_dolor': pain})
+			for pain in ('-1', '11')
+		]
+		valid = self.doctor_client.post(url, {'nivel_dolor': '0'})
+
+		self.assertTrue(all(response.status_code == 302 for response in invalid_values))
+		self.assertEqual(valid.status_code, 302)
+		self.assertEqual(
+			list(EvaluacionClinica.objects.filter(paciente=self.patient).values_list('nivel_dolor', flat=True)),
+			[0],
+		)
 
 	def test_patient_progress_page_and_api_are_scoped_to_the_authenticated_patient(self):
 		other_user = Usuario.objects.create(
@@ -1207,23 +1548,43 @@ class PatientProgressTests(TestCase):
 		self.assertEqual(self.patient.historial_avance[-1]['avance'], 25)
 
 	def test_doctor_can_assign_a_routine_only_to_an_assigned_patient(self):
-		routine = {
-			'video_id': 'video-2',
-			'title': 'Rutina de estiramiento',
-		}
+		template = PlantillaRutina.objects.create(
+			doctor=self.doctor,
+			nombre='Rutina de estiramiento',
+		)
+		exercise = EjercicioPlantillaRutina.objects.create(
+			plantilla=template,
+			video_id='video-2',
+			titulo='Estiramiento',
+			orden=1,
+		)
 		url = reverse('assign_routine', args=[self.patient.pk])
+		today = timezone.localdate()
 		form_data = {
-			'video_id': 'video-2',
-			'fecha_programada': timezone.localdate().isoformat(),
+			'plantilla': str(template.pk),
+			'fecha_inicio': today.isoformat(),
+			'fecha_fin': (today + timedelta(days=7)).isoformat(),
+			'dias_semana': [str(today.weekday())],
+			f'ejercicio_{exercise.pk}_series': '3',
+			f'ejercicio_{exercise.pk}_repeticiones': '10 por lado',
+			f'ejercicio_{exercise.pk}_duracion': '',
+			f'ejercicio_{exercise.pk}_notas': 'Detener si duele.',
 		}
 
-		with patch('princpal.views.load_videos', return_value=[routine]):
-			response = self.doctor_client.post(url, form_data)
+		response = self.doctor_client.post(url, form_data)
 
-		self.assertEqual(response.status_code, 302)
+		self.assertEqual(response.status_code, 200)
+		self.assertTrue(response.json()['success'])
 		assignment = RutinaAsignada.objects.get(paciente=self.patient)
-		self.assertEqual(assignment.titulo, routine['title'])
-		self.assertEqual(assignment.fecha_programada, timezone.localdate())
+		self.assertEqual(assignment.titulo, template.nombre)
+		self.assertEqual(assignment.fecha_inicio, today)
+		self.assertEqual(assignment.fecha_fin, today + timedelta(days=7))
+		self.assertEqual(assignment.dias_semana, [today.weekday()])
+		self.assertEqual(assignment.ocurrencias.count(), 2)
+		assigned_exercise = assignment.ejercicios.get()
+		self.assertEqual(assigned_exercise.series, 3)
+		self.assertEqual(assigned_exercise.repeticiones, '10 por lado')
+		self.assertEqual(assigned_exercise.notas_medico, 'Detener si duele.')
 
 		other_doctor = Usuario.objects.create(
 			email='different-progress-doctor@example.com',
@@ -1234,8 +1595,209 @@ class PatientProgressTests(TestCase):
 		session = other_client.session
 		session['current_user'] = other_doctor.email
 		session.save()
-		with patch('princpal.views.load_videos', return_value=[routine]):
-			unauthorized = other_client.post(url, form_data)
+		unauthorized = other_client.post(url, form_data)
 
 		self.assertEqual(unauthorized.status_code, 404)
 		self.assertEqual(RutinaAsignada.objects.filter(paciente=self.patient).count(), 1)
+
+	def test_template_edits_do_not_change_assigned_exercise_copies(self):
+		template = PlantillaRutina.objects.create(doctor=self.doctor, nombre='Movilidad')
+		exercise = EjercicioPlantillaRutina.objects.create(
+			plantilla=template,
+			video_id='video-movilidad',
+			titulo='Movilidad de rodilla',
+			orden=1,
+		)
+		today = timezone.localdate()
+		response = self.doctor_client.post(
+			reverse('assign_routine', args=[self.patient.pk]),
+			{
+				'plantilla': str(template.pk),
+				'fecha_inicio': today.isoformat(),
+				'fecha_fin': today.isoformat(),
+				'dias_semana': [str(today.weekday())],
+				f'ejercicio_{exercise.pk}_series': '4',
+				f'ejercicio_{exercise.pk}_repeticiones': '8',
+				f'ejercicio_{exercise.pk}_duracion': '',
+				f'ejercicio_{exercise.pk}_notas': 'Rango cómodo.',
+			},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		assignment = RutinaAsignada.objects.get(paciente=self.patient)
+		exercise.titulo = 'Nombre actualizado'
+		exercise.save(update_fields=['titulo'])
+		template.nombre = 'Plantilla actualizada'
+		template.save(update_fields=['nombre'])
+
+		assignment.refresh_from_db()
+		assigned_exercise = assignment.ejercicios.get()
+		self.assertEqual(assignment.titulo, 'Movilidad')
+		self.assertEqual(assigned_exercise.titulo, 'Movilidad de rodilla')
+		self.assertEqual(assigned_exercise.series, 4)
+		self.assertEqual(assigned_exercise.notas_medico, 'Rango cómodo.')
+
+	def test_patient_feedback_is_validated_and_attached_to_its_occurrence(self):
+		today = timezone.localdate()
+		assignment = RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='video-feedback',
+			titulo='Rutina de prueba',
+			fecha_programada=today,
+		)
+		occurrence = OcurrenciaRutina.objects.create(asignacion=assignment, fecha=today)
+		url = reverse('complete_routine_occurrence', args=[occurrence.pk])
+
+		invalid = self.patient_client.post(url, {
+			'nivel_dolor': '11',
+			'dificultad': 'adecuada',
+		})
+		self.assertEqual(invalid.status_code, 400)
+		self.assertEqual(invalid.json()['error'], 'El dolor debe estar entre 0 y 10.')
+
+		response = self.patient_client.post(url, {
+			'nivel_dolor': '0',
+			'dificultad': 'facil',
+			'comentario': 'Sin molestias.',
+		})
+
+		self.assertEqual(response.status_code, 200)
+		occurrence.refresh_from_db()
+		self.assertEqual(occurrence.nivel_dolor, 0)
+		self.assertEqual(occurrence.dificultad, OcurrenciaRutina.DIFICULTAD_FACIL)
+		self.assertEqual(occurrence.comentario, 'Sin molestias.')
+		self.assertIsNotNone(occurrence.completada_en)
+		doctor_progress = self.doctor_client.get(reverse('doctor_dashboard_data')).json()['patients']
+		self.assertEqual(doctor_progress[0]['routineFeedback'][0]['pain'], 0)
+		self.assertEqual(doctor_progress[0]['routineFeedback'][0]['comment'], 'Sin molestias.')
+
+	def test_assigned_template_cannot_be_deleted_and_foreign_doctor_cannot_manage_it(self):
+		template = PlantillaRutina.objects.create(doctor=self.doctor, nombre='Equilibrio')
+		assignment = RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='video-equilibrio',
+			titulo=template.nombre,
+			fecha_programada=timezone.localdate(),
+			plantilla=template,
+		)
+		self.assertIsNotNone(assignment.pk)
+
+		delete_response = self.doctor_client.post(
+			reverse('manage_routine_template', args=[template.pk]),
+			{'action': 'delete'},
+		)
+		self.assertEqual(delete_response.status_code, 302)
+		self.assertTrue(PlantillaRutina.objects.filter(pk=template.pk).exists())
+
+		other_doctor = Usuario.objects.create(
+			email='foreign-template-doctor@example.com',
+			nombre='Otro médico',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		other_client = Client()
+		session = other_client.session
+		session['current_user'] = other_doctor.email
+		session.save()
+		foreign_response = other_client.post(
+			reverse('manage_routine_template', args=[template.pk]),
+			{'action': 'deactivate'},
+		)
+		self.assertEqual(foreign_response.status_code, 404)
+
+	def test_doctor_can_create_an_ordered_template_from_the_video_catalog(self):
+		videos = [
+			{'video_id': 'video-first', 'title': 'Primer video'},
+			{'video_id': 'video-second', 'title': 'Segundo video'},
+		]
+		with patch('princpal.views.load_videos', return_value=videos):
+			response = self.doctor_client.post(
+				reverse('save_routine_template'),
+				{
+					'nombre': 'Rutina combinada',
+					'descripcion': 'Movilidad y equilibrio.',
+					'video_ids': ['video-first', 'video-second'],
+					'orden_0': '2',
+					'orden_1': '1',
+				},
+			)
+
+		self.assertEqual(response.status_code, 302)
+		template = PlantillaRutina.objects.get(doctor=self.doctor, nombre='Rutina combinada')
+		self.assertEqual(
+			list(template.ejercicios.values_list('titulo', 'orden')),
+			[('Segundo video', 1), ('Primer video', 2)],
+		)
+
+	def test_inactive_template_and_invalid_dose_cannot_be_assigned(self):
+		template = PlantillaRutina.objects.create(
+			doctor=self.doctor,
+			nombre='Rutina temporal',
+			activa=False,
+		)
+		exercise = EjercicioPlantillaRutina.objects.create(
+			plantilla=template,
+			video_id='video-temporal',
+			titulo='Ejercicio temporal',
+		)
+		url = reverse('assign_routine', args=[self.patient.pk])
+		today = timezone.localdate()
+		base_data = {
+			'plantilla': str(template.pk),
+			'fecha_inicio': today.isoformat(),
+			'fecha_fin': today.isoformat(),
+			'dias_semana': [str(today.weekday())],
+			f'ejercicio_{exercise.pk}_series': '1',
+			f'ejercicio_{exercise.pk}_repeticiones': '10',
+			f'ejercicio_{exercise.pk}_duracion': '',
+		}
+
+		inactive_response = self.doctor_client.post(url, base_data)
+		self.assertEqual(inactive_response.status_code, 400)
+		self.assertEqual(
+			inactive_response.json()['error'],
+			'La plantilla está desactivada y no se puede asignar.',
+		)
+
+		template.activa = True
+		template.save(update_fields=['activa'])
+		invalid_dose = self.doctor_client.post(url, {
+			**base_data,
+			'ejercicio_%s_series' % exercise.pk: '0',
+			f'ejercicio_{exercise.pk}_repeticiones': '',
+		})
+		self.assertEqual(invalid_dose.status_code, 400)
+		self.assertEqual(RutinaAsignada.objects.filter(paciente=self.patient).count(), 0)
+
+	def test_date_range_and_weekdays_are_required_and_validated(self):
+		template = PlantillaRutina.objects.create(doctor=self.doctor, nombre='Rutina de fechas')
+		exercise = EjercicioPlantillaRutina.objects.create(
+			plantilla=template,
+			video_id='video-fechas',
+			titulo='Ejercicio de fechas',
+		)
+		today = timezone.localdate()
+		data = {
+			'plantilla': str(template.pk),
+			'fecha_inicio': today.isoformat(),
+			'fecha_fin': (today - timedelta(days=1)).isoformat(),
+			f'ejercicio_{exercise.pk}_series': '1',
+			f'ejercicio_{exercise.pk}_repeticiones': '10',
+			f'ejercicio_{exercise.pk}_duracion': '',
+		}
+		url = reverse('assign_routine', args=[self.patient.pk])
+
+		invalid_range = self.doctor_client.post(url, data)
+		self.assertEqual(invalid_range.status_code, 400)
+		self.assertEqual(
+			invalid_range.json()['error'],
+			'La fecha de fin no puede ser anterior a la fecha de inicio.',
+		)
+
+		data['fecha_fin'] = today.isoformat()
+		without_weekday = self.doctor_client.post(url, data)
+		self.assertEqual(without_weekday.status_code, 400)
+		self.assertEqual(
+			without_weekday.json()['error'],
+			'Selecciona al menos un día de la semana.',
+		)
+		self.assertFalse(RutinaAsignada.objects.filter(paciente=self.patient).exists())

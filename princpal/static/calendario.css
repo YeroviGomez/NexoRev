@@ -60,7 +60,12 @@
 .calendar-session-item { padding: 1rem 0; border-bottom: 1px solid var(--line); }
 .calendar-session-item.has-reschedule-request { padding: 1rem; border: 1px solid var(--line); border-radius: 0.8rem; background: var(--surface); }
 .calendar-session-time { color: #007f77; font-size: 0.82rem; font-weight: 700; }
+.calendar-session-status { display: inline-block; margin-left: 0.5rem; padding: 0.2rem 0.5rem; border-radius: 999px; color: #145c4a; background: #e6f5ef; font-size: 0.72rem; font-weight: 700; vertical-align: middle; }
+.calendar-session-status.is-cancelada, .calendar-session-status.is-no_asistio { color: #8b3038; background: #fcebed; }
+.calendar-session-status.is-completada { color: #245b39; background: #e8f5e9; }
+.calendar-session-status.is-reagendamiento_solicitado { color: #795300; background: #fff4d6; }
 .calendar-session-objective { margin: 0.25rem 0 0; color: var(--ink); font-size: 0.95rem; line-height: 1.4; overflow-wrap: anywhere; }
+.calendar-session-detail { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.82rem; line-height: 1.45; overflow-wrap: anywhere; }
 .calendar-session-patient, .calendar-request-status, .calendar-request-response { margin: 0.45rem 0 0; color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
 .calendar-request-status { color: #8a5b00; font-weight: 700; }
 .calendar-request-status.is-aprobada { color: #087443; }
@@ -84,6 +89,10 @@ html.dark-mode .calendar-selected-label time, body.dark-mode .calendar-selected-
 html.dark-mode .calendar-day, body.dark-mode .calendar-day,
 html.dark-mode .calendar-agenda-header h2, body.dark-mode .calendar-agenda-header h2,
 html.dark-mode .calendar-session-objective, body.dark-mode .calendar-session-objective { color: #f8fafc; }
+html.dark-mode .calendar-session-status, body.dark-mode .calendar-session-status { color: #a7f3d0; background: #173b32; }
+html.dark-mode .calendar-session-status.is-cancelada, html.dark-mode .calendar-session-status.is-no_asistio, body.dark-mode .calendar-session-status.is-cancelada, body.dark-mode .calendar-session-status.is-no_asistio { color: #fecaca; background: #4a2028; }
+html.dark-mode .calendar-session-status.is-completada, body.dark-mode .calendar-session-status.is-completada { color: #bbf7d0; background: #193a2a; }
+html.dark-mode .calendar-session-status.is-reagendamiento_solicitado, body.dark-mode .calendar-session-status.is-reagendamiento_solicitado { color: #fde68a; background: #493815; }
 html.dark-mode .calendar-today-button, body.dark-mode .calendar-today-button { color: #5eead4; background: #1a1a24; }
 html.dark-mode .calendar-arrow-button, body.dark-mode .calendar-arrow-button,
 html.dark-mode .calendar-day:not(.is-outside-month), body.dark-mode .calendar-day:not(.is-outside-month) { background: #1a1a24; }

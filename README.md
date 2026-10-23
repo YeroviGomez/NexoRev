@@ -37,10 +37,10 @@ una experiencia adaptada y el acceso se protege mediante middleware.
 
 El médico puede consultar sus pacientes asignados en un dashboard con métricas
 de pacientes activos, avance promedio, dolor EVA y cumplimiento de objetivos.
-Incluye tablas y gráficas de evolución del dolor, objetivos, adherencia a
+Incluye tablas y gráficas de evolución del dolor, objetivos, asistencia a
 sesiones, progreso por paciente y valores clínicos frente a sus metas. Los
 filtros permiten seleccionar paciente, fechas y estado del tratamiento, y la
-tabla se puede ordenar por progreso, sesiones realizadas o última sesión.
+tabla se puede ordenar por progreso, sesiones atendidas o última sesión.
 
 Las evaluaciones históricas y objetivos se guardan en `EvaluacionClinica` y
 `ObjetivoTerapeutico`. Desde el dashboard se pueden registrar evaluaciones
@@ -55,6 +55,60 @@ Los datos antiguos de dolor disponibles en el diagnóstico del paciente se
 utilizan como punto histórico cuando aún no hay evaluaciones clínicas nuevas.
 La comparación de objetivos toma la evaluación más reciente de la misma
 métrica y unidad.
+
+### Plantillas, asignaciones y seguimiento de rutinas
+
+Las plantillas reúnen videos y ejercicios reutilizables; cada asignación
+vincula una plantilla con un paciente, fechas de inicio y fin, y días de la
+semana. El formulario muestra los días como opciones accesibles, ofrece
+frecuencias rápidas y calcula las ocurrencias antes de guardar. Los registros
+anteriores con una fecha única se conservan como asignaciones de un solo día.
+
+La dosis se copia a los ejercicios asignados —series, repeticiones, duración y
+notas del médico— por lo que cambiar una plantilla no altera las indicaciones
+de asignaciones existentes. Las ocurrencias se generan según el calendario
+seleccionado. El paciente puede consultar sus ejercicios por fecha y marcar
+cada ocurrencia como completada, registrando dolor EVA de 0 a 10, dificultad y
+un comentario opcional. El médico consulta esa retroalimentación en el
+dashboard y en el expediente del paciente.
+
+### Sesiones y solicitudes de reagendamiento
+
+Las sesiones incluyen estado (programada, completada, cancelada o no asistió),
+duración, enlace de videollamada o ubicación y un objetivo terapéutico del
+paciente con nota opcional. El calendario distingue los estados; una solicitud
+pendiente se muestra a partir del historial de `SolicitudReagendamiento`, sin
+convertirla en un estado almacenado de la sesión.
+
+Se comprueba el solapamiento de horarios de médico y paciente al agendar,
+reagendar, aprobar una solicitud o aceptar una alternativa. Las solicitudes
+conservan su historial y el horario efectivo aprobado es el que se usa para
+calendario, dashboard y métricas.
+
+### Expediente médico del paciente
+
+El expediente, disponible desde la tarjeta del paciente, organiza
+Evaluaciones, Objetivos, Rutinas y Sesiones en pestañas. Muestra la evolución
+clínica, dosis, ocurrencias, retroalimentación y citas; desde la pestaña de
+Sesiones se pueden revisar solicitudes pendientes con el flujo ya existente.
+Al iniciar una acción desde el expediente, el dashboard fija el paciente en
+los formularios existentes. Se puede salir de ese contexto para recuperar el
+dashboard general. Las consultas y operaciones del expediente se limitan a los
+pacientes asignados al médico.
+
+### Validaciones clínicas, métricas y fechas
+
+El dolor EVA se valida entre 0 y 10 tanto en cliente como en servidor. La
+gráfica del expediente muestra el historial EVA individual. La asistencia se
+calcula como sesiones atendidas sobre sesiones cuya fecha vigente ya se
+cumplió; excluye sesiones futuras y canceladas, e incluye las no asistidas en
+el denominador. La adherencia a rutinas compara las ocurrencias completadas
+con las programadas hasta hoy. Los reagendamientos aprobados se calculan con
+la fecha nueva, no con la fecha original.
+
+Las fechas presentadas en la interfaz siguen el formato `dd/mm/aaaa` (con hora
+cuando corresponde); los valores de fecha y hora transmitidos y almacenados
+mantienen sus formatos de datos originales.
 
 ### Preguntas de seguridad
 
@@ -72,15 +126,17 @@ existentes.
 ### Mi Progreso del paciente
 
 La vista del paciente reúne la etapa del tratamiento, historial gráfico,
-objetivos que cumplen las evaluaciones clínicas, sesiones programadas y
-rutinas asignadas. El porcentaje general es el promedio de cuatro porcentajes:
-objetivos cumplidos, sesiones realizadas, rutinas asignadas vencidas o
-programadas para hoy que se completaron y evaluaciones con reducción del dolor
+objetivos que cumplen las evaluaciones clínicas, sesiones y rutinas
+programadas. El porcentaje general es el promedio de cuatro porcentajes:
+objetivos cumplidos, asistencia a sesiones cuya fecha vigente ya se cumplió
+(sesiones atendidas sobre programadas; excluye canceladas y futuras), rutinas
+programadas hasta hoy que se completaron y evaluaciones con reducción del dolor
 frente a la evaluación anterior. Un componente sin registros aporta 0 %.
 
-El fisioterapeuta asigna videos de ejercicio a pacientes propios desde el
-dashboard, con una fecha. Al marcarse un video como completado se actualiza la
-asignación correspondiente; se conserva el historial de avances en el paciente.
+El fisioterapeuta asigna rutinas de ejercicios a sus pacientes desde el
+dashboard, con fechas y días de frecuencia. Al marcarse una ocurrencia como
+completada se guarda su retroalimentación; se conserva el historial de avances
+en el paciente.
 La vista consulta los datos actuales y los refresca periódicamente, incluso
 cuando se registran sesiones o evaluaciones desde otra sesión.
 

@@ -64,6 +64,29 @@
 .doctor-record-view h3 { margin: 1.2rem 0 0.5rem; }
 .record-empty { color: var(--muted); }
 .doctor-record-chart { width: 100%; min-height: 170px; margin-top: 0.7rem; }
+.doctor-profile-heading { padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
+.doctor-profile-heading h3 { margin-top: 0; }
+.doctor-profile-exit { display: inline-flex; margin: 0.4rem 0 0.9rem; padding: 0.55rem 0.8rem; border: 1px solid var(--line); border-radius: 0.55rem; color: var(--text); background: var(--surface-strong); font: inherit; font-weight: 700; cursor: pointer; }
+.doctor-profile-tabs { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 1rem 0; border-bottom: 1px solid var(--line); }
+.doctor-profile-tabs [role="tab"] { min-height: 2.7rem; padding: 0.55rem 0.9rem; border: 0; border-bottom: 3px solid transparent; color: var(--muted); background: transparent; font: inherit; font-weight: 700; cursor: pointer; }
+.doctor-profile-tabs [role="tab"][aria-selected="true"] { border-bottom-color: #12856a; color: #12856a; }
+.doctor-profile-tabs [role="tab"]:focus-visible, .doctor-profile-exit:focus-visible { outline: 3px solid rgba(18, 133, 106, 0.3); outline-offset: 2px; }
+.doctor-profile-panel[hidden] { display: none; }
+.doctor-profile-panel-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.8rem; }
+.doctor-profile-panel-heading h3 { margin: 0; }
+.doctor-profile-panel-heading p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.88rem; }
+.doctor-evaluation-chart { display: block; width: 100%; min-height: 200px; margin-top: 0.8rem; overflow: visible; }
+.doctor-evaluation-grid { stroke: var(--line); stroke-dasharray: 3 4; }
+.doctor-evaluation-line { fill: none; stroke: #12856a; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.doctor-evaluation-point { fill: #12856a; stroke: var(--surface); stroke-width: 2; }
+.doctor-evaluation-label, .doctor-evaluation-empty { fill: var(--muted); font-size: 12px; }
+.doctor-profile-list { display: grid; gap: 0.65rem; margin: 0.8rem 0 0; padding: 0; list-style: none; }
+.doctor-profile-list > li, .doctor-profile-card { display: grid; gap: 0.35rem; padding: 0.85rem; border: 1px solid var(--line); border-radius: 0.7rem; background: var(--surface-strong); }
+.doctor-profile-list > li > span, .doctor-profile-list > li > small { color: var(--muted); line-height: 1.45; }
+.doctor-profile-card h3 { margin: 0; }
+.doctor-profile-card > .doctor-profile-list { padding-left: 0.7rem; }
+.profile-reschedule-request { display: grid; gap: 0.35rem; margin-top: 0.5rem; padding: 0.75rem; border-radius: 0.65rem; background: #fff8e6; }
+.profile-reschedule-request p { margin: 0; }
 @media (max-width: 560px) {
 	.session-reschedule-form { grid-template-columns: minmax(0, 1fr); }
 	.session-reschedule-submit { justify-self: start; }
