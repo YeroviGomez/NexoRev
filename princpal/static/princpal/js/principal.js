@@ -1241,7 +1241,10 @@ function openTutorialPrompt(scope = null) {
       inicio: "Inicio",
       diagnostico: "Diagnóstico",
       dashboard: "Dashboard profesional",
-      calendario: "Calendario profesional",
+      progreso: "Mi progreso",
+      calendario: document.body.dataset.currentUserRole === "paciente"
+        ? "Sesiones y cambios"
+        : "Calendario profesional",
       videos: "Videos",
       favoritos: "Favoritos",
       historial: "Historial",
@@ -1310,6 +1313,19 @@ const tutorialSteps = [
         "Los accesos rápidos llevan a Videos y al Historial.",
       ],
   },
+  ...(document.body.dataset.currentUserRole === "paciente" ? [{
+    view: "progreso",
+    icon: "history",
+    title: "Mi progreso - Resumen de recuperación",
+    subtitle: "Consulta cómo avanzas y revisa tus actividades del tratamiento.",
+    boxTitle: "Cómo funciona:",
+    items: [
+      "El porcentaje general reúne tus objetivos, sesiones, rutinas y evaluaciones.",
+      "Revisa tu etapa de rehabilitación y la gráfica de evolución.",
+      "Consulta qué objetivos has completado y el resumen de sesiones y rutinas.",
+      "En “Tu progreso de hoy” y “Rutinas asignadas” puedes revisar tus actividades y registrar las rutinas realizadas.",
+    ],
+  }] : []),
   {
     view: "diagnostico",
     icon: "pulse",
@@ -1395,6 +1411,20 @@ const tutorialSteps = [
       "En Seguridad puedes configurar biometría y cambiar tu contraseña.",
     ],
   },
+  ...(document.body.dataset.currentUserRole === "paciente" ? [{
+    view: "calendario",
+    icon: "history",
+    title: "Sesiones y cambios",
+    subtitle: "Consulta tus citas y gestiona solicitudes de cambio de fecha.",
+    boxTitle: "Cómo funciona:",
+    items: [
+      "Selecciona una fecha del calendario para consultar las sesiones programadas.",
+      "Abre una sesión futura y completa el motivo y la nueva fecha para solicitar un cambio.",
+      "Tu horario actual sigue vigente hasta que el profesional revise la solicitud.",
+      "Consulta “Mis solicitudes de cambio” para ver el estado y la respuesta.",
+      "Si recibes una propuesta alternativa, puedes aceptarla o rechazarla desde esta sección.",
+    ],
+  }] : []),
 ];
 
 const tutorialIcons = {
@@ -1626,6 +1656,50 @@ const proTourSteps = [
       description: "Selecciona una fila de paciente para consultar su expediente, progreso, notas y sesiones.",
     },
   ] : []),
+  ...(document.body.dataset.currentUserRole === "paciente" ? [
+    {
+      view: "progreso",
+      selector: ".patient-recovery-card",
+      title: "Resumen de recuperación",
+      description: "Este porcentaje combina el avance de objetivos, sesiones, rutinas y evaluaciones registradas durante tu tratamiento.",
+    },
+    {
+      view: "progreso",
+      selector: ".patient-stage-card",
+      title: "Etapa de rehabilitación",
+      description: "Consulta la etapa actual de tu proceso y cómo se organiza la evolución desde la fase inicial hasta la finalizada.",
+    },
+    {
+      view: "progreso",
+      selector: ".patient-progress-chart-card",
+      title: "Evolución de tu recuperación",
+      description: "La gráfica representa los cambios de progreso que se han guardado durante el tratamiento.",
+    },
+    {
+      view: "progreso",
+      selector: ".patient-goals-card",
+      title: "Tus objetivos",
+      description: "Revisa los objetivos terapéuticos registrados y distingue los que ya completaste de los que siguen en progreso.",
+    },
+    {
+      view: "progreso",
+      selector: ".patient-summary-grid",
+      title: "Resumen de sesiones y actividad",
+      description: "Consulta sesiones y rutinas realizadas, tus días consecutivos con actividad y la fecha de la última sesión.",
+    },
+    {
+      view: "progreso",
+      selector: ".patient-daily-card",
+      title: "Progreso de hoy",
+      description: "Aquí se muestra el avance diario de las rutinas programadas y las actividades que quedan por completar.",
+    },
+    {
+      view: "progreso",
+      selector: ".patient-routines-card",
+      title: "Rutinas asignadas",
+      description: "Revisa las actividades indicadas por tu profesional y registra cada rutina cuando la completes.",
+    },
+  ] : []),
   {
     view: "diagnostico",
     selector: document.body.dataset.currentUserRole === "doctor" ? "#doctorRecordView" : "#diagnosticForm .pain-scale",
@@ -1826,6 +1900,39 @@ const proTourSteps = [
     description: "Este botón flotante aparece al desplazarte hacia abajo. Púlsalo para regresar suavemente al inicio de la página.",
     showScrollTopButton: true,
   },
+  ...(document.body.dataset.currentUserRole === "paciente" ? [
+    {
+      view: "calendario",
+      selector: "#calendarView .page-head",
+      title: "Sesiones y cambios de fecha",
+      description: "En este apartado consultas tus sesiones programadas, puedes solicitar cambiar una sesión futura y das seguimiento a las respuestas o propuestas de tu profesional.",
+    },
+    {
+      view: "calendario",
+      selector: ".calendar-toolbar",
+      title: "Consulta tus sesiones programadas",
+      description: "Usa “Hoy” para volver a la fecha actual o las flechas para cambiar de mes. La agenda muestra las sesiones del día seleccionado.",
+    },
+    {
+      view: "calendario",
+      selector: "#calendarDays",
+      title: "Selecciona una fecha",
+      description: "Elige un día para consultar las sesiones programadas. Selecciona una sesión futura para mostrar la opción de solicitar un cambio.",
+    },
+    {
+      view: "calendario",
+      selector: "#calendarSessionList .calendar-reschedule-form",
+      fallbackSelector: ".calendar-agenda",
+      title: "Solicita cambiar una sesión",
+      description: "En una sesión futura, explica el motivo y propone una fecha y hora. Enviar la solicitud no cambia la cita: la fecha actual sigue vigente hasta que el profesional responda.",
+    },
+    {
+      view: "calendario",
+      selector: "#patientRescheduleRequestHistory",
+      title: "Da seguimiento a tus solicitudes",
+      description: "Aquí puedes revisar la fecha solicitada, el estado y la respuesta del profesional. Si te proponen otra fecha, puedes aceptar o rechazarla; la cita solo cambia cuando el profesional aprueba la solicitud.",
+    },
+  ] : []),
 ];
 
 let proTourIndex = 0;

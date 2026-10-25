@@ -18,6 +18,13 @@
   margin-bottom: 1.2rem;
 }
 
+.patient-progress-heading-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
 .patient-progress-eyebrow,
 .progress-kicker {
   margin: 0 0 0.35rem;
@@ -287,6 +294,7 @@ body.dark-mode .patient-progress-updated { border-color: #31506a; background: #1
 
 @media (max-width: 560px) {
   .patient-progress-heading { align-items: flex-start; flex-direction: column; }
+  .patient-progress-heading-actions { align-items: flex-start; }
   .patient-recovery-card { grid-template-columns: minmax(0, 1fr); gap: 0.9rem; }
   .recovery-components { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .patient-summary-grid { grid-template-columns: minmax(0, 1fr); }

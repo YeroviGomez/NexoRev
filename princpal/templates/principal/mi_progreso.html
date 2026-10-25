@@ -6,13 +6,16 @@
   data-refresh-url="{% url 'patient_progress_data' %}"
   data-complete-routine-url="{% url 'complete_routine_occurrence' 0 %}"
 >
-  <header class="page-head patient-progress-heading">
+  <header class="page-head patient-progress-heading section-guide-head">
     <div>
       <p class="patient-progress-eyebrow">TU REHABILITACIÓN</p>
       <h1>Mi progreso</h1>
       <p>Un resumen sencillo de cómo avanzas y de lo que ya has logrado.</p>
     </div>
-    <span class="patient-progress-updated" id="patientProgressUpdated" role="status">Progreso actualizado</span>
+    <div class="patient-progress-heading-actions">
+      <span class="patient-progress-updated" id="patientProgressUpdated" role="status">Progreso actualizado</span>
+      <button class="section-guide-trigger" type="button" data-tutorial-view="progreso">Guía de uso</button>
+    </div>
   </header>
 
   <article class="patient-progress-card patient-recovery-card">

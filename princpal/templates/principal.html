@@ -38,7 +38,7 @@
       }
     });
   </script>
-  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=45">
+  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=46">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
@@ -62,7 +62,7 @@
 
   {% include "principal/scroll_to_top.html" %}
 
-  <script src="{% static 'princpal/js/principal.js' %}?v=45" defer></script>
+  <script src="{% static 'princpal/js/principal.js' %}?v=50" defer></script>
   {% if usuario and usuario.role == 'doctor' %}
     <script src="{% static 'princpal/js/dashboard.js' %}?v=6" defer></script>
   {% endif %}
