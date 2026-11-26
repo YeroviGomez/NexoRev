@@ -11,12 +11,81 @@ En desarrollo, Channels usa `InMemoryChannelLayer` por defecto. Para un
 entorno con Redis, define `CHANNEL_LAYER_BACKEND=redis`; la conexión usa
 `127.0.0.1:6379`. La aplicación ASGI es `NexoRev.asgi:application`.
 
+## Mensajería médico-paciente
+
+Cada paciente con cuenta y médico asignado tiene una conversación privada. El
+paciente abre el chat con su médico; el médico ve la lista de sus pacientes,
+con actividad reciente, último mensaje y contador de no leídos. La lista tiene
+búsqueda y el diseño se adapta a móvil. Los indicadores de mensajería también
+se actualizan en las barras laterales.
+
+El modelo `Mensaje` conserva autor, texto de hasta 2000 caracteres, fecha y
+estado de lectura; también admite mensajes de sistema, usados por ejemplo para
+registrar el resultado de una videollamada. El historial se pagina en bloques
+de 40 mensajes. El acceso se valida para el paciente y el médico asignado; si
+la asignación tiene una fecha `chat_visible_desde`, el médico actual solo ve
+los mensajes desde esa fecha. Un paciente sin cuenta vinculada o sin médico
+asignado no puede usar el chat.
+
+La aplicación usa el WebSocket `/ws/mensajeria/` para entregar mensajes,
+lecturas y contadores de no leídos en tiempo real. Las vistas HTTP protegidas
+incluyen `/mensajeria/api/conversaciones/`,
+`/mensajeria/api/pacientes/<id>/mensajes/` (cursor `?antes=<id>`),
+`/mensajeria/api/pacientes/<id>/leidos/` y
+`/mensajeria/api/no-leidos/`. Las peticiones que modifican lecturas usan
+POST y protección CSRF.
+
 ## Videollamadas médico-paciente
 
 Las videollamadas usan WebRTC directo entre navegadores; Django Channels
 transporta únicamente invitaciones y señalización. El audio, el video, SDP e
 ICE no se graban ni se guardan en la base de datos. El usuario debe permitir
 cámara y micrófono, y acceder desde HTTPS o `localhost`.
+
+### Funcionalidad incluida
+
+- Paciente y médico pueden iniciar una llamada desde la conversación. La
+  invitación entrante se muestra en cualquier pantalla con opciones para
+  aceptar o rechazar. Antes de iniciar o aceptar se abre la preparación de
+  dispositivos.
+- Cada llamada pertenece a un paciente y tiene como participantes a su cuenta
+  y al médico asignado. El modelo `Llamada` registra iniciador, tiempos y
+  estado (`sonando`, `en_curso`, `rechazada`, `perdida`, `cancelada` o
+  `finalizada`); solo se permite una llamada activa por paciente. Al terminar,
+  la conversación recibe un mensaje de sistema con el resultado o la duración.
+- La señalización autenticada usa `/ws/videollamada/`; los eventos se envían a
+  los participantes, no a un destinatario elegido por el navegador. La llamada
+  puede sonar hasta 45 segundos. Si se pierde la señalización mientras la
+  página sigue activa, una reconexión explícita permite reanudarla durante la
+  ventana de gracia de 15 segundos.
+- Al actualizar o cerrar una página durante una llamada, el navegador envía
+  `salir` y conserva el cierre pendiente en `sessionStorage` hasta recibir la
+  confirmación del servidor. Tras recargar, vuelve a enviar ese cierre si hace
+  falta. Así, la desconexión se refleja en ambos participantes y una llamada
+  no queda activa por una recarga. Como respaldo, si el servidor detecta que el
+  usuario quedó sin conexiones, espera hasta 15 segundos por una reanudación;
+  de lo contrario finaliza la llamada y notifica a ambos.
+- Antes de llamar se muestra video de vista previa, selectores de cámara y
+  micrófono, medidor de audio y selector de salida cuando el navegador lo
+  admite. Durante la llamada se pueden cambiar dispositivos; las elecciones
+  se recuerdan por usuario en `localStorage`. La interfaz informa los
+  dispositivos activos, permite silenciar el micrófono o apagar la cámara y
+  muestra esos estados en el recuadro correspondiente. Al apagar la cámara se
+  ve la foto de perfil o las iniciales.
+- Los permisos de cámara y micrófono se comprueban en el navegador; se
+  presentan mensajes para permisos denegados, dispositivos ausentes u
+  ocupados y contextos sin HTTPS/localhost. Si se desconecta un dispositivo,
+  se informa al usuario y se permite continuar o seleccionar otro.
+- El endpoint autenticado `/mensajeria/api/ice-servers/` entrega la
+  configuración ICE al navegador. No se incluyen credenciales TURN fijas en
+  el código: cuando se configura `TURN_SECRET`, se generan credenciales
+  temporales compatibles con coturn.
+
+Las pruebas de señalización pueden ejecutarse con:
+
+```powershell
+python manage.py test mensajeria.tests.VideollamadaTests
+```
 
 Variables opcionales para conectividad:
 
