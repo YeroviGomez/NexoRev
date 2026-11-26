@@ -11,6 +11,70 @@ En desarrollo, Channels usa `InMemoryChannelLayer` por defecto. Para un
 entorno con Redis, define `CHANNEL_LAYER_BACKEND=redis`; la conexión usa
 `127.0.0.1:6379`. La aplicación ASGI es `NexoRev.asgi:application`.
 
+## Videollamadas médico-paciente
+
+Las videollamadas usan WebRTC directo entre navegadores; Django Channels
+transporta únicamente invitaciones y señalización. El audio, el video, SDP e
+ICE no se graban ni se guardan en la base de datos. El usuario debe permitir
+cámara y micrófono, y acceder desde HTTPS o `localhost`.
+
+Variables opcionales para conectividad:
+
+- `STUN_URLS`: URLs STUN separadas por coma. Por defecto:
+  `stun:stun.l.google.com:19302`.
+- `TURN_URLS`: URLs TURN separadas por coma. Si se configura junto con
+  `TURN_SECRET`, la aplicación genera credenciales coturn temporales válidas
+  durante diez minutos.
+- `TURN_SECRET`: secreto compartido con coturn para `use-auth-secret`. No lo
+  guardes en el repositorio ni lo expongas al navegador.
+
+Ejemplo mínimo de configuración de coturn (usa un secreto fuerte propio):
+
+```ini
+listening-port=3478
+fingerprint
+lt-cred-mech
+use-auth-secret
+static-auth-secret=CAMBIAR_POR_UN_SECRETO_LARGO
+realm=nexorev.example
+```
+
+En un solo computador, inicia sesión con dos cuentas en perfiles de navegador
+distintos o en una ventana normal y otra de incógnito. Como una cámara puede
+estar ocupada por una sola aplicación, elige la cámara integrada en un perfil
+y la webcam externa en el otro. Cierra Zoom, Teams y la aplicación Cámara si
+están usando el dispositivo, y revisa los permisos de cámara del navegador y
+de Windows. Si solo tienes un dispositivo, Chrome permite probar con
+`--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`. Para
+evitar eco al compartir sala o computador, usa auriculares o silencia uno de
+los micrófonos.
+
+Para probar desde un celular, sirve el sitio con HTTPS. Un túnel como Cloudflare
+Tunnel o ngrok requiere añadir el dominio a `ALLOWED_HOSTS` y
+`CSRF_TRUSTED_ORIGINS`; `AllowedHostsOriginValidator` también valida el origen
+del WebSocket. `localhost` solo es contexto seguro en el propio computador.
+Prueba finalmente desde redes distintas (por ejemplo, Wi-Fi frente a datos
+móviles) con TURN activo: STUN no garantiza atravesar todos los NAT.
+
+Los temporizadores de llamada y la ventana de reconexión actuales viven en
+memoria del proceso Channels. La coordinación de señalización usa la capa de
+Channels configurada arriba, pero un reinicio o varios procesos pueden afectar
+la expiración y el seguimiento de pestañas; para despliegue multi-worker se
+requiere un scheduler/estado distribuido.
+
+Checklist de verificación manual de dispositivos (pendiente de probar en
+navegadores reales):
+
+- [ ] Ver etiquetas completas después de conceder permisos.
+- [ ] Elegir cada cámara y micrófono en la vista previa.
+- [ ] Confirmar que la elección recordada se conserva tras recargar.
+- [ ] Cambiar cámara durante una llamada.
+- [ ] Desenchufar la webcam durante una llamada.
+- [ ] Elegir la misma cámara en dos navegadores y comprobar el aviso de cámara ocupada.
+- [ ] Denegar permisos y verificar el mensaje y la opción de cancelar o reintentar.
+- [ ] Probar sin micrófono.
+- [ ] Probar entre dos redes con TURN activo.
+
 ## Configuración del correo
 
 En desarrollo, si no se configuran credenciales de correo, Django usa el

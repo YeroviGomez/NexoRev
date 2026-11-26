@@ -7,6 +7,7 @@ app_name = 'mensajeria'
 
 urlpatterns = [
     path('', views.inicio, name='inicio'),
+    path('api/ice-servers/', views.ice_servers, name='ice_servers'),
     path('api/conversaciones/', views.lista_conversaciones, name='conversaciones'),
     path(
         'api/pacientes/<int:paciente_id>/mensajes/',

@@ -1,5 +1,6 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.db import transaction
 from django.db.models import Count, F, Q
 
 from crear_cuenta.models import Usuario
@@ -91,3 +92,28 @@ def publicar_contador_a_usuario(user_id):
             'payload': resumen_no_leidos(user),
         },
     )
+
+
+def registrar_mensaje_sistema_llamada(paciente, texto):
+    mensaje = Mensaje.objects.create(
+        paciente=paciente,
+        autor=None,
+        tipo=Mensaje.TIPO_SISTEMA,
+        texto=texto,
+    )
+    payload = {
+        'tipo': 'mensaje',
+        'paciente_id': paciente.pk,
+        'id': mensaje.pk,
+        'autor_id': None,
+        'tipo_mensaje': Mensaje.TIPO_SISTEMA,
+        'texto': mensaje.texto,
+        'creado_en': mensaje.creado_en.isoformat(),
+        'leido_en': None,
+    }
+    def notificar():
+        publicar_a_participantes(paciente, payload)
+        publicar_contadores_a_participantes(paciente)
+
+    transaction.on_commit(notificar)
+    return mensaje

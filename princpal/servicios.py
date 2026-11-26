@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from crear_cuenta.models import Usuario
 from mensajeria.models import Mensaje
+from mensajeria.videollamada import finalizar_llamadas_por_reasignacion
 from mensajeria.servicios import (
     publicar_a_participantes,
     publicar_contadores_a_participantes,
@@ -202,6 +203,7 @@ def reasignar_medico(
             )
             autorizo = bool(compartir_historial_clinico and paciente_autorizo)
 
+        finalizar_llamadas_por_reasignacion(paciente, ahora)
         asignacion = AsignacionMedico.objects.create(
             paciente=paciente,
             doctor=doctor,

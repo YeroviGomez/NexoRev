@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 
 from asgiref.sync import async_to_sync
 from channels.db import database_sync_to_async
@@ -12,7 +13,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from crear_cuenta.models import Usuario
-from mensajeria.models import Mensaje
+from mensajeria.models import Llamada, Mensaje
 from mensajeria.permisos import tiene_acceso_a_paciente
 from princpal.servicios import reasignar_medico
 from princpal.models import AsignacionMedico, Paciente
@@ -518,3 +519,444 @@ class MensajeriaWebsocketTests(TransactionTestCase):
         self.assertEqual(contador_nuevo['total'], 1, mensajes_nuevos)
         for socket in (paciente_socket, doctor_anterior_socket, doctor_nuevo_socket):
             await socket.disconnect()
+
+
+@override_settings(ALLOWED_HOSTS=['testserver'])
+class VideollamadaTests(TransactionTestCase):
+    reset_sequences = True
+
+    def setUp(self):
+        self.paciente_usuario = Usuario.objects.create(
+            email='paciente-video@example.com',
+            nombre='Paciente Video',
+            role=Usuario.ROLE_PACIENTE,
+        )
+        self.doctor = Usuario.objects.create(
+            email='doctor-video@example.com',
+            nombre='Doctora Video',
+            role=Usuario.ROLE_DOCTOR,
+        )
+        self.otro_doctor = Usuario.objects.create(
+            email='otro-doctor-video@example.com',
+            nombre='Doctor Ajeno',
+            role=Usuario.ROLE_DOCTOR,
+        )
+        self.tercero = Usuario.objects.create(
+            email='tercero-video@example.com',
+            nombre='Tercero',
+            role=Usuario.ROLE_PACIENTE,
+        )
+        self.ajeno = Usuario.objects.create(
+            email='ajeno-video@example.com',
+            nombre='Usuario sin pacientes',
+            role=Usuario.ROLE_DOCTOR,
+        )
+        self.paciente = crear_paciente_asignado(
+            self.paciente_usuario,
+            self.doctor,
+            self.paciente_usuario.nombre,
+            self.paciente_usuario.email,
+        )
+        self.paciente_sin_medico_usuario = Usuario.objects.create(
+            email='sin-medico-video@example.com',
+            nombre='Paciente sin médico',
+            role=Usuario.ROLE_PACIENTE,
+        )
+        self.paciente_sin_medico = Paciente.objects.create(
+            usuario=self.paciente_sin_medico_usuario,
+            nombre='Paciente sin médico',
+            email='sin-medico-video@example.com',
+        )
+        self.paciente_tercero = crear_paciente_asignado(
+            self.tercero,
+            self.otro_doctor,
+            self.tercero.nombre,
+            self.tercero.email,
+        )
+        self.paciente_sin_usuario = Paciente.objects.create(
+            nombre='Paciente sin cuenta',
+            email='sin-cuenta-video@example.com',
+        )
+
+    async def _communicator(self, usuario=None):
+        return await database_sync_to_async(self._build_communicator)(usuario)
+
+    def _build_communicator(self, usuario=None):
+        from NexoRev.asgi import application
+
+        headers = [(b'origin', b'http://testserver')]
+        if usuario:
+            session = SessionStore()
+            session['current_user'] = usuario.email
+            session['current_user_role'] = usuario.role
+            session.save()
+            headers.append((
+                b'cookie',
+                f'{settings.SESSION_COOKIE_NAME}={session.session_key}'.encode(),
+            ))
+        return WebsocketCommunicator(
+            application,
+            '/ws/videollamada/',
+            headers=headers,
+        )
+
+    def _autenticar(self, cliente, usuario):
+        session = cliente.session
+        session['current_user'] = usuario.email
+        session['current_user_role'] = usuario.role
+        session.save()
+
+    def test_senalizacion_llega_solo_entre_participantes(self):
+        async_to_sync(self._flujo_senalizacion)()
+
+    async def _flujo_senalizacion(self):
+        doctor = await self._communicator(self.doctor)
+        paciente = await self._communicator(self.paciente_usuario)
+        tercero = await self._communicator(self.tercero)
+        conexion_ids = {}
+        for socket in (doctor, paciente, tercero):
+            conectado, _ = await socket.connect()
+            self.assertTrue(conectado)
+            conectado_event = await socket.receive_json_from()
+            self.assertEqual(conectado_event['tipo'], 'conectado')
+            conexion_ids[socket] = conectado_event['conexion_id']
+
+        await doctor.send_json_to({
+            'tipo': 'invitar',
+            'paciente_id': self.paciente.pk,
+        })
+        sonando = await doctor.receive_json_from()
+        entrante = await paciente.receive_json_from()
+        self.assertEqual(sonando['tipo'], 'sonando')
+        self.assertEqual(entrante['tipo'], 'entrante')
+        self.assertTrue(await tercero.receive_nothing(timeout=0.05))
+
+        await paciente.send_json_to({
+            'tipo': 'aceptar',
+            'llamada_id': sonando['llamada_id'],
+        })
+        aceptada_doctor = await doctor.receive_json_from()
+        aceptada_paciente = await paciente.receive_json_from()
+        self.assertEqual(aceptada_doctor['tipo'], 'aceptada')
+        self.assertEqual(aceptada_paciente['tipo'], 'aceptada')
+        self.assertEqual(
+            aceptada_paciente['aceptada_conexion'],
+            conexion_ids[paciente],
+        )
+        self.assertNotEqual(
+            aceptada_paciente['aceptada_conexion'],
+            conexion_ids[doctor],
+        )
+        self.assertTrue(await tercero.receive_nothing(timeout=0.05))
+
+        offer = {
+            'tipo': 'offer',
+            'llamada_id': sonando['llamada_id'],
+            'description': {'type': 'offer', 'sdp': 'offer-sdp'},
+        }
+        await doctor.send_json_to(offer)
+        self.assertEqual((await paciente.receive_json_from())['tipo'], 'offer')
+        await paciente.send_json_to({
+            'tipo': 'answer',
+            'llamada_id': sonando['llamada_id'],
+            'description': {'type': 'answer', 'sdp': 'answer-sdp'},
+        })
+        self.assertEqual((await doctor.receive_json_from())['tipo'], 'answer')
+        await doctor.send_json_to({
+            'tipo': 'ice',
+            'llamada_id': sonando['llamada_id'],
+            'candidate': {'candidate': 'candidate:1 1 UDP 1 127.0.0.1 9 typ host'},
+        })
+        self.assertEqual((await paciente.receive_json_from())['tipo'], 'ice')
+
+        await doctor.send_json_to({
+            'tipo': 'estado_medios',
+            'llamada_id': sonando['llamada_id'],
+            'camara_activa': False,
+            'microfono_activo': True,
+        })
+        estado_medios = await paciente.receive_json_from()
+        self.assertEqual(estado_medios['tipo'], 'estado_medios')
+        self.assertFalse(estado_medios['camara_activa'])
+        self.assertTrue(estado_medios['microfono_activo'])
+        self.assertTrue(await tercero.receive_nothing(timeout=0.05))
+
+        await paciente.send_json_to({
+            'tipo': 'estado_medios',
+            'llamada_id': sonando['llamada_id'],
+            'camara_activa': 'false',
+            'microfono_activo': True,
+        })
+        self.assertEqual((await paciente.receive_json_from())['tipo'], 'error')
+        self.assertTrue(await doctor.receive_nothing(timeout=0.05))
+        for socket in (doctor, paciente, tercero):
+            await socket.disconnect()
+
+    def test_permisos_y_eventos_mal_formados_se_rechazan(self):
+        async_to_sync(self._probar_permisos_y_eventos)()
+
+    async def _probar_permisos_y_eventos(self):
+        ajeno = await self._communicator(self.otro_doctor)
+        conectado, _ = await ajeno.connect()
+        self.assertTrue(conectado)
+        await ajeno.receive_json_from()
+        for paciente_id in (self.paciente.pk, self.paciente_sin_medico.pk, self.paciente_sin_usuario.pk):
+            await ajeno.send_json_to({'tipo': 'invitar', 'paciente_id': paciente_id})
+            self.assertEqual((await ajeno.receive_json_from())['tipo'], 'error')
+        await ajeno.send_json_to({'tipo': 'invitar', 'paciente_id': 'no-numérico'})
+        self.assertEqual((await ajeno.receive_json_from())['tipo'], 'error')
+        await ajeno.send_to(text_data='{')
+        self.assertEqual((await ajeno.receive_json_from())['tipo'], 'error')
+        await ajeno.send_json_to({
+            'tipo': 'offer',
+            'llamada_id': 1,
+            'description': {'type': 'offer', 'sdp': 'x' * 50_000},
+        })
+        self.assertEqual((await ajeno.receive_json_from())['tipo'], 'error')
+        await ajeno.send_to(text_data=' ' * (64 * 1024 + 1))
+        self.assertEqual((await ajeno.receive_json_from())['tipo'], 'error')
+        await ajeno.disconnect()
+
+        sin_pacientes = await self._communicator(self.ajeno)
+        conectado, codigo = await sin_pacientes.connect()
+        self.assertFalse(conectado)
+        self.assertEqual(codigo, 4403)
+
+        paciente_sin_medico = await self._communicator(self.paciente_sin_medico_usuario)
+        conectado, _ = await paciente_sin_medico.connect()
+        self.assertFalse(conectado)
+
+        anonimo = await self._communicator()
+        conectado, codigo = await anonimo.connect()
+        self.assertFalse(conectado)
+        self.assertEqual(codigo, 4403)
+
+    def test_segunda_invitacion_activa_recibe_ocupado(self):
+        async_to_sync(self._probar_llamada_ocupada)()
+
+    async def _probar_llamada_ocupada(self):
+        doctor = await self._communicator(self.doctor)
+        paciente = await self._communicator(self.paciente_usuario)
+        for socket in (doctor, paciente):
+            conectado, _ = await socket.connect()
+            self.assertTrue(conectado)
+            await socket.receive_json_from()
+        await doctor.send_json_to({
+            'tipo': 'invitar',
+            'paciente_id': self.paciente.pk,
+        })
+        await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await paciente.send_json_to({
+            'tipo': 'invitar',
+            'paciente_id': self.paciente.pk,
+        })
+        self.assertEqual((await paciente.receive_json_from())['tipo'], 'ocupado')
+        await doctor.disconnect()
+        await paciente.disconnect()
+
+    def test_usuario_que_se_conecta_tarde_recibe_invitacion_activa(self):
+        async_to_sync(self._probar_invitacion_al_conectar)()
+
+    async def _probar_invitacion_al_conectar(self):
+        doctor = await self._communicator(self.doctor)
+        conectado, _ = await doctor.connect()
+        self.assertTrue(conectado)
+        await doctor.receive_json_from()
+        await doctor.send_json_to({
+            'tipo': 'invitar',
+            'paciente_id': self.paciente.pk,
+        })
+        invitacion = await doctor.receive_json_from()
+        self.assertEqual(invitacion['tipo'], 'sonando')
+
+        paciente = await self._communicator(self.paciente_usuario)
+        conectado, _ = await paciente.connect()
+        self.assertTrue(conectado)
+        await paciente.receive_json_from()
+        entrante = await paciente.receive_json_from()
+        self.assertEqual(entrante['tipo'], 'entrante')
+        self.assertEqual(entrante['llamada_id'], invitacion['llamada_id'])
+        await doctor.disconnect()
+        await paciente.disconnect()
+
+    def test_rechazar_y_cancelar_actualizan_estado(self):
+        async_to_sync(self._probar_estados_terminados)()
+
+    async def _probar_estados_terminados(self):
+        doctor = await self._communicator(self.doctor)
+        paciente = await self._communicator(self.paciente_usuario)
+        for socket in (doctor, paciente):
+            conectado, _ = await socket.connect()
+            self.assertTrue(conectado)
+            await socket.receive_json_from()
+
+        await doctor.send_json_to({'tipo': 'invitar', 'paciente_id': self.paciente.pk})
+        invitacion = await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await paciente.send_json_to({
+            'tipo': 'rechazar',
+            'llamada_id': invitacion['llamada_id'],
+        })
+        self.assertEqual((await doctor.receive_json_from())['tipo'], 'rechazada')
+        self.assertEqual((await paciente.receive_json_from())['tipo'], 'rechazada')
+        estado = await database_sync_to_async(
+            lambda: Llamada.objects.get(pk=invitacion['llamada_id']).estado
+        )()
+        self.assertEqual(estado, Llamada.ESTADO_RECHAZADA)
+
+        await doctor.send_json_to({'tipo': 'invitar', 'paciente_id': self.paciente.pk})
+        invitacion = await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await doctor.send_json_to({
+            'tipo': 'cancelar',
+            'llamada_id': invitacion['llamada_id'],
+        })
+        self.assertEqual((await paciente.receive_json_from())['tipo'], 'cancelada')
+        estado = await database_sync_to_async(
+            lambda: Llamada.objects.get(pk=invitacion['llamada_id']).estado
+        )()
+        self.assertEqual(estado, Llamada.ESTADO_CANCELADA)
+        await doctor.disconnect()
+        await paciente.disconnect()
+
+    @patch('mensajeria.videollamada.TIEMPO_SONANDO_SEGUNDOS', 0.05)
+    def test_invitacion_expira_y_se_marca_perdida(self):
+        async_to_sync(self._probar_expiracion)()
+
+    async def _probar_expiracion(self):
+        doctor = await self._communicator(self.doctor)
+        paciente = await self._communicator(self.paciente_usuario)
+        for socket in (doctor, paciente):
+            conectado, _ = await socket.connect()
+            self.assertTrue(conectado)
+            await socket.receive_json_from()
+        await doctor.send_json_to({'tipo': 'invitar', 'paciente_id': self.paciente.pk})
+        invitacion = await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        terminal_doctor = await doctor.receive_json_from(timeout=1)
+        terminal_paciente = await paciente.receive_json_from(timeout=1)
+        self.assertEqual(terminal_doctor['tipo'], 'terminada')
+        self.assertEqual(terminal_paciente['tipo'], 'terminada')
+        self.assertEqual(terminal_doctor['motivo'], Llamada.ESTADO_PERDIDA)
+        estado = await database_sync_to_async(
+            lambda: Llamada.objects.get(pk=invitacion['llamada_id']).estado
+        )()
+        self.assertEqual(estado, Llamada.ESTADO_PERDIDA)
+        await doctor.disconnect()
+        await paciente.disconnect()
+
+    @patch('mensajeria.videollamada.TIEMPO_RECONEXION_SEGUNDOS', 0.05)
+    def test_desconexion_sin_reconectar_termina_llamada(self):
+        async_to_sync(self._probar_desconexion)()
+
+    async def _probar_desconexion(self):
+        doctor = await self._communicator(self.doctor)
+        paciente = await self._communicator(self.paciente_usuario)
+        for socket in (doctor, paciente):
+            conectado, _ = await socket.connect()
+            self.assertTrue(conectado)
+            await socket.receive_json_from()
+        await doctor.send_json_to({'tipo': 'invitar', 'paciente_id': self.paciente.pk})
+        invitacion = await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await paciente.send_json_to({
+            'tipo': 'aceptar',
+            'llamada_id': invitacion['llamada_id'],
+        })
+        await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await paciente.disconnect()
+        terminado = await doctor.receive_json_from(timeout=1)
+        self.assertEqual(terminado['tipo'], 'terminada')
+        self.assertEqual(terminado['motivo'], 'desconexion')
+        estado = await database_sync_to_async(
+            lambda: Llamada.objects.get(pk=invitacion['llamada_id']).estado
+        )()
+        self.assertEqual(estado, Llamada.ESTADO_FINALIZADA)
+        await doctor.disconnect()
+
+    def test_reasignacion_termina_llamada_en_curso(self):
+        async_to_sync(self._probar_reasignacion)()
+
+    async def _probar_reasignacion(self):
+        doctor = await self._communicator(self.doctor)
+        paciente = await self._communicator(self.paciente_usuario)
+        for socket in (doctor, paciente):
+            conectado, _ = await socket.connect()
+            self.assertTrue(conectado)
+            await socket.receive_json_from()
+        await doctor.send_json_to({'tipo': 'invitar', 'paciente_id': self.paciente.pk})
+        invitacion = await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await paciente.send_json_to({
+            'tipo': 'aceptar',
+            'llamada_id': invitacion['llamada_id'],
+        })
+        await doctor.receive_json_from()
+        await paciente.receive_json_from()
+
+        admin = await database_sync_to_async(get_user_model().objects.create_user)(
+            username='admin-videollamada',
+            password='test-password',
+            is_staff=True,
+        )
+
+        def reasignar():
+            reasignar_medico(
+                paciente=Paciente.objects.get(pk=self.paciente.pk),
+                nuevo_doctor=self.otro_doctor,
+                tipo=AsignacionMedico.TIPO_CONTINUIDAD,
+                motivo='Cambio de médico durante videollamada.',
+                compartir_historial_clinico=False,
+                paciente_autorizo=False,
+                admin=admin,
+            )
+
+        await database_sync_to_async(reasignar)()
+        doctor_event = await doctor.receive_json_from(timeout=2)
+        patient_event = await paciente.receive_json_from(timeout=2)
+        self.assertEqual(doctor_event['tipo'], 'terminada')
+        self.assertEqual(patient_event['tipo'], 'terminada')
+        self.assertEqual(doctor_event['motivo'], 'acceso_revocado')
+        estado = await database_sync_to_async(
+            lambda: Llamada.objects.get(pk=invitacion['llamada_id']).estado
+        )()
+        self.assertEqual(estado, Llamada.ESTADO_FINALIZADA)
+        await doctor.disconnect()
+        await paciente.disconnect()
+
+    def test_endpoint_ice_exige_sesion_y_usa_credenciales_turn_efimeras(self):
+        cliente = Client()
+        anonima = cliente.get(reverse('mensajeria:ice_servers'))
+        self.assertEqual(anonima.status_code, 401)
+
+        self._autenticar(cliente, self.doctor)
+        with patch.dict('os.environ', {
+            'TURN_URLS': 'turn:turn.example.test:3478',
+            'TURN_SECRET': 'secret-turn-de-prueba',
+            'STUN_URLS': 'stun:stun.example.test:3478',
+        }):
+            response = cliente.get(reverse('mensajeria:ice_servers'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('no-store', response['Cache-Control'])
+        servers = response.json()['iceServers']
+        self.assertEqual(len(servers), 2)
+        self.assertNotEqual(servers[1]['credential'], 'secret-turn-de-prueba')
+        self.assertTrue(servers[1]['username'].endswith(f':{self.doctor.pk}'))
+
+        with patch.dict('os.environ', {
+            'TURN_URLS': 'turn:turn.example.test:3478',
+            'TURN_SECRET': '',
+            'STUN_URLS': 'stun:stun.example.test:3478',
+        }):
+            sin_secreto = cliente.get(reverse('mensajeria:ice_servers')).json()
+        self.assertEqual(len(sin_secreto['iceServers']), 1)
+        self.assertEqual(
+            sin_secreto['iceServers'][0]['urls'],
+            ['stun:stun.example.test:3478'],
+        )
+        self.assertEqual(
+            cliente.post(reverse('mensajeria:ice_servers')).status_code,
+            405,
+        )

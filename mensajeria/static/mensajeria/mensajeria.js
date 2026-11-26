@@ -279,6 +279,12 @@
     if (chatContent) chatContent.hidden = false;
     if (chatName) chatName.textContent = conversation.nombre;
     if (chatAvatar) chatAvatar.textContent = initials(conversation.nombre);
+    document.dispatchEvent(new CustomEvent('mensajeria-conversacion-abierta', {
+      detail: {
+        pacienteId: Number(conversation.paciente_id),
+        nombre: conversation.nombre,
+      },
+    }));
     if (conversationList) {
       for (const item of conversationList.querySelectorAll('.mensajeria-conversation')) {
         const selected = Number(item.dataset.pacienteId) === activePatientId;

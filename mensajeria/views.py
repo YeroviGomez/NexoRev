@@ -1,3 +1,8 @@
+import base64
+import hashlib
+import hmac
+import os
+import time
 from functools import wraps
 
 from django.db import transaction
@@ -41,6 +46,50 @@ def requiere_usuario_mensajeria(view_func):
         return view_func(request, *args, **kwargs)
 
     return wrapper
+
+
+@never_cache
+@require_GET
+@requiere_usuario_mensajeria
+def ice_servers(request):
+    usuario = request.mensajeria_usuario
+    if usuario.role not in {'doctor', 'paciente'}:
+        return JsonResponse({'error': 'Tu rol no puede usar videollamadas.'}, status=403)
+
+    stun_urls = [
+        item.strip()
+        for item in os.environ.get(
+            'STUN_URLS',
+            'stun:stun.l.google.com:19302',
+        ).split(',')
+        if item.strip()
+    ]
+    turn_urls = [
+        item.strip()
+        for item in os.environ.get('TURN_URLS', '').split(',')
+        if item.strip()
+    ]
+    ice_servers = [{'urls': stun_urls}] if stun_urls else []
+    turn_secret = os.environ.get('TURN_SECRET', '')
+    if turn_urls and turn_secret:
+        expiry = int(time.time()) + 600
+        username = f'{expiry}:{usuario.pk}'
+        credential = base64.b64encode(
+            hmac.new(
+                turn_secret.encode('utf-8'),
+                username.encode('utf-8'),
+                hashlib.sha1,
+            ).digest(),
+        ).decode('ascii')
+        ice_servers.append({
+            'urls': turn_urls,
+            'username': username,
+            'credential': credential,
+        })
+
+    response = JsonResponse({'iceServers': ice_servers})
+    response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    return response
 
 
 def _serializar_mensaje(mensaje, usuario):
