@@ -8,7 +8,7 @@
   <title>Mensajería | Nexo ReV</title>
   <link rel="stylesheet" href="{% static 'base.css' %}">
   <link rel="stylesheet" href="{% static 'mensajeria/mensajeria.css' %}?v=2">
-  <link rel="stylesheet" href="{% static 'mensajeria/videollamada.css' %}?v=3">
+  <link rel="stylesheet" href="{% static 'mensajeria/videollamada.css' %}?v=4">
 </head>
 <body class="mensajeria-page{% if usuario.modo_oscuro %} dark-mode{% endif %}{% if usuario.role == 'paciente' %} mensajeria-paciente{% endif %}"
       data-role="{{ usuario.role }}"
@@ -117,7 +117,7 @@
     {{ conversaciones|json_script:"mensajeria-conversaciones" }}
   {% endif %}
   <script src="{% static 'mensajeria/dispositivos.js' %}?v=2" defer></script>
-  <script src="{% static 'mensajeria/videollamada.js' %}?v=6" defer></script>
+  <script src="{% static 'mensajeria/videollamada.js' %}?v=9" defer></script>
   <script src="{% static 'mensajeria/mensajeria.js' %}?v=2" defer></script>
 </body>
 </html>

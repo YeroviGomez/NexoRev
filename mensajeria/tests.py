@@ -1,3 +1,4 @@
+import asyncio
 import json
 from unittest.mock import patch
 
@@ -689,6 +690,38 @@ class VideollamadaTests(TransactionTestCase):
         })
         self.assertEqual((await paciente.receive_json_from())['tipo'], 'error')
         self.assertTrue(await doctor.receive_nothing(timeout=0.05))
+
+        await paciente.send_json_to({
+            'tipo': 'salir',
+            'llamada_id': sonando['llamada_id'],
+        })
+        terminada_doctor = await doctor.receive_json_from()
+        terminada_paciente = await paciente.receive_json_from()
+        self.assertEqual(terminada_doctor['tipo'], 'terminada')
+        self.assertEqual(terminada_paciente['tipo'], 'terminada')
+        estado = await database_sync_to_async(
+            lambda: Llamada.objects.get(pk=sonando['llamada_id']).estado
+        )()
+        self.assertEqual(estado, Llamada.ESTADO_FINALIZADA)
+        mensajes_sistema = await database_sync_to_async(
+            lambda: Mensaje.objects.filter(
+                paciente=self.paciente,
+                autor__isnull=True,
+            ).count()
+        )()
+        await paciente.send_json_to({
+            'tipo': 'salir',
+            'llamada_id': sonando['llamada_id'],
+        })
+        await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        mensajes_sistema_tras_repetir = await database_sync_to_async(
+            lambda: Mensaje.objects.filter(
+                paciente=self.paciente,
+                autor__isnull=True,
+            ).count()
+        )()
+        self.assertEqual(mensajes_sistema_tras_repetir, mensajes_sistema)
         for socket in (doctor, paciente, tercero):
             await socket.disconnect()
 
@@ -846,7 +879,7 @@ class VideollamadaTests(TransactionTestCase):
         await doctor.disconnect()
         await paciente.disconnect()
 
-    @patch('mensajeria.videollamada.TIEMPO_RECONEXION_SEGUNDOS', 0.05)
+    @patch('mensajeria.videollamada.TIEMPO_RECONEXION_SEGUNDOS', 0.1)
     def test_desconexion_sin_reconectar_termina_llamada(self):
         async_to_sync(self._probar_desconexion)()
 
@@ -875,6 +908,134 @@ class VideollamadaTests(TransactionTestCase):
         )()
         self.assertEqual(estado, Llamada.ESTADO_FINALIZADA)
         await doctor.disconnect()
+
+    @patch('mensajeria.videollamada.TIEMPO_RECONEXION_SEGUNDOS', 0.2)
+    def test_refresco_sin_reanudar_finaliza_llamada_activa(self):
+        async_to_sync(self._probar_refresco_sin_reanudar)()
+
+    async def _probar_refresco_sin_reanudar(self):
+        doctor = await self._communicator(self.doctor)
+        paciente = await self._communicator(self.paciente_usuario)
+        for socket in (doctor, paciente):
+            conectado, _ = await socket.connect()
+            self.assertTrue(conectado)
+            await socket.receive_json_from()
+        await doctor.send_json_to({'tipo': 'invitar', 'paciente_id': self.paciente.pk})
+        invitacion = await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await paciente.send_json_to({
+            'tipo': 'aceptar',
+            'llamada_id': invitacion['llamada_id'],
+        })
+        await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await paciente.disconnect()
+
+        pagina_recargada = await self._communicator(self.paciente_usuario)
+        conectado, _ = await pagina_recargada.connect()
+        self.assertTrue(conectado)
+        await pagina_recargada.receive_json_from()
+        await asyncio.sleep(0.1)
+        evento_doctor = await doctor.receive_json_from(timeout=1)
+        self.assertEqual(evento_doctor['tipo'], 'terminada')
+        self.assertEqual(evento_doctor['motivo'], 'desconexion')
+        estado = await database_sync_to_async(
+            lambda: Llamada.objects.get(pk=invitacion['llamada_id']).estado
+        )()
+        self.assertEqual(estado, Llamada.ESTADO_FINALIZADA)
+        await doctor.disconnect()
+        await pagina_recargada.disconnect()
+
+    @patch('mensajeria.videollamada.TIEMPO_RECONEXION_SEGUNDOS', 2)
+    def test_reanudar_en_ventana_conserva_llamada(self):
+        async_to_sync(self._probar_reanudar_en_ventana)()
+
+    async def _probar_reanudar_en_ventana(self):
+        doctor = await self._communicator(self.doctor)
+        paciente = await self._communicator(self.paciente_usuario)
+        for socket in (doctor, paciente):
+            conectado, _ = await socket.connect()
+            self.assertTrue(conectado)
+            await socket.receive_json_from()
+        await doctor.send_json_to({'tipo': 'invitar', 'paciente_id': self.paciente.pk})
+        invitacion = await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await paciente.send_json_to({
+            'tipo': 'aceptar',
+            'llamada_id': invitacion['llamada_id'],
+        })
+        await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await paciente.disconnect()
+
+        pagina_reconectada = await self._communicator(self.paciente_usuario)
+        conectado, _ = await pagina_reconectada.connect()
+        self.assertTrue(conectado)
+        await pagina_reconectada.receive_json_from()
+        await pagina_reconectada.send_json_to({
+            'tipo': 'reanudar',
+            'llamada_id': invitacion['llamada_id'],
+        })
+        reanudada = await pagina_reconectada.receive_json_from()
+        self.assertEqual(reanudada['tipo'], 'reanudada')
+        await asyncio.sleep(0.1)
+        estado = await database_sync_to_async(
+            lambda: Llamada.objects.get(pk=invitacion['llamada_id']).estado
+        )()
+        self.assertEqual(estado, Llamada.ESTADO_EN_CURSO)
+
+        await doctor.send_json_to({
+            'tipo': 'colgar',
+            'llamada_id': invitacion['llamada_id'],
+        })
+        self.assertEqual((await doctor.receive_json_from())['tipo'], 'terminada')
+        self.assertEqual((await pagina_reconectada.receive_json_from())['tipo'], 'terminada')
+        await doctor.disconnect()
+        await pagina_reconectada.disconnect()
+
+    def test_salir_tras_recarga_notifica_a_ambos_usuarios(self):
+        async_to_sync(self._probar_salir_tras_recarga)()
+
+    async def _probar_salir_tras_recarga(self):
+        doctor = await self._communicator(self.doctor)
+        paciente = await self._communicator(self.paciente_usuario)
+        for socket in (doctor, paciente):
+            conectado, _ = await socket.connect()
+            self.assertTrue(conectado)
+            await socket.receive_json_from()
+        await doctor.send_json_to({'tipo': 'invitar', 'paciente_id': self.paciente.pk})
+        invitacion = await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        await paciente.send_json_to({
+            'tipo': 'aceptar',
+            'llamada_id': invitacion['llamada_id'],
+        })
+        await doctor.receive_json_from()
+        await paciente.receive_json_from()
+        cierre = {'tipo': 'salir', 'llamada_id': invitacion['llamada_id']}
+        await paciente.send_json_to(cierre)
+        self.assertEqual((await doctor.receive_json_from())['tipo'], 'terminada')
+        self.assertEqual((await paciente.receive_json_from())['tipo'], 'terminada')
+        await paciente.disconnect()
+
+        pagina_recargada = await self._communicator(self.paciente_usuario)
+        conectado, _ = await pagina_recargada.connect()
+        self.assertTrue(conectado)
+        await pagina_recargada.receive_json_from()
+        await pagina_recargada.send_json_to(cierre)
+        evento_doctor = await doctor.receive_json_from()
+        evento_paciente = await pagina_recargada.receive_json_from()
+        self.assertEqual(evento_doctor['tipo'], 'terminada')
+        self.assertEqual(evento_paciente['tipo'], 'terminada')
+        mensajes_sistema = await database_sync_to_async(
+            lambda: Mensaje.objects.filter(
+                paciente=self.paciente,
+                autor__isnull=True,
+            ).count()
+        )()
+        self.assertEqual(mensajes_sistema, 1)
+        await doctor.disconnect()
+        await pagina_recargada.disconnect()
 
     def test_reasignacion_termina_llamada_en_curso(self):
         async_to_sync(self._probar_reasignacion)()

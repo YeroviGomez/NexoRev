@@ -235,11 +235,45 @@ def _aceptar_llamada(user, llamada_id):
 
 
 @database_sync_to_async
+def _validar_reanudacion(user, llamada_id):
+    with transaction.atomic():
+        paciente, llamada = _bloquear_llamada(llamada_id)
+        if (
+            not llamada
+            or llamada.estado not in Llamada.ESTADOS_ACTIVOS
+            or not tiene_acceso_a_paciente(user, paciente)
+        ):
+            return {'error': 'La llamada ya no puede reanudarse.', 'status': 409}
+        return {'estado': llamada.estado}
+
+
+@database_sync_to_async
 def _cambiar_estado(user, llamada_id, accion):
     with transaction.atomic():
         paciente, llamada = _bloquear_llamada(llamada_id)
         if not llamada or not tiene_acceso_a_paciente(user, llamada.paciente):
             return {'error': 'No tienes permiso para controlar esta llamada.', 'status': 403}
+
+        if llamada.estado in {
+            Llamada.ESTADO_RECHAZADA,
+            Llamada.ESTADO_PERDIDA,
+            Llamada.ESTADO_CANCELADA,
+            Llamada.ESTADO_FINALIZADA,
+        }:
+            return {
+                'participantes': _participantes(llamada.paciente),
+                'evento': _notificacion_terminada(llamada, llamada.estado),
+            }
+
+        if accion == 'salir':
+            if llamada.estado == Llamada.ESTADO_SONANDO:
+                accion = (
+                    'cancelar'
+                    if llamada.iniciador_id == user.pk
+                    else 'rechazar'
+                )
+            else:
+                accion = 'finalizar'
 
         ahora = timezone.now()
         if accion in {'rechazar', 'cancelar'}:
@@ -386,8 +420,6 @@ async def _expirar_llamada(channel_layer, llamada_id):
 async def _expirar_desconexion(channel_layer, llamada_id, user_id):
     try:
         await asyncio.sleep(TIEMPO_RECONEXION_SEGUNDOS)
-        if _conexiones_por_usuario.get(user_id, 0):
-            return
         resultado = await _terminar_si_activa(
             llamada_id,
             Llamada.ESTADO_EN_CURSO,
@@ -418,10 +450,6 @@ class VideollamadaConsumer(AsyncJsonWebsocketConsumer):
         self.message_timestamps = deque()
         await self.channel_layer.group_add(self.user_group, self.channel_name)
         _conexiones_por_usuario[self.user.pk] += 1
-        for key, task in list(_tareas_desconexion.items()):
-            if key[1] == self.user.pk:
-                task.cancel()
-                _tareas_desconexion.pop(key, None)
         await self.accept()
         await self.send_json({
             'tipo': 'conectado',
@@ -505,6 +533,8 @@ class VideollamadaConsumer(AsyncJsonWebsocketConsumer):
             'offer': {'tipo', 'llamada_id', 'description'},
             'answer': {'tipo', 'llamada_id', 'description'},
             'ice': {'tipo', 'llamada_id', 'candidate'},
+            'reanudar': {'tipo', 'llamada_id'},
+            'salir': {'tipo', 'llamada_id'},
             'estado_medios': {
                 'tipo',
                 'llamada_id',
@@ -545,7 +575,9 @@ class VideollamadaConsumer(AsyncJsonWebsocketConsumer):
             await self._invite(identifier)
         elif tipo == 'aceptar':
             await self._accept(identifier)
-        elif tipo in {'rechazar', 'cancelar', 'colgar'}:
+        elif tipo == 'reanudar':
+            await self._resume(identifier)
+        elif tipo in {'rechazar', 'cancelar', 'colgar', 'salir'}:
             await self._end(identifier, tipo)
         else:
             await self._relay_signal(identifier, tipo, content)
@@ -627,6 +659,20 @@ class VideollamadaConsumer(AsyncJsonWebsocketConsumer):
             resultado['participantes'],
             resultado['evento'],
         )
+
+    async def _resume(self, llamada_id):
+        resultado = await _validar_reanudacion(self.user, llamada_id)
+        if resultado.get('error'):
+            await self._send_error(resultado['error'])
+            return
+        task = _tareas_desconexion.pop((llamada_id, self.user.pk), None)
+        if task:
+            task.cancel()
+        await self.send_json({
+            'tipo': 'reanudada',
+            'llamada_id': llamada_id,
+            'estado': resultado['estado'],
+        })
 
     async def _end(self, llamada_id, accion):
         estado_accion = 'finalizar' if accion == 'colgar' else accion

@@ -40,8 +40,10 @@ dialog:not([open]) { display: none; }
 .videollamada-active-header h2 { margin-bottom: 0; }
 .videollamada-active-header p { margin: 0.2rem 0 0; }
 .videollamada-video-stage { position: relative; min-height: 16rem; height: min(68vh, 42rem); background: #10191b; }
+.videollamada-remote-tile { position: absolute; inset: 0; overflow: hidden; background: #10191b; }
+.videollamada-local-tile { position: absolute; z-index: 3; right: 1rem; bottom: 1rem; width: min(25%, 15rem); max-height: 35%; aspect-ratio: 16 / 9; overflow: hidden; border: 2px solid rgba(255,255,255,0.8); border-radius: 0.75rem; background: #243234; }
 #videollamadaRemoteVideo { width: 100%; height: 100%; object-fit: contain; }
-#videollamadaLocalVideo { position: absolute; z-index: 3; right: 1rem; bottom: 1rem; width: min(25%, 15rem); max-height: 35%; border: 2px solid rgba(255,255,255,0.8); border-radius: 0.75rem; background: #243234; object-fit: cover; transform: scaleX(-1); }
+#videollamadaLocalVideo { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; background: #243234; object-fit: cover; transform: scaleX(-1); }
 #videollamadaRemoteVideo[hidden], #videollamadaLocalVideo[hidden], .videollamada-video-off[hidden], .videollamada-mic-off[hidden] { display: none !important; }
 .videollamada-no-remote { position: absolute; z-index: 1; inset: 0; margin: 0; display: grid; place-items: center; color: #e7efed; text-align: center; pointer-events: none; }
 .videollamada-no-remote[hidden] { display: none; }
@@ -50,13 +52,11 @@ dialog:not([open]) { display: none; }
 .videollamada-profile-initials { display: grid; place-items: center; color: #d7fff1; background: #246951; font-size: clamp(2rem, 6vw, 4rem); font-weight: 750; }
 .videollamada-camera-off-status { display: inline-flex; align-items: center; gap: 0.45rem; color: #e7efed; font-size: 0.9rem; font-weight: 650; }
 .videollamada-camera-off-status svg, .videollamada-mic-off svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
-.videollamada-video-off-local { z-index: 3; inset: auto 1rem 1rem auto; width: min(25%, 15rem); max-height: 35%; aspect-ratio: 16 / 9; gap: 0.2rem; border: 2px solid rgba(255,255,255,0.8); border-radius: 0.75rem; background: #243234; }
+.videollamada-video-off-local { z-index: 1; gap: 0.2rem; background: #243234; }
 .videollamada-video-off-local .videollamada-profile-photo, .videollamada-video-off-local .videollamada-profile-initials { width: clamp(2.5rem, 6vw, 4.5rem); border-width: 1px; font-size: 1.2rem; }
 .videollamada-video-off-local .videollamada-camera-off-status { gap: 0.2rem; font-size: 0.65rem; }
 .videollamada-video-off-local .videollamada-camera-off-status svg { width: 1rem; height: 1rem; }
-.videollamada-mic-off { position: absolute; z-index: 4; top: 1rem; display: grid; width: 2.5rem; height: 2.5rem; place-items: center; border: 1px solid rgba(255,255,255,0.22); border-radius: 50%; color: #fff; background: rgba(130, 42, 42, 0.92); box-shadow: 0 0.2rem 0.8rem rgba(0,0,0,0.3); }
-.videollamada-mic-off-remote { right: 1rem; }
-.videollamada-mic-off-local { left: 1rem; }
+.videollamada-mic-off { position: absolute; z-index: 3; top: 0.65rem; right: 0.65rem; display: grid; width: 2.5rem; height: 2.5rem; place-items: center; border: 1px solid rgba(255,255,255,0.22); border-radius: 50%; color: #fff; background: rgba(130, 42, 42, 0.92); box-shadow: 0 0.2rem 0.8rem rgba(0,0,0,0.3); }
 .videollamada-active-controls { padding: 0.85rem; display: flex; flex-wrap: wrap; justify-content: center; gap: 0.55rem; }
 .videollamada-active-controls button { border-color: #cbd9d5; color: #263d38; background: #f2f6f4; }
 .videollamada-active-controls .videollamada-hangup { border-color: transparent; color: #fff; background: #bb4742; }
@@ -77,12 +77,11 @@ body.dark-mode .videollamada-global-status.is-error { color: #ffded8; background
   .videollamada-device-fields label:not(:first-child) { margin-top: 0.4rem; }
   .videollamada-active { padding: 0; display: flex; flex-direction: column; }
   .videollamada-video-stage { flex: 1; height: auto; min-height: 0; }
-  .videollamada-video-off-local { inset: auto 0.65rem 0.65rem auto; }
+  .videollamada-local-tile { right: 0.65rem; bottom: 0.65rem; width: min(32%, 14rem); }
   .videollamada-video-off-local .videollamada-profile-photo, .videollamada-video-off-local .videollamada-profile-initials { width: 2.6rem; }
   .videollamada-video-off-local .videollamada-camera-off-status span { display: none; }
   .videollamada-mic-off { top: 0.65rem; width: 2.2rem; height: 2.2rem; }
-  .videollamada-mic-off-remote { right: 0.65rem; }
-  .videollamada-mic-off-local { left: 0.65rem; }
+  .videollamada-mic-off { right: 0.65rem; }
   .videollamada-active-controls { padding-bottom: max(0.85rem, env(safe-area-inset-bottom)); }
   .videollamada-active-controls button { flex: 1 1 40%; }
 }

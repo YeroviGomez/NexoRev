@@ -29,25 +29,31 @@
   const remoteInitials = document.getElementById('videollamadaRemoteInitials');
   const micButton = document.getElementById('videollamadaToggleMic');
   const cameraButton = document.getElementById('videollamadaToggleCamera');
+  const hangupButton = document.getElementById('videollamadaHangup');
   const activeStage = activeDialog.querySelector('.videollamada-video-stage');
   const devices = window.NexoRevDevices;
+  const pendingEndStorageKey = `nexorev:pending-call-end:${shell.dataset.userId}`;
   let socket = null;
   let reconnectDelay = 1000;
   let reconnectTimer = null;
   let signalingStatusTimer = null;
   let countdownTimer = null;
   let disconnectTimer = null;
+  let endCallTimer = null;
+  let endingCallId = null;
   let setupMode = null;
   let pendingIncoming = null;
   let activeCall = null;
   let connectionId = null;
   const pendingSignals = [];
+  let pendingEndCallId = null;
   let peerConnection = null;
   let peerConnectionCreation = null;
   let remoteStream = new MediaStream();
   let remoteVideoTrackReceived = false;
   let remoteCameraActive = null;
   let remoteMicrophoneActive = null;
+  let pageExitStarted = false;
   let pendingCandidates = [];
   let restartAttempted = false;
 
@@ -148,6 +154,49 @@
     return true;
   };
 
+  const sendPendingCallEnd = () => {
+    let serialized;
+    try {
+      serialized = sessionStorage.getItem(pendingEndStorageKey);
+    } catch (error) {
+      showError('No se pudo recuperar el cierre pendiente de la llamada.');
+      return false;
+    }
+    if (!serialized) return false;
+
+    let payload;
+    try {
+      payload = JSON.parse(serialized);
+    } catch (error) {
+      sessionStorage.removeItem(pendingEndStorageKey);
+      showError('El cierre pendiente de la llamada no es válido.');
+      return false;
+    }
+    if (
+      !payload
+      || payload.tipo !== 'salir'
+      || !Number.isSafeInteger(payload.llamada_id)
+      || payload.llamada_id < 1
+    ) {
+      sessionStorage.removeItem(pendingEndStorageKey);
+      showError('El cierre pendiente de la llamada no es válido.');
+      return false;
+    }
+
+    pendingEndCallId = payload.llamada_id;
+    socket.send(JSON.stringify(payload));
+    return true;
+  };
+
+  const clearPendingCallEnd = () => {
+    pendingEndCallId = null;
+    try {
+      sessionStorage.removeItem(pendingEndStorageKey);
+    } catch (error) {
+      showError('No se pudo limpiar el cierre pendiente de la llamada.');
+    }
+  };
+
   const stopCountdown = () => {
     if (countdownTimer) window.clearInterval(countdownTimer);
     countdownTimer = null;
@@ -183,6 +232,36 @@
     activeStatus.dataset.state = state;
   };
 
+  const clearEndCallState = () => {
+    if (endCallTimer) window.clearTimeout(endCallTimer);
+    endCallTimer = null;
+    endingCallId = null;
+    hangupButton.disabled = false;
+  };
+
+  const requestEndCall = () => {
+    if (!activeCall?.id) {
+      releaseCall({ keepStatus: true });
+      return;
+    }
+    if (endingCallId === activeCall.id) return;
+    const callId = activeCall.id;
+    const tipo = activeCall.state === 'sonando'
+      ? activeCall.initiator ? 'cancelar' : 'rechazar'
+      : 'colgar';
+    if (!send({ tipo, llamada_id: callId })) return;
+
+    endingCallId = callId;
+    hangupButton.disabled = true;
+    setActiveStatus('Finalizando llamada…');
+    endCallTimer = window.setTimeout(() => {
+      if (activeCall?.id !== callId || endingCallId !== callId) return;
+      clearEndCallState();
+      setActiveStatus('No se confirmó el cierre de la llamada.', 'disconnected');
+      showError('No se confirmó el cierre. Espera a que se reconecte la señalización y vuelve a colgar.');
+    }, 5000);
+  };
+
   const sendEndForSetup = () => {
     if (!activeCall?.id) return;
     if (activeCall.initiator && activeCall.state === 'sonando') {
@@ -195,6 +274,7 @@
   const releaseCall = ({ keepStatus = false } = {}) => {
     if (disconnectTimer) window.clearTimeout(disconnectTimer);
     disconnectTimer = null;
+    clearEndCallState();
     if (peerConnection) {
       peerConnection.onicecandidate = null;
       peerConnection.ontrack = null;
@@ -452,8 +532,7 @@
     } catch (error) {
       if (activeCall?.id !== callId) return;
       showError(error.message || 'No se pudo iniciar la conexión WebRTC.');
-      send({ tipo: 'colgar', llamada_id: callId });
-      releaseCall();
+      requestEndCall();
     }
   };
 
@@ -498,7 +577,17 @@
   const handlePayload = async (payload) => {
     if (!payload || typeof payload !== 'object') return;
     if (payload.tipo === 'conectado') return;
+    if (payload.tipo === 'reanudada') {
+      if (activeCall?.id === Number(payload.llamada_id)) {
+        setActiveStatus('Señalización reconectada; llamada continúa.');
+      }
+      return;
+    }
     if (payload.tipo === 'error') {
+      if (pendingEndCallId) clearPendingCallEnd();
+      if (endingCallId && activeCall?.id === endingCallId) {
+        clearEndCallState();
+      }
       showError(payload.mensaje || 'No se pudo procesar la videollamada.');
       if (activeCall?.state === 'invitando') releaseCall({ keepStatus: true });
       return;
@@ -557,6 +646,7 @@
       return;
     }
     if (payload.tipo === 'rechazada' || payload.tipo === 'cancelada' || payload.tipo === 'terminada') {
+      if (pendingEndCallId === Number(payload.llamada_id)) clearPendingCallEnd();
       const reason = payload.motivo;
       const message = payload.tipo === 'rechazada'
         ? 'La llamada fue rechazada.'
@@ -576,12 +666,24 @@
   };
 
   const connectSocket = () => {
+    if (pageExitStarted) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     socket = new WebSocket(`${protocol}//${window.location.host}${shell.dataset.signalingPath}`);
     socket.addEventListener('open', () => {
+      if (pageExitStarted) {
+        socket.close();
+        return;
+      }
       reconnectDelay = 1000;
       if (activeCall?.id) setActiveStatus('Señalización reconectada; verificando la llamada…');
       else showSignalingStatus('Señalización de videollamada conectada.');
+      const endingPreviousCall = sendPendingCallEnd();
+      if (!endingPreviousCall && activeCall?.id) {
+        socket.send(JSON.stringify({
+          tipo: 'reanudar',
+          llamada_id: activeCall.id,
+        }));
+      }
       while (pendingSignals.length && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify(pendingSignals.shift()));
       }
@@ -596,6 +698,7 @@
       }
     });
     socket.addEventListener('close', (event) => {
+      if (pageExitStarted) return;
       if (event.code === 4401 || event.code === 4403) {
         showError('No tienes acceso a la videollamada.');
         releaseCall({ keepStatus: true });
@@ -610,6 +713,7 @@
       reconnectDelay = Math.min(reconnectDelay * 2, 30000);
     });
     socket.addEventListener('error', () => {
+      if (pageExitStarted) return;
       showSignalingStatus(
         'No se pudo abrir la señalización de videollamada; se reintentará.',
         true,
@@ -709,10 +813,10 @@
   document.getElementById('videollamadaSettings').addEventListener('click', () => {
     openSetup('settings', activeCall).catch((error) => showError(error.message));
   });
-  document.getElementById('videollamadaHangup').addEventListener('click', () => {
-    if (activeCall?.id) send({ tipo: 'colgar', llamada_id: activeCall.id });
-    releaseCall({ keepStatus: true });
-    showNotice('Videollamada finalizada.');
+  hangupButton.addEventListener('click', requestEndCall);
+  activeDialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    showNotice('Usa el botón Colgar para finalizar la videollamada.');
   });
 
   micButton.addEventListener('click', () => {
@@ -770,12 +874,31 @@
   }
 
   connectSocket();
-  window.addEventListener('beforeunload', () => {
+  const cleanupForPageExit = () => {
+    if (pageExitStarted) return;
+    pageExitStarted = true;
+    const callId = activeCall?.id || pendingIncoming?.id;
+    if (callId) {
+      const payload = { tipo: 'salir', llamada_id: callId };
+      try {
+        sessionStorage.setItem(pendingEndStorageKey, JSON.stringify(payload));
+      } catch (error) {
+        showError('No se pudo guardar el cierre pendiente de la llamada.');
+      }
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(payload));
+      }
+    }
     if (reconnectTimer) window.clearTimeout(reconnectTimer);
     if (signalingStatusTimer) window.clearTimeout(signalingStatusTimer);
     if (countdownTimer) window.clearInterval(countdownTimer);
     if (peerConnection) peerConnection.close();
     devices.release();
     if (socket) socket.close();
-  }, { once: true });
+  };
+  window.addEventListener('beforeunload', cleanupForPageExit, { once: true });
+  window.addEventListener('pagehide', cleanupForPageExit, { once: true });
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) window.location.reload();
+  });
 })();

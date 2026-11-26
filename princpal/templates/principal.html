@@ -40,7 +40,7 @@
   </script>
   <link rel="stylesheet" href="{% static 'estilo.css' %}?v=47">
   <link rel="stylesheet" href="{% static 'princpal/css/asignaciones.css' %}?v=1">
-  <link rel="stylesheet" href="{% static 'mensajeria/videollamada.css' %}?v=3">
+  <link rel="stylesheet" href="{% static 'mensajeria/videollamada.css' %}?v=4">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <link rel="stylesheet" href="{% static 'mensajeria/mensajeria.css' %}?v=2">
@@ -96,7 +96,7 @@
   <script src="{% static 'princpal/js/principal.js' %}?v=51" defer></script>
   {% if usuario and usuario.role == 'doctor' or usuario and usuario.role == 'paciente' %}
     <script src="{% static 'mensajeria/dispositivos.js' %}?v=2" defer></script>
-    <script src="{% static 'mensajeria/videollamada.js' %}?v=6" defer></script>
+    <script src="{% static 'mensajeria/videollamada.js' %}?v=9" defer></script>
   {% endif %}
   {% if usuario and usuario.role == 'doctor' %}
     <script src="{% static 'princpal/js/dashboard.js' %}?v=7" defer></script>
