@@ -1,0 +1,100 @@
+{% if usuario and usuario.role == 'doctor' %}
+<section class="app-view routines-view" id="rutinasView" data-view="rutinas">
+  <header class="page-head dashboard-heading section-guide-head">
+    <div>
+      <p class="dashboard-eyebrow">GESTIÓN DEL TRATAMIENTO</p>
+      <h1>Rutinas</h1>
+      <p>Administra plantillas y consulta la retroalimentación de tus pacientes.</p>
+    </div>
+    <button class="section-guide-trigger" type="button" data-tutorial-view="rutinas">Guía de uso</button>
+  </header>
+
+  {% if messages %}
+    <ul class="dashboard-notices" role="status">
+      {% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  <article class="dashboard-card routine-template-card">
+    <div class="dashboard-card-heading">
+      <div><h2>Plantillas de rutina</h2><p>Crea y ordena los videos que después podrás asignar a tus pacientes.</p></div>
+    </div>
+    <div class="routine-template-layout">
+      <form class="dashboard-form routine-template-form" id="routineTemplateForm" method="post" action="{% url 'save_routine_template' %}">
+        {% csrf_token %}
+        <input type="hidden" name="plantilla_id" id="routineTemplateId">
+        <label>Nombre<input type="text" name="nombre" id="routineTemplateName" maxlength="150" required></label>
+        <label>Descripción (opcional)<textarea name="descripcion" id="routineTemplateDescription" rows="2"></textarea></label>
+        <fieldset class="routine-video-picker">
+          <legend>Videos y orden</legend>
+          <div class="routine-video-options">
+            {% for video in routine_videos %}
+              <label class="routine-video-option">
+                <input type="checkbox" name="video_ids" value="{{ video.video_id }}" data-catalog-index="{{ video.catalog_index }}">
+                <span>{{ video.title }}</span>
+                <span class="routine-video-order"><span>Orden</span><input type="number" name="orden_{{ video.catalog_index }}" min="1" value="{{ forloop.counter }}" disabled aria-label="Orden de {{ video.title }}"></span>
+              </label>
+            {% empty %}
+              <p>No hay videos disponibles para crear una plantilla.</p>
+            {% endfor %}
+          </div>
+        </fieldset>
+        <div class="routine-template-form-actions">
+          <button type="submit" class="dashboard-submit" id="routineTemplateSave">Guardar plantilla</button>
+          <button type="button" class="dashboard-reset" id="routineTemplateCancel" hidden>Cancelar edición</button>
+        </div>
+      </form>
+      <div class="routine-template-list" aria-label="Plantillas existentes">
+        {% for template in routine_templates %}
+          <article class="routine-template-row{% if not template.activa %} is-inactive{% endif %}">
+            <div>
+              <h3>{{ template.nombre }}{% if not template.activa %} <span>(desactivada)</span>{% endif %}</h3>
+              <p>{{ template.descripcion|default:"Sin descripción" }}</p>
+              <small>{{ template.ejercicios.count }} ejercicio{{ template.ejercicios.count|pluralize:"s" }}</small>
+            </div>
+            <div class="routine-template-actions">
+              <button type="button" class="routine-template-edit" data-edit-template="{{ template.pk }}">Editar</button>
+              <form method="post" action="{% url 'manage_routine_template' template.pk %}">
+                {% csrf_token %}
+                <button type="submit" name="action" value="{% if template.activa %}deactivate{% else %}activate{% endif %}">{% if template.activa %}Desactivar{% else %}Activar{% endif %}</button>
+                {% if not template.asignaciones.exists %}
+                  <button type="submit" name="action" value="delete" class="routine-template-delete">Eliminar</button>
+                {% endif %}
+              </form>
+            </div>
+          </article>
+        {% empty %}
+          <p class="routine-template-empty">Aún no has creado plantillas.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </article>
+
+  <article class="dashboard-card dashboard-table-card">
+    <div class="dashboard-card-heading">
+      <div><h2>Retroalimentación de rutinas</h2><p>Dolor y dificultad informados al completar las actividades.</p></div>
+      <button type="button" class="dashboard-submit" data-open-form-modal="routineForm">Asignar rutina</button>
+    </div>
+    <div class="dashboard-table-scroll">
+      <table class="dashboard-table routine-feedback-table">
+        <thead><tr><th>Paciente</th><th>Rutina</th><th>Fecha</th><th>Dolor</th><th>Dificultad</th><th>Comentario</th></tr></thead>
+        <tbody>
+          {% for item in doctor_home_feedback %}
+            <tr>
+              <th scope="row">{{ item.patientName }}</th>
+              <td>{{ item.routine }}</td>
+              <td>{{ item.dateDisplay }}</td>
+              <td>{% if item.pain is not None %}{{ item.pain }} / 10{% else %}—{% endif %}</td>
+              <td>{{ item.difficulty|default:"—" }}</td>
+              <td>{{ item.comment|default:"—" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="doctor-home-empty">Aún no hay retroalimentación de rutinas.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+  {{ routine_template_data|json_script:"routine-template-data" }}
+</section>
+{% endif %}

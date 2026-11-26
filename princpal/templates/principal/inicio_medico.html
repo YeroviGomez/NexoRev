@@ -1,0 +1,216 @@
+{% if usuario and usuario.role == 'doctor' %}
+<section class="app-view doctor-home-view" id="inicioView" data-view="inicio"
+  data-reschedule-review-url="{% url 'review_reschedule_request' 0 %}">
+  <header class="page-head doctor-home-heading section-guide-head">
+    <div>
+      <p class="dashboard-eyebrow">CONSULTA MÉDICA</p>
+      <h1>Tu consulta de hoy</h1>
+      <p>Organiza tus sesiones, solicitudes y pacientes asignados.</p>
+    </div>
+    <button class="section-guide-trigger" type="button" data-tutorial-view="inicio">Guía de uso</button>
+  </header>
+
+  {% if messages %}
+    <ul class="dashboard-notices" role="status">
+      {% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  <section class="doctor-home-summary" aria-label="Resumen de la consulta">
+    <article class="doctor-home-stat">
+      <span>Sesiones de hoy</span>
+      <strong>{{ doctor_home_counts.today }}</strong>
+    </article>
+    <article class="doctor-home-stat">
+      <span>Solicitudes pendientes</span>
+      <strong id="doctorHomePendingCount">{{ doctor_home_counts.pending_requests }}</strong>
+    </article>
+    <article class="doctor-home-stat{% if doctor_home_counts.overdue %} is-overdue{% endif %}">
+      <span>Sesiones vencidas sin cerrar</span>
+      <strong>{{ doctor_home_counts.overdue }}</strong>
+    </article>
+  </section>
+
+  <section class="doctor-home-quick-actions" id="doctorQuickActions" aria-labelledby="doctorQuickActionsTitle">
+    <header class="doctor-home-section-heading">
+      <div><h2 id="doctorQuickActionsTitle">Acceso rápido</h2><p>Abre una acción clínica sin salir de Inicio.</p></div>
+    </header>
+    <div class="doctor-quick-action-grid">
+      <button class="doctor-quick-action" type="button" data-open-form-modal="sessionForm">
+        <span aria-hidden="true">＋</span><strong>Agendar sesión</strong>
+      </button>
+      <button class="doctor-quick-action" type="button" data-open-form-modal="routineForm">
+        <span aria-hidden="true">↗</span><strong>Asignar rutina</strong>
+      </button>
+      <button class="doctor-quick-action" type="button" data-open-form-modal="evaluationForm">
+        <span aria-hidden="true">♡</span><strong>Registrar evaluación</strong>
+      </button>
+      <button class="doctor-quick-action" type="button" data-open-form-modal="doctorAddPatientForm">
+        <span aria-hidden="true">＋</span><strong>Añadir paciente</strong>
+      </button>
+    </div>
+  </section>
+
+  <article class="dashboard-card dashboard-table-card reschedule-requests-card" id="rescheduleRequestsCard">
+    <div class="dashboard-card-heading">
+      <div>
+        <h2>Solicitudes de cambio de sesión</h2>
+        <p>Revisa las solicitudes pendientes y responde al paciente.</p>
+      </div>
+      <span class="reschedule-request-count" id="rescheduleRequestCount">{{ pending_reschedule_requests|length }} pendiente{{ pending_reschedule_requests|length|pluralize:"s" }}</span>
+    </div>
+    <div class="dashboard-table-scroll">
+      <table class="dashboard-table reschedule-requests-table">
+        <thead><tr><th>Paciente y sesión</th><th>Horario actual</th><th>Fecha solicitada</th><th>Motivo</th><th>Decisión</th></tr></thead>
+        <tbody id="dashboardRescheduleRequests">
+          {% for request in pending_reschedule_requests %}
+            <tr>
+              <th scope="row">
+                <span class="request-patient-name">{{ request.patient }}</span>
+                <span class="request-session-name">{{ request.session }}</span>
+              </th>
+              <td>{{ request.current_date }}</td>
+              <td>{{ request.requested_date }}</td>
+              <td class="reschedule-reason-cell">{{ request.reason }}</td>
+              <td>
+                <div class="reschedule-review-actions">
+                  <label>Proponer otra fecha
+                    <input type="datetime-local" aria-label="Fecha alternativa propuesta" min="{{ today }}T00:00">
+                  </label>
+                  <label>Respuesta al paciente
+                    <input type="text" maxlength="1000" placeholder="Opcional" aria-label="Respuesta al paciente">
+                  </label>
+                  <div class="reschedule-review-buttons">
+                    <button type="button" data-request-id="{{ request.id }}" data-request-action="aprobar">Aprobar</button>
+                    <button type="button" data-request-id="{{ request.id }}" data-request-action="rechazar">Rechazar</button>
+                    <button type="button" data-request-id="{{ request.id }}" data-request-action="proponer">Proponer fecha</button>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr class="reschedule-empty-row"><td colspan="5">No hay solicitudes pendientes de revisión.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="dashboard-empty" id="dashboardRescheduleRequestsEmpty" {% if pending_reschedule_requests %}hidden{% endif %}>No hay solicitudes pendientes de revisión.</p>
+    </div>
+  </article>
+
+  <article class="dashboard-card dashboard-table-card" id="doctorHomeSessions">
+    <div class="dashboard-card-heading">
+      <div><h2>Sesiones programadas</h2><p>Las sesiones vencidas sin cerrar se resaltan para facilitar su seguimiento.</p></div>
+    </div>
+    <div class="dashboard-table-scroll">
+      <table class="dashboard-table">
+        <thead><tr><th>Paciente</th><th>Sesión</th><th>Fecha</th><th>Acciones</th></tr></thead>
+        <tbody>
+          {% for session in doctor_home_sessions %}
+            <tr{% if session.is_overdue %} class="doctor-session-overdue"{% endif %}>
+              <th scope="row">{{ session.patient }}</th>
+              <td>{{ session.objective }}{% if session.is_overdue %}<span class="doctor-overdue-label">Vencida sin cerrar</span>{% endif %}</td>
+              <td>{{ session.scheduled_display }}</td>
+              <td>
+                <form method="post" action="{% url 'complete_session' session.id %}" class="doctor-session-actions">
+                  {% csrf_token %}
+                  {% if session.is_overdue %}
+                    <button class="session-complete-button" type="submit" name="estado" value="completada">Marcar completada</button>
+                    <button class="session-complete-button is-secondary" type="submit" name="estado" value="no_asistio">No asistió</button>
+                  {% endif %}
+                  <button class="session-complete-button is-danger" type="submit" name="estado" value="cancelada">Cancelar</button>
+                </form>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="doctor-home-empty">No hay sesiones programadas.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <article class="dashboard-card dashboard-table-card" id="doctorHomeFeedback">
+    <div class="dashboard-card-heading">
+      <div><h2>Retroalimentación reciente de rutinas</h2><p>Las cinco respuestas más recientes de tus pacientes.</p></div>
+      <a class="dashboard-manage-link" href="#rutinas" data-nav="rutinas">Ver todas</a>
+    </div>
+    <div class="dashboard-table-scroll">
+      <table class="dashboard-table routine-feedback-table">
+        <thead><tr><th>Paciente</th><th>Rutina</th><th>Fecha</th><th>Dolor</th><th>Dificultad</th><th>Comentario</th></tr></thead>
+        <tbody>
+          {% for item in doctor_home_feedback_recent %}
+            <tr>
+              <th scope="row">{{ item.patientName }}</th>
+              <td>{{ item.routine }}</td>
+              <td>{{ item.dateDisplay }}</td>
+              <td>{% if item.pain is not None %}{{ item.pain }} / 10{% else %}—{% endif %}</td>
+              <td>{{ item.difficulty|default:"—" }}</td>
+              <td>{{ item.comment|default:"—" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="doctor-home-empty">Aún no hay retroalimentación de rutinas.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <article class="panel patients-panel doctor-home-patients">
+    <div class="section-head">
+      <h2>Pacientes asignados</h2>
+      <div class="doctor-filters">
+        <label>
+          <span>Progreso</span>
+          <select id="doctorPatientFilter" aria-label="Filtrar pacientes por estado">
+            <option value="all">Todos</option>
+            <option value="inicial">Inicial</option>
+            <option value="en_proceso">En proceso</option>
+            <option value="avanzado">Avanzado</option>
+            <option value="finalizado">Finalizado</option>
+          </select>
+        </label>
+        <label>
+          <span>Ordenar por</span>
+          <select id="doctorPatientSort" aria-label="Ordenar pacientes">
+            <option value="avance_desc">Progreso: mayor a menor</option>
+            <option value="avance_asc">Progreso: menor a mayor</option>
+            <option value="edad_desc">Edad: mayor a menor</option>
+            <option value="edad_asc">Edad: menor a mayor</option>
+            <option value="nombre_asc">Nombre: A-Z</option>
+            <option value="nombre_desc">Nombre: Z-A</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <p class="doctor-filter-status" id="doctorFilterStatus" aria-live="polite">Mostrando todos los pacientes</p>
+    <div class="doctor-patient-actions">
+      <button type="button" class="primary-btn" data-open-form-modal="doctorAddPatientForm">Añadir paciente</button>
+    </div>
+    <div class="patients-list">
+      {% for patient in doctor_patients %}
+        <div class="patient-row patient-card" role="button" tabindex="0" data-patient-id="{{ patient.id }}" data-state="{{ patient.estado }}" data-advance="{{ patient.avance }}" data-age="{{ patient.edad }}" data-name="{{ patient.nombre|lower }}">
+          <div class="patient-main">
+            <div>
+              <strong>{{ patient.nombre }}</strong>
+              <small>{{ patient.edad }} años · {{ patient.zona_afectada|default:'Sin zona registrada' }}</small>
+            </div>
+            <div class="patient-meta">
+              <span class="patient-state" style="--state-color: {{ patient.color_estado }};">{{ patient.get_estado_display }}</span>
+              <span class="patient-percent">{{ patient.avance }}%</span>
+            </div>
+          </div>
+          <div class="doctor-patient-clinical-summary">
+            <span>Dolor actual<strong>{% if patient.dolor_actual is not None %}{{ patient.dolor_actual }} / 10{% else %}—{% endif %}</strong></span>
+            <span>Asistencia<strong>{% if patient.asistencia is not None %}{{ patient.asistencia }}%{% else %}—{% endif %}</strong></span>
+            <span>Última sesión<strong>{{ patient.ultima_sesion|default:"—" }}</strong></span>
+          </div>
+          <div class="patient-actions"><span class="secondary-btn">Ver expediente</span></div>
+        </div>
+      {% empty %}
+        <p class="empty-state" id="doctorPatientsEmpty">Todavía no tienes pacientes asignados.</p>
+      {% endfor %}
+    </div>
+  </article>
+  {{ pending_reschedule_requests|json_script:"dashboard-reschedule-request-data" }}
+</section>
+{% endif %}

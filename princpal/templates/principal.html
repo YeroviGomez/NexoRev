@@ -38,7 +38,8 @@
       }
     });
   </script>
-  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=46">
+  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=47">
+  <link rel="stylesheet" href="{% static 'princpal/css/asignaciones.css' %}?v=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <link rel="stylesheet" href="{% static 'mensajeria/mensajeria.css' %}?v=2">
@@ -47,15 +48,40 @@
   {% include "principal/sidebar.html" %}
 
   <main class="app-shell">
+    {% if usuario and usuario.role == 'paciente' %}
+      <aside
+        class="medical-change-notice"
+        id="medicalChangeNotice"
+        data-dismiss-url="{{ medico_notificacion_dismiss_url }}"
+        role="status"
+        aria-live="polite"
+        {% if not medico_notificacion %}hidden{% endif %}
+      >
+        <p id="medicalChangeNoticeText">
+          {% if medico_notificacion %}
+            Tu médico ha cambiado. Ahora te atiende Dr. {{ medico_notificacion.doctor.nombre }}.
+          {% endif %}
+        </p>
+        <button type="button" id="dismissMedicalChangeNotice">Descartar</button>
+      </aside>
+    {% endif %}
     {% include "principal/dashboard.html" %}
     {% include "principal/mi_progreso.html" %}
-    {% include "principal/home.html" %}
+    {% if usuario and usuario.role == 'doctor' %}
+      {% include "principal/inicio_medico.html" %}
+      {% include "principal/rutinas.html" %}
+    {% else %}
+      {% include "principal/home.html" %}
+    {% endif %}
     {% include "principal/diagnostico.html" %}
     {% include "principal/videos.html" %}
     {% include "principal/favoritos.html" %}
     {% include "principal/historial.html" %}
     {% include "principal/profile.html" %}
     {% include "principal/calendar.html" %}
+    {% if usuario and usuario.role == 'doctor' %}
+      {% include "principal/medico_modales.html" %}
+    {% endif %}
   </main>
 
   {% include "principal/tutorial.html" %}
@@ -63,9 +89,10 @@
 
   {% include "principal/scroll_to_top.html" %}
 
-  <script src="{% static 'princpal/js/principal.js' %}?v=50" defer></script>
+  <script src="{% static 'princpal/js/principal.js' %}?v=51" defer></script>
   {% if usuario and usuario.role == 'doctor' %}
-    <script src="{% static 'princpal/js/dashboard.js' %}?v=6" defer></script>
+    <script src="{% static 'princpal/js/dashboard.js' %}?v=7" defer></script>
+    <script src="{% static 'princpal/js/medico.js' %}?v=2" defer></script>
   {% endif %}
   {% if usuario and usuario.role == 'paciente' %}
     <script src="{% static 'princpal/js/mi-progreso.js' %}?v=3" defer></script>

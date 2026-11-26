@@ -1,0 +1,168 @@
+{% if usuario and usuario.role == 'doctor' %}
+<dialog class="doctor-form-modal" id="doctorFormModal" aria-labelledby="doctorFormModalTitle">
+  <div class="doctor-form-modal-content">
+    <header class="doctor-form-modal-heading">
+      <div>
+        <h2 id="doctorFormModalTitle"></h2>
+        <p id="doctorFormModalDescription"></p>
+      </div>
+      <button type="button" class="doctor-form-modal-close" data-close-form-modal aria-label="Cerrar formulario">×</button>
+    </header>
+    <div class="dashboard-profile-context" id="dashboardProfileContext" hidden>
+      <span>Expediente activo: <strong id="dashboardProfilePatientName"></strong></span>
+      <button type="button" id="dashboardProfileUnlock">Cambiar paciente</button>
+    </div>
+
+    <section data-form-modal-panel="evaluationForm"
+      data-form-title="Registrar evaluación"
+      data-form-description="Actualiza el dolor EVA y, si corresponde, una medida clínica.">
+      <form class="dashboard-form" id="evaluationForm" method="post" data-action-template="{% url 'register_clinical_evaluation' 0 %}">
+        {% csrf_token %}
+        <label>Paciente<select name="patient_id" required><option value="">Selecciona un paciente</option></select></label>
+        <label>Dolor EVA<input name="nivel_dolor" type="number" min="0" max="10" step="1" required></label>
+        <label>Métrica clínica <span>(opcional)</span><input name="metrica" maxlength="100" placeholder="Movilidad, fuerza..."></label>
+        <label>Valor actual <span>(opcional)</span><input name="valor_actual" type="number" min="0" step="0.01"></label>
+        <label>Unidad<input name="unidad" maxlength="30" placeholder="grados, kg..."></label>
+        <button type="submit" class="dashboard-submit">Guardar evaluación</button>
+      </form>
+    </section>
+
+    <section data-form-modal-panel="goalForm"
+      data-form-title="Definir objetivo"
+      data-form-description="Compara el estado actual del paciente con su meta terapéutica.">
+      <form class="dashboard-form" id="goalForm" method="post" data-action-template="{% url 'add_therapeutic_goal' 0 %}">
+        {% csrf_token %}
+        <label>Paciente<select name="patient_id" required><option value="">Selecciona un paciente</option></select></label>
+        <label>Nombre del objetivo<input name="nombre" maxlength="150" required placeholder="Recuperar movilidad"></label>
+        <label>Métrica clínica<input name="metrica" maxlength="100" required placeholder="Movilidad"></label>
+        <label>Criterio
+          <select name="direccion">
+            <option value="mayor">Alcanzar o superar</option>
+            <option value="menor">Reducir hasta</option>
+          </select>
+        </label>
+        <label>Valor objetivo<input name="valor_objetivo" type="number" min="0" step="0.01" required></label>
+        <label>Unidad<input name="unidad" maxlength="30" placeholder="grados, kg..."></label>
+        <button type="submit" class="dashboard-submit">Añadir objetivo</button>
+      </form>
+    </section>
+
+    <section data-form-modal-panel="sessionForm"
+      data-form-title="Agendar sesión"
+      data-form-description="Programa una sesión y asóciala con uno de los objetivos vigentes.">
+      <form class="dashboard-form" id="sessionForm" method="post" data-action-template="{% url 'schedule_session' 0 %}">
+        {% csrf_token %}
+        <label>Paciente<select name="patient_id" required><option value="">Selecciona un paciente</option></select></label>
+        <label>Fecha y hora<input name="fecha" type="datetime-local" required></label>
+        <label>Objetivo del paciente<select name="objetivo_terapeutico" required disabled><option value="">Primero selecciona un paciente</option></select></label>
+        <label>Duración (minutos)<input name="duracion_minutos" type="number" min="1" value="45" required></label>
+        <label>Enlace de videollamada o ubicación<input name="enlace_ubicacion" maxlength="500" placeholder="Enlace o dirección (opcional)"></label>
+        <label class="dashboard-form-wide">Nota opcional del objetivo<textarea name="nota_objetivo" rows="2" placeholder="Indicaciones para esta sesión"></textarea></label>
+        <button type="submit" class="dashboard-submit">Agendar sesión</button>
+      </form>
+    </section>
+
+    <section data-form-modal-panel="routineForm"
+      data-form-title="Asignar rutina"
+      data-form-description="Programa una plantilla y personaliza la dosis de cada ejercicio.">
+      <form class="dashboard-form routine-assignment-form" id="routineForm" method="post" data-action-template="{% url 'assign_routine' 0 %}">
+        {% csrf_token %}
+        <section class="routine-form-block">
+          <h3>Asignación</h3>
+          <div class="routine-assignment-fields">
+            <label>Paciente<select name="patient_id" required><option value="">Selecciona un paciente</option></select></label>
+            <label>Rutina
+              <select name="plantilla" id="routineTemplateSelect" required>
+                <option value="">Selecciona una plantilla</option>
+                {% for template in routine_templates %}
+                  <option value="{{ template.pk }}" {% if not template.activa or not template.ejercicios.exists %}disabled{% endif %}>{{ template.nombre }}{% if not template.activa %} (desactivada){% elif not template.ejercicios.exists %} (sin ejercicios){% endif %}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+        </section>
+        <section class="routine-form-block">
+          <h3>Programación</h3>
+          <div class="routine-date-row">
+            <label>Fecha de inicio<input name="fecha_inicio" type="date" lang="es" required></label>
+            <label>Fecha de fin<input name="fecha_fin" type="date" lang="es" required></label>
+          </div>
+          <fieldset class="routine-weekdays">
+            <legend>Días de la semana</legend>
+            <div class="routine-weekday-row">
+              {% for day, label in routine_weekdays %}
+                <label class="routine-weekday-chip">
+                  <input type="checkbox" name="dias_semana" value="{{ day }}">
+                  <span>{{ label }}</span>
+                </label>
+              {% endfor %}
+            </div>
+            <div class="routine-day-shortcuts" aria-label="Atajos de días">
+              <button type="button" data-weekday-preset="weekdays">Lun-Vie</button>
+              <button type="button" data-weekday-preset="alternate">Alternos</button>
+              <button type="button" data-weekday-preset="all">Todos</button>
+            </div>
+          </fieldset>
+          <p class="routine-schedule-summary" id="routineScheduleSummary" aria-live="polite">Selecciona fechas y días para ver el número de sesiones.</p>
+        </section>
+        <section class="routine-form-block routine-dose-block">
+          <h3>Dosis</h3>
+          <div class="routine-dose-list" id="routineDoseList">
+            <p class="routine-dose-empty">Selecciona una plantilla para ver sus ejercicios.</p>
+          </div>
+        </section>
+        <p class="routine-assignment-message" id="routineAssignmentMessage" role="status" hidden></p>
+        <button type="submit" class="dashboard-submit">Asignar rutina</button>
+      </form>
+    </section>
+
+    <section data-form-modal-panel="doctorAddPatientForm"
+      data-form-title="Añadir paciente"
+      data-form-description="Registra un paciente nuevo o añade uno disponible sin historial de asignaciones.">
+      <div
+        class="available-patients-picker"
+        id="availablePatientsPicker"
+        data-list-url="{% url 'pacientes_disponibles_api' %}"
+        data-assign-url-template="{% url 'asignar_paciente_disponible_api' 0 %}"
+      >
+        <button
+          type="button"
+          class="available-patients-toggle"
+          id="availablePatientsToggle"
+          aria-expanded="false"
+          aria-controls="availablePatientsList"
+        >
+          <span>Pacientes disponibles sin asignación (<span id="availablePatientsCount">{{ available_patients_count }}</span>)</span>
+          <span class="available-patients-toggle-icon" aria-hidden="true">⌄</span>
+        </button>
+        <div class="available-patients-list" id="availablePatientsList" hidden>
+          <label class="available-patients-search" for="availablePatientsSearch">
+            Buscar por nombre
+            <input id="availablePatientsSearch" type="search" autocomplete="off" minlength="2" maxlength="100" placeholder="Escribe al menos 2 caracteres">
+          </label>
+          <p class="available-patients-status" id="availablePatientsStatus" role="status" aria-live="polite" hidden></p>
+          <p class="available-patients-empty" id="availablePatientsEmpty" hidden>No hay pacientes disponibles sin asignación</p>
+          <ul class="available-patients-results" id="availablePatientsResults" aria-label="Pacientes disponibles"></ul>
+          <nav class="available-patients-pagination" id="availablePatientsPagination" aria-label="Páginas de pacientes disponibles" hidden>
+            <button type="button" id="availablePatientsPrevious" disabled>Anterior</button>
+            <span id="availablePatientsPage"></span>
+            <button type="button" id="availablePatientsNext" disabled>Siguiente</button>
+          </nav>
+        </div>
+      </div>
+      <form id="doctorAddPatientForm" method="post" action="{% url 'agregar_paciente' %}" class="doctor-add-patient-form">
+        {% csrf_token %}
+        <div class="form-grid compact">
+          <label><span>Nombre</span><input type="text" name="nombre"></label>
+          <label><span>Correo</span><input type="email" name="email"></label>
+          <label><span>Edad</span><input type="number" name="edad" min="0" max="120" value="0"></label>
+          <label><span>Teléfono</span><input type="tel" name="telefono" maxlength="20"></label>
+          <label><span>Zona afectada</span><input type="text" name="zona_afectada" placeholder="Rodilla, hombro..."></label>
+          <label><span>Progreso inicial</span><input type="number" name="avance" min="0" max="100" value="0"></label>
+        </div>
+        <button type="submit" class="primary-btn">Guardar paciente</button>
+      </form>
+    </section>
+  </div>
+</dialog>
+{% endif %}

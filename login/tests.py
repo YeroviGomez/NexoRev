@@ -41,7 +41,7 @@ class TwoFactorLoginTests(TestCase):
 
 		response = self.client.post(reverse('verify_2fa'), {'code': code})
 
-		self.assertRedirects(response, reverse('principal'))
+		self.assertRedirects(response, reverse('principal'), fetch_redirect_response=False)
 		self.assertEqual(self.client.session.get('current_user'), self.usuario.email)
 		self.assertTrue(self.client.session.get('show_initial_guide'))
 		self.assertEqual(len(mail.outbox), 2)

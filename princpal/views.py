@@ -1,18 +1,19 @@
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.http import Http404, HttpResponseForbidden, JsonResponse, StreamingHttpResponse
 from django.conf import settings
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import cache_control
-from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Max, Q
+from django.db.models import Count, Max, Prefetch, Q
 from django.utils import timezone
 from django.urls import reverse
 from functools import wraps
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import random
 import re
 import mimetypes
@@ -29,12 +30,22 @@ from .forms import (
     FotoPerfilForm,
     ObjetivoTerapeuticoForm,
     ProfileUpdateForm,
+    ReasignacionMedicoForm,
     RescheduleSessionForm,
     SaveRoutineTemplateForm,
     ScheduleSessionForm,
     VideoUploadForm,
 )
+from .asignaciones import (
+    asignacion_vigente,
+    asignaciones_vigentes_por_paciente,
+    filtrar_queryset_por_asignaciones,
+    historial_avance_visible,
+    progreso_visible,
+)
+from .servicios import asignar_paciente_inicial, reasignar_medico
 from .models import (
+    AsignacionMedico,
     Diagnostico,
     EjercicioPlantillaRutina,
     EjercicioRutinaAsignada,
@@ -273,10 +284,15 @@ def doctor_dashboard_data(doctor):
     )
     patient_ids = [patient.pk for patient in patients]
     user_ids = [patient.usuario_id for patient in patients if patient.usuario_id]
+    assignments = asignaciones_vigentes_por_paciente(patients, doctor_id=doctor.pk)
     evaluations_by_patient = {patient_id: [] for patient_id in patient_ids}
-    for evaluation in EvaluacionClinica.objects.filter(
-        paciente_id__in=patient_ids,
-    ).order_by('fecha', 'pk'):
+    evaluations = filtrar_queryset_por_asignaciones(
+        EvaluacionClinica.objects.filter(paciente_id__in=patient_ids),
+        assignments,
+        'paciente_id',
+        'fecha',
+    ).order_by('fecha', 'pk')
+    for evaluation in evaluations:
         evaluations_by_patient[evaluation.paciente_id].append({
             'date': timezone.localtime(evaluation.fecha).isoformat(),
             'pain': evaluation.nivel_dolor,
@@ -286,7 +302,13 @@ def doctor_dashboard_data(doctor):
         })
 
     goals_by_patient = {patient_id: [] for patient_id in patient_ids}
-    for goal in ObjetivoTerapeutico.objects.filter(paciente_id__in=patient_ids):
+    goals = filtrar_queryset_por_asignaciones(
+        ObjetivoTerapeutico.objects.filter(paciente_id__in=patient_ids),
+        assignments,
+        'paciente_id',
+        'creado_en',
+    )
+    for goal in goals:
         goals_by_patient[goal.paciente_id].append({
             'id': goal.pk,
             'name': goal.nombre,
@@ -298,14 +320,20 @@ def doctor_dashboard_data(doctor):
         })
 
     sessions_by_patient = {patient_id: [] for patient_id in patient_ids}
-    for session in Sesion.objects.filter(
-        paciente_id__in=patient_ids,
-        estado__in=(
-            Sesion.ESTADO_PROGRAMADA,
-            Sesion.ESTADO_COMPLETADA,
-            Sesion.ESTADO_NO_ASISTIO,
+    sessions = filtrar_queryset_por_asignaciones(
+        Sesion.objects.filter(
+            paciente_id__in=patient_ids,
+            estado__in=(
+                Sesion.ESTADO_PROGRAMADA,
+                Sesion.ESTADO_COMPLETADA,
+                Sesion.ESTADO_NO_ASISTIO,
+            ),
         ),
-    ).order_by('fecha', 'pk'):
+        assignments,
+        'paciente_id',
+        'fecha',
+    ).order_by('fecha', 'pk')
+    for session in sessions:
         event_date = session.realizada_en or session.fecha
         sessions_by_patient[session.paciente_id].append({
             'id': session.pk,
@@ -317,35 +345,54 @@ def doctor_dashboard_data(doctor):
         })
 
     routine_feedback_by_patient = {patient_id: [] for patient_id in patient_ids}
-    for occurrence in OcurrenciaRutina.objects.filter(
-        asignacion__paciente_id__in=patient_ids,
-        completada_en__isnull=False,
-    ).select_related('asignacion', 'asignacion__paciente').order_by('-completada_en', '-pk'):
+    occurrences = filtrar_queryset_por_asignaciones(
+        OcurrenciaRutina.objects.filter(
+            asignacion__paciente_id__in=patient_ids,
+            completada_en__isnull=False,
+        ),
+        assignments,
+        'asignacion__paciente_id',
+        'asignacion__asignada_en',
+    ).select_related('asignacion', 'asignacion__paciente').order_by('-completada_en', '-pk')
+    for occurrence in occurrences:
+        completed_at = timezone.localtime(occurrence.completada_en)
         routine_feedback_by_patient[occurrence.asignacion.paciente_id].append({
+            'id': occurrence.pk,
             'routine': occurrence.asignacion.titulo,
-            'date': timezone.localtime(occurrence.completada_en).date().isoformat(),
-            'dateDisplay': timezone.localtime(occurrence.completada_en).strftime('%d/%m/%Y'),
+            'date': completed_at.date().isoformat(),
+            'dateDisplay': completed_at.strftime('%d/%m/%Y'),
+            'completedAt': completed_at.isoformat(),
             'pain': occurrence.nivel_dolor,
             'difficulty': occurrence.get_dificultad_display(),
             'comment': occurrence.comentario,
         })
 
+    assignments_by_user = {
+        patient.usuario_id: assignments.get(patient.pk)
+        for patient in patients
+        if patient.usuario_id
+    }
+    diagnoses = filtrar_queryset_por_asignaciones(
+        Diagnostico.objects.filter(usuario_id__in=user_ids),
+        assignments_by_user,
+        'usuario_id',
+        'fecha',
+    )
     diagnoses_by_user = {
         diagnosis.usuario_id: diagnosis
-        for diagnosis in Diagnostico.objects.filter(usuario_id__in=user_ids)
+        for diagnosis in diagnoses
     }
     data = []
     for patient in patients:
+        assignment = assignments.get(patient.pk)
+        avance_visible, estado_visible = progreso_visible(patient, assignment)
         diagnosis = diagnoses_by_user.get(patient.usuario_id)
         data.append({
             'id': patient.pk,
             'name': patient.nombre,
-            'progress': patient.avance,
-            'progressHistory': patient.historial_avance or [{
-                'fecha': timezone.localtime(patient.fecha_registro).isoformat(),
-                'avance': patient.avance,
-            }],
-            'state': patient.estado,
+            'progress': avance_visible,
+            'progressHistory': historial_avance_visible(patient, assignment),
+            'state': estado_visible,
             'diagnosisPain': diagnosis.nivel_dolor if diagnosis else None,
             'diagnosisDate': timezone.localtime(diagnosis.fecha).isoformat() if diagnosis else None,
             'evaluations': evaluations_by_patient[patient.pk],
@@ -357,9 +404,16 @@ def doctor_dashboard_data(doctor):
 
 
 def reschedule_request_payloads(doctor):
-    requests = SolicitudReagendamiento.objects.filter(
-        sesion__paciente__doctor=doctor,
-        estado=SolicitudReagendamiento.ESTADO_PENDIENTE,
+    patients = list(Paciente.objects.filter(doctor=doctor))
+    assignments = asignaciones_vigentes_por_paciente(patients, doctor_id=doctor.pk)
+    requests = filtrar_queryset_por_asignaciones(
+        SolicitudReagendamiento.objects.filter(
+            sesion__paciente__doctor=doctor,
+            estado=SolicitudReagendamiento.ESTADO_PENDIENTE,
+        ),
+        assignments,
+        'sesion__paciente_id',
+        'sesion__fecha',
     ).select_related('sesion', 'sesion__paciente').order_by('creada_en', 'pk')
     return [
         {
@@ -642,23 +696,23 @@ def save_routine_template(request):
     if template_id:
         if not template_id.isdecimal():
             messages.error(request, 'La plantilla seleccionada no es válida.')
-            return redirect('/principal/#dashboard')
+            return redirect('/principal/#rutinas')
         template = get_object_or_404(PlantillaRutina, pk=int(template_id), doctor=doctor)
 
     form = SaveRoutineTemplateForm(request.POST)
     if not form.is_valid():
         messages.error(request, 'Revisa el nombre y la descripción de la plantilla.')
-        return redirect('/principal/#dashboard')
+        return redirect('/principal/#rutinas')
 
     video_catalog = load_videos()
     videos_by_id = {video['video_id']: (index, video) for index, video in enumerate(video_catalog)}
     selected_ids = request.POST.getlist('video_ids')
     if not selected_ids:
         messages.error(request, 'Selecciona al menos un video para la plantilla.')
-        return redirect('/principal/#dashboard')
+        return redirect('/principal/#rutinas')
     if len(selected_ids) != len(set(selected_ids)) or any(video_id not in videos_by_id for video_id in selected_ids):
         messages.error(request, 'La selección de videos no es válida.')
-        return redirect('/principal/#dashboard')
+        return redirect('/principal/#rutinas')
 
     ordered_videos = []
     seen_orders = set()
@@ -667,7 +721,7 @@ def save_routine_template(request):
         order_text = request.POST.get(f'orden_{catalog_index}', '').strip()
         if not order_text.isdecimal() or int(order_text) < 1 or int(order_text) in seen_orders:
             messages.error(request, 'Define un orden único y válido para cada video seleccionado.')
-            return redirect('/principal/#dashboard')
+            return redirect('/principal/#rutinas')
         order = int(order_text)
         seen_orders.add(order)
         ordered_videos.append((order, video))
@@ -695,7 +749,7 @@ def save_routine_template(request):
             for order, video in ordered_videos
         ])
     messages.success(request, f'Plantilla «{template.nombre}» guardada.')
-    return redirect('/principal/#dashboard')
+    return redirect('/principal/#rutinas')
 
 
 @require_login
@@ -726,7 +780,7 @@ def manage_routine_template(request, plantilla_id):
         messages.success(request, 'Plantilla activada.')
     else:
         messages.error(request, 'La acción solicitada no es válida.')
-    return redirect('/principal/#dashboard')
+    return redirect('/principal/#rutinas')
 
 
 @require_login
@@ -1012,12 +1066,13 @@ def principal_view(request):
 
     paciente = None
     doctor_patients = []
-    available_patients = []
+    available_patients_count = 0
+    asignaciones_doctor = {}
     patient_progress_series = []
     calendar_sessions = []
     request.session.pop('diagnostico_id', None)
     diagnostico = Diagnostico.objects.filter(usuario=usuario).first() if usuario.is_paciente else None
-    active_view = 'dashboard' if usuario.is_doctor else 'inicio'
+    active_view = 'inicio'
     paciente = Paciente.objects.filter(usuario=usuario).select_related('doctor').first()
     if usuario.is_paciente and paciente is None:
         paciente = Paciente.objects.filter(email=current_user_email, usuario__isnull=True).first()
@@ -1063,11 +1118,85 @@ def principal_view(request):
         SecurityQuestion.objects.filter(user=usuario).values('question', 'is_custom')
     )
     if usuario.is_doctor:
+        available_patients_count = pacientes_disponibles_sin_asignacion().count()
         doctor_patients = list(Paciente.objects.filter(doctor=usuario).select_related('usuario').order_by('-avance'))
-        available_patients = Paciente.objects.filter(
-            doctor__isnull=True,
-        ).select_related('usuario').order_by('nombre')
+        asignaciones_doctor = asignaciones_vigentes_por_paciente(
+            doctor_patients,
+            doctor_id=usuario.pk,
+        )
+        for patient in doctor_patients:
+            patient.avance, patient.estado = progreso_visible(
+                patient,
+                asignaciones_doctor.get(patient.pk),
+            )
     dashboard_patients = doctor_dashboard_data(usuario) if usuario.is_doctor else []
+    pending_reschedule_requests = (
+        reschedule_request_payloads(usuario) if usuario.is_doctor else []
+    )
+    doctor_home_sessions = []
+    doctor_home_feedback = []
+    doctor_home_counts = {'today': 0, 'pending_requests': len(pending_reschedule_requests), 'overdue': 0}
+    if usuario.is_doctor:
+        doctor_patients_by_id = {patient.pk: patient for patient in doctor_patients}
+        now = timezone.now()
+        today = timezone.localdate()
+        for patient_data in dashboard_patients:
+            patient = doctor_patients_by_id[patient_data['id']]
+            evaluations = patient_data['evaluations']
+            patient.dolor_actual = evaluations[-1]['pain'] if evaluations else None
+
+            sessions = patient_data['sessions']
+            scheduled_dates = {
+                session['id']: datetime.fromisoformat(session['scheduledDate'])
+                for session in sessions
+            }
+            due_sessions = [
+                (session, scheduled_dates[session['id']])
+                for session in sessions
+                if scheduled_dates[session['id']] <= now
+            ]
+            completed_sessions = [
+                (session, scheduled_at)
+                for session, scheduled_at in due_sessions
+                if session['completed']
+            ]
+            patient.asistencia = (
+                round(len(completed_sessions) * 100 / len(due_sessions))
+                if due_sessions else None
+            )
+            latest_completed = max(
+                completed_sessions,
+                key=lambda item: datetime.fromisoformat(item[0]['date']),
+                default=None,
+            )
+            patient.ultima_sesion = (
+                timezone.localtime(datetime.fromisoformat(latest_completed[0]['date'])).strftime('%d/%m/%Y')
+                if latest_completed else None
+            )
+
+            for session in sessions:
+                scheduled_at = scheduled_dates[session['id']]
+                if timezone.localtime(scheduled_at).date() == today:
+                    doctor_home_counts['today'] += 1
+                if session['status'] == Sesion.ESTADO_PROGRAMADA:
+                    doctor_home_sessions.append({
+                        **session,
+                        'patient': patient.nombre,
+                        'scheduled_display': timezone.localtime(scheduled_at).strftime('%d/%m/%Y %H:%M'),
+                        'is_overdue': scheduled_at < now,
+                    })
+                    if scheduled_at < now:
+                        doctor_home_counts['overdue'] += 1
+
+            doctor_home_feedback.extend(
+                {**item, 'patientName': patient.nombre}
+                for item in patient_data['routineFeedback']
+            )
+        doctor_home_sessions.sort(key=lambda session: session['scheduledDate'])
+        doctor_home_feedback.sort(
+            key=lambda item: (item['completedAt'], item['id']),
+            reverse=True,
+        )
     if paciente:
         if usuario.is_paciente:
             refresh_patient_progress(paciente)
@@ -1075,7 +1204,12 @@ def principal_view(request):
     if usuario.is_paciente and paciente:
         calendar_queryset = Sesion.objects.filter(paciente=paciente)
     elif usuario.is_doctor:
-        calendar_queryset = Sesion.objects.filter(paciente__doctor=usuario)
+        calendar_queryset = filtrar_queryset_por_asignaciones(
+            Sesion.objects.filter(paciente__doctor=usuario),
+            asignaciones_doctor,
+            'paciente_id',
+            'fecha',
+        )
     else:
         calendar_queryset = Sesion.objects.none()
     for sesion in calendar_queryset.select_related('paciente').prefetch_related(
@@ -1150,10 +1284,15 @@ def principal_view(request):
         routine_templates, routine_template_data = routine_template_payloads(usuario)
     else:
         routine_templates, routine_template_data = [], {}
+    asignacion_paciente = asignacion_vigente(paciente) if usuario.is_paciente else None
+    medico_notificacion = (
+        asignacion_paciente
+        if asignacion_paciente and not asignacion_paciente.notificacion_descartada_en
+        else None
+    )
     mensajeria_activa = (
-        any(patient.usuario_id and patient.doctor_id for patient in doctor_patients)
-        if usuario.is_doctor
-        else bool(paciente and paciente.usuario_id and paciente.doctor_id)
+        usuario.is_doctor
+        or bool(paciente and paciente.usuario_id)
     )
 
     return render(request, 'principal.html', {
@@ -1163,14 +1302,16 @@ def principal_view(request):
         'paciente': paciente,
         'doctor_patients': doctor_patients,
         'dashboard_patients': dashboard_patients,
-        'pending_reschedule_requests': (
-            reschedule_request_payloads(usuario) if usuario.is_doctor else []
-        ),
+        'pending_reschedule_requests': pending_reschedule_requests,
+        'doctor_home_sessions': doctor_home_sessions,
+        'doctor_home_feedback': doctor_home_feedback,
+        'doctor_home_feedback_recent': doctor_home_feedback[:5],
+        'doctor_home_counts': doctor_home_counts,
         'patient_reschedule_requests': (
             patient_reschedule_request_payloads(paciente)
             if usuario.is_paciente and paciente else []
         ),
-        'available_patients': available_patients,
+        'available_patients_count': available_patients_count,
         'security_question_items': security_question_items,
         'security_predefined_questions': [
             {'key': key, 'question': question}
@@ -1188,6 +1329,8 @@ def principal_view(request):
         'is_diagnostic_update': diagnostico is not None,
         'active_view': active_view,
         'mensajeria_activa': mensajeria_activa,
+        'medico_notificacion': medico_notificacion,
+        'medico_notificacion_dismiss_url': reverse('descartar_aviso_cambio_medico'),
         'today': timezone.localdate().isoformat(),
         'completed_history': completed_history['items'],
         'completed_history_pagination': completed_history,
@@ -1207,6 +1350,176 @@ def principal_view(request):
         'recent_videos': recent_history['items'],
         'recent_history_pagination': recent_history,
     })
+
+
+def solo_administrador_staff(view_func):
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if (
+            not request.user.is_authenticated
+            or not request.user.is_active
+            or not request.user.is_staff
+        ):
+            return HttpResponseForbidden('Solo el personal administrador puede gestionar asignaciones.')
+        return view_func(request, *args, **kwargs)
+    return wrapper
+
+
+@solo_administrador_staff
+@require_GET
+def lista_reasignaciones_medicas(request):
+    termino = request.GET.get('q', '').strip()
+    pacientes = Paciente.objects.select_related('usuario', 'doctor').prefetch_related(
+        Prefetch(
+            'asignaciones',
+            queryset=AsignacionMedico.objects.select_related(
+                'doctor',
+                'creada_por',
+                'creada_por_medico',
+            ),
+        ),
+    )
+    if termino:
+        pacientes = pacientes.filter(
+            Q(nombre__icontains=termino) | Q(email__icontains=termino)
+        )
+    return render(request, 'principal/reasignaciones.html', {
+        'pacientes': pacientes.order_by('nombre', 'pk'),
+        'termino': termino,
+    })
+
+
+def _visibilidad_en_resumen(fecha):
+    if fecha is None:
+        return 'Historial completo'
+    return f'Desde {timezone.localtime(fecha).strftime("%d/%m/%Y %H:%M")}'
+
+
+def _datos_confirmacion_reasignacion(paciente, form):
+    cleaned = form.cleaned_data
+    ahora = timezone.now()
+    vigente = asignacion_vigente(paciente)
+    anterior = vigente or paciente.asignaciones.order_by('-inicio', '-pk').first()
+    tipo = cleaned['tipo']
+    if tipo == AsignacionMedico.TIPO_CONTINUIDAD:
+        chat_desde = anterior.chat_visible_desde if anterior else ahora
+        historial_desde = anterior.historial_clinico_visible_desde if anterior else ahora
+    elif tipo == AsignacionMedico.TIPO_NUEVO_CASO:
+        chat_desde = ahora
+        historial_desde = (
+            anterior.historial_clinico_visible_desde
+            if cleaned['compartir_historial_clinico'] and anterior
+            else ahora
+        )
+    else:
+        chat_desde = None
+        historial_desde = None
+
+    sesiones_futuras = Sesion.objects.filter(
+        paciente=paciente,
+        estado=Sesion.ESTADO_PROGRAMADA,
+        fecha__gt=ahora,
+    )
+    solicitudes_pendientes = SolicitudReagendamiento.objects.filter(
+        sesion__in=sesiones_futuras,
+        estado=SolicitudReagendamiento.ESTADO_PENDIENTE,
+    )
+    return {
+        'paciente': paciente,
+        'medico_actual': paciente.doctor,
+        'nuevo_doctor': cleaned['nuevo_doctor'],
+        'tipo_label': dict(AsignacionMedico.TIPO_CHOICES).get(tipo, tipo),
+        'chat_visible': _visibilidad_en_resumen(chat_desde),
+        'historial_visible': _visibilidad_en_resumen(historial_desde),
+        'compartir_historial': cleaned['compartir_historial_clinico'],
+        'sesiones_futuras': sesiones_futuras.count(),
+        'solicitudes_pendientes': solicitudes_pendientes.count(),
+    }
+
+
+@solo_administrador_staff
+@require_http_methods(['GET', 'POST'])
+def reasignar_medico_view(request, paciente_id):
+    paciente = get_object_or_404(
+        Paciente.objects.select_related('usuario', 'doctor'),
+        pk=paciente_id,
+    )
+    if not paciente.usuario_id:
+        messages.error(request, 'Vincula primero una cuenta de paciente para poder asignarle un médico.')
+        if request.method == 'POST':
+            return redirect('admin_reasignaciones')
+
+    if request.method == 'GET':
+        form = ReasignacionMedicoForm(
+            paciente=paciente,
+            initial={
+                'tipo': (
+                    AsignacionMedico.TIPO_CONTINUIDAD
+                    if paciente.doctor_id or paciente.asignaciones.exists()
+                    else AsignacionMedico.TIPO_INICIAL
+                ),
+                'compartir_historial_clinico': bool(
+                    paciente.doctor_id or paciente.asignaciones.exists()
+                ),
+            },
+        )
+        return render(request, 'principal/reasignar_medico.html', {
+            'paciente': paciente,
+            'form': form,
+        })
+
+    form = ReasignacionMedicoForm(request.POST, paciente=paciente)
+    if not form.is_valid():
+        return render(request, 'principal/reasignar_medico.html', {
+            'paciente': paciente,
+            'form': form,
+        })
+
+    if request.POST.get('accion') == 'aplicar':
+        try:
+            reasignar_medico(
+                paciente=paciente,
+                nuevo_doctor=form.cleaned_data['nuevo_doctor'],
+                tipo=form.cleaned_data['tipo'],
+                motivo=form.cleaned_data['motivo'],
+                compartir_historial_clinico=form.cleaned_data['compartir_historial_clinico'],
+                paciente_autorizo=form.cleaned_data['paciente_autorizo'],
+                admin=request.user,
+            )
+        except ValidationError as error:
+            form.add_error(None, error.messages[0])
+            return render(request, 'principal/reasignar_medico.html', {
+                'paciente': paciente,
+                'form': form,
+            })
+        messages.success(request, f'La asignación de {paciente.nombre} se actualizó correctamente.')
+        return redirect('admin_reasignaciones')
+
+    return render(request, 'principal/reasignacion_confirmar.html', {
+        'paciente': paciente,
+        'form': form,
+        'resumen': _datos_confirmacion_reasignacion(paciente, form),
+    })
+
+
+@require_login
+@require_POST
+def descartar_aviso_cambio_medico(request):
+    usuario = Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        role=Usuario.ROLE_PACIENTE,
+        is_active=True,
+    ).first()
+    if not usuario:
+        return JsonResponse({'error': 'Solo el paciente puede descartar este aviso.'}, status=403)
+    paciente = Paciente.objects.filter(usuario=usuario).first()
+    asignacion = asignacion_vigente(paciente)
+    if not asignacion:
+        return JsonResponse({'error': 'No hay una asignación vigente.'}, status=404)
+    if asignacion.notificacion_descartada_en is None:
+        asignacion.notificacion_descartada_en = timezone.now()
+        asignacion.save(update_fields=['notificacion_descartada_en'])
+    return JsonResponse({'ok': True})
 
 
 @require_login
@@ -1251,22 +1564,27 @@ def add_paciente_view(request):
     existing_patient_id = (request.POST.get('existing_patient_id') or '').strip()
     if existing_patient_id:
         try:
-            paciente = Paciente.objects.select_related('usuario').get(
-                pk=int(existing_patient_id),
-                doctor__isnull=True,
-            )
+            with transaction.atomic():
+                paciente = Paciente.objects.select_for_update().get(
+                    pk=int(existing_patient_id),
+                )
+                asignado = _asignar_paciente_disponible(paciente, usuario)
         except (Paciente.DoesNotExist, ValueError):
-            messages.error(request, 'El paciente seleccionado no está disponible para asignación.')
+            messages.error(request, 'El paciente seleccionado no está disponible.')
             return redirect('principal')
-
-        paciente.doctor = usuario
-        paciente.save(update_fields=['doctor'])
-        messages.success(request, f'Paciente {paciente.nombre} asignado correctamente.')
+        except ValidationError as error:
+            return HttpResponseForbidden(error.messages[0])
+        messages.success(
+            request,
+            f'Paciente {paciente.nombre} '
+            f'{"asignado" if asignado else "ya está asignado"} correctamente.',
+        )
         return redirect('principal')
 
     nombre = (request.POST.get('nombre') or '').strip()
     email = (request.POST.get('email') or '').strip()
     edad = (request.POST.get('edad') or '').strip()
+    telefono = (request.POST.get('telefono') or '').strip()
     zona_afectada = (request.POST.get('zona_afectada') or '').strip()
     avance = (request.POST.get('avance') or '0').strip()
 
@@ -1275,80 +1593,319 @@ def add_paciente_view(request):
         return redirect('principal')
 
     try:
-        paciente, created = Paciente.objects.get_or_create(
-            email=email,
-            defaults={
-                'nombre': nombre,
-                'doctor': usuario,
-                'usuario': None,
-                'edad': int(edad) if edad else 0,
-                'zona_afectada': zona_afectada,
-                'avance': int(avance) if avance else 0,
-                'estado': Paciente.ESTADO_INICIAL,
-            },
-        )
+        edad_valor = int(edad) if edad else 0
+        avance_valor = min(100, max(0, int(avance)))
     except ValueError:
         messages.error(request, 'La edad y el avance deben ser valores numéricos válidos.')
         return redirect('principal')
+    if not 0 <= edad_valor <= 120 or len(telefono) > 20:
+        messages.error(request, 'Revisa la edad y el teléfono del paciente.')
+        return redirect('principal')
 
-    paciente.nombre = nombre
-    paciente.doctor = usuario
-    paciente.email = email
-    if edad:
-        paciente.edad = int(edad)
-    if zona_afectada:
-        paciente.zona_afectada = zona_afectada
-    if avance:
-        paciente.avance = min(100, max(0, int(avance)))
-    paciente.recalcular_estado()
-    paciente.save(update_fields=['nombre', 'doctor', 'email', 'edad', 'zona_afectada', 'avance', 'estado'])
-
-    if created:
-        messages.success(request, f'Paciente {nombre} añadido correctamente.')
-    else:
-        messages.success(request, f'Paciente {nombre} actualizado correctamente.')
-    return redirect('principal')
-
-
-@require_login
-def doctor_patients_api(request, doctor_id):
-    doctor = get_object_or_404(Usuario, pk=doctor_id, role='doctor')
-    current_doctor = get_object_or_404(
-        Usuario,
-        email=request.session.get('current_user', ''),
-        role='doctor',
-    )
-    if current_doctor.pk != doctor.pk:
-        return JsonResponse({'error': 'No tienes permiso para consultar estos pacientes.'}, status=403)
-    if request.method == 'POST':
-        nombre = (request.POST.get('nombre') or '').strip()
-        email = (request.POST.get('email') or '').strip()
-        if not nombre or not email:
-            return JsonResponse({'ok': False, 'error': 'Faltan nombre o correo.'}, status=400)
-        edad = request.POST.get('edad') or 0
-        zona_afectada = request.POST.get('zona_afectada') or ''
-        avance = request.POST.get('avance') or 0
-        try:
+    try:
+        with transaction.atomic():
             paciente, created = Paciente.objects.get_or_create(
                 email=email,
                 defaults={
                     'nombre': nombre,
-                    'doctor': doctor,
-                    'edad': int(edad),
+                    'doctor': None,
+                    'usuario': None,
+                    'edad': edad_valor,
+                    'telefono': telefono,
                     'zona_afectada': zona_afectada,
-                    'avance': min(100, max(0, int(avance))),
+                    'avance': avance_valor,
+                    'estado': Paciente.ESTADO_INICIAL,
                 },
             )
-        except ValueError:
-            return JsonResponse({'ok': False, 'error': 'Edad o avance inválidos.'}, status=400)
-        paciente.nombre = nombre
-        paciente.doctor = doctor
-        paciente.edad = int(edad)
-        paciente.zona_afectada = zona_afectada
-        paciente.avance = min(100, max(0, int(avance)))
-        paciente.recalcular_estado()
-        paciente.save()
-        return JsonResponse({'ok': True, 'created': created, 'paciente': paciente_detail_payload(paciente)})
+            paciente = Paciente.objects.select_for_update().get(pk=paciente.pk)
+            _validar_asignacion_inicial_medico(paciente, usuario)
+            paciente.nombre = nombre
+            paciente.email = email
+            paciente.edad = edad_valor
+            paciente.telefono = telefono
+            paciente.zona_afectada = zona_afectada
+            paciente.avance = avance_valor
+            paciente.recalcular_estado()
+            paciente.save(update_fields=[
+                'nombre',
+                'email',
+                'edad',
+                'telefono',
+                'zona_afectada',
+                'avance',
+                'estado',
+            ])
+            asignado = _asignar_paciente_disponible(paciente, usuario)
+    except ValidationError as error:
+        return HttpResponseForbidden(error.messages[0])
+
+    if created:
+        messages.success(request, f'Paciente {nombre} registrado y asignado a tu consulta.')
+    else:
+        mensaje = (
+            f'Paciente {nombre} asignado a tu consulta.'
+            if asignado
+            else f'Paciente {nombre} actualizado.'
+        )
+        messages.success(request, mensaje)
+    return redirect('principal')
+
+
+def _validar_asignacion_inicial_medico(paciente, doctor):
+    if paciente.doctor_id and paciente.doctor_id != doctor.pk:
+        raise ValidationError(
+            'No puedes reemplazar a un paciente que ya tiene otro médico.'
+        )
+    if not paciente.doctor_id and paciente.asignaciones.exists():
+        raise ValidationError(
+            'Este paciente tuvo asignaciones previas. Solo un administrador puede reasignarlo.'
+        )
+
+
+def _asignar_paciente_disponible(paciente, doctor):
+    _validar_asignacion_inicial_medico(paciente, doctor)
+    if paciente.doctor_id == doctor.pk:
+        return False
+    asignar_paciente_inicial(paciente, doctor)
+    paciente.refresh_from_db()
+    return True
+
+
+def pacientes_disponibles_sin_asignacion():
+    return Paciente.objects.filter(
+        doctor__isnull=True,
+        asignaciones__isnull=True,
+    ).order_by('nombre', 'pk')
+
+
+def _medico_activo_de_sesion(request):
+    return Usuario.objects.filter(
+        email=request.session.get('current_user', ''),
+        role=Usuario.ROLE_DOCTOR,
+        is_active=True,
+    ).first()
+
+
+def _correo_enmascarado(email):
+    local, separator, domain = email.rpartition('@')
+    if not separator:
+        return '***'
+    return f'{local[:1]}***@{domain}' if local else f'***@{domain}'
+
+
+def _paciente_disponible_payload(paciente):
+    palabras = paciente.nombre.split()
+    iniciales = ''.join(palabra[0] for palabra in palabras[:2]).upper()
+    return {
+        'id': paciente.pk,
+        'iniciales': iniciales,
+        'nombre': paciente.nombre,
+        'edad': paciente.edad,
+        'zona_afectada': paciente.zona_afectada,
+        'fecha_registro': timezone.localtime(paciente.fecha_registro).strftime('%d/%m/%Y'),
+        'correo_enmascarado': _correo_enmascarado(paciente.email),
+    }
+
+
+@require_GET
+def pacientes_disponibles_api(request):
+    doctor = _medico_activo_de_sesion(request)
+    if not doctor:
+        return JsonResponse(
+            {'ok': False, 'error': 'Solo un médico activo puede consultar pacientes disponibles.'},
+            status=403,
+        )
+
+    termino = request.GET.get('q', '').strip()
+    if termino and len(termino) < 2:
+        return JsonResponse(
+            {'ok': False, 'error': 'Escribe al menos 2 caracteres para buscar.'},
+            status=400,
+        )
+    if len(termino) > 100:
+        return JsonResponse(
+            {'ok': False, 'error': 'La búsqueda no puede superar 100 caracteres.'},
+            status=400,
+        )
+    try:
+        pagina = max(int(request.GET.get('page', '1')), 1)
+    except (TypeError, ValueError):
+        return JsonResponse(
+            {'ok': False, 'error': 'El número de página no es válido.'},
+            status=400,
+        )
+
+    disponibles = pacientes_disponibles_sin_asignacion()
+    disponibles_count = disponibles.count()
+    resultados = disponibles.filter(nombre__icontains=termino) if termino else disponibles
+    resultados_count = resultados.count()
+    paginas = max((resultados_count + 19) // 20, 1)
+    pagina = min(pagina, paginas)
+    inicio = (pagina - 1) * 20
+    pacientes = resultados[inicio:inicio + 20]
+
+    return JsonResponse({
+        'ok': True,
+        'available_count': disponibles_count,
+        'results_count': resultados_count,
+        'page': pagina,
+        'has_previous': pagina > 1,
+        'has_next': pagina < paginas,
+        'items': [_paciente_disponible_payload(paciente) for paciente in pacientes],
+    })
+
+
+@require_POST
+@csrf_protect
+def asignar_paciente_disponible_api(request, paciente_id):
+    doctor = _medico_activo_de_sesion(request)
+    if not doctor:
+        return JsonResponse(
+            {'ok': False, 'error': 'Solo un médico activo puede añadir pacientes.'},
+            status=403,
+        )
+
+    paciente = Paciente.objects.filter(pk=paciente_id).first()
+    if not paciente:
+        return JsonResponse(
+            {'ok': False, 'error': 'El paciente disponible ya no existe.'},
+            status=404,
+        )
+
+    try:
+        asignacion = asignar_paciente_inicial(paciente, doctor)
+    except Paciente.DoesNotExist:
+        return JsonResponse(
+            {'ok': False, 'error': 'El paciente disponible ya no existe.'},
+            status=404,
+        )
+    except ValidationError as error:
+        mensaje = error.messages[0]
+        if mensaje == 'El paciente ya tiene un médico asignado.':
+            doctor_actual_id = Paciente.objects.filter(
+                pk=paciente_id,
+            ).values_list('doctor_id', flat=True).first()
+            mensaje = (
+                'Este paciente ya fue asignado a otro médico.'
+                if doctor_actual_id and doctor_actual_id != doctor.pk
+                else 'Este paciente ya está asignado a tus pacientes.'
+            )
+        return JsonResponse({'ok': False, 'error': mensaje}, status=409)
+
+    return JsonResponse({
+        'ok': True,
+        'asignacion_id': asignacion.pk,
+        'available_count': pacientes_disponibles_sin_asignacion().count(),
+    }, status=201)
+
+
+@require_login
+@require_http_methods(['GET', 'POST'])
+def doctor_patients_api(request, doctor_id):
+    doctor = get_object_or_404(Usuario, pk=doctor_id, role='doctor', is_active=True)
+    current_doctor = get_object_or_404(
+        Usuario,
+        email=request.session.get('current_user', ''),
+        role='doctor',
+        is_active=True,
+    )
+    if current_doctor.pk != doctor.pk:
+        return JsonResponse({'error': 'No tienes permiso para consultar estos pacientes.'}, status=403)
+    if request.method == 'POST':
+        paciente_id = (
+            request.POST.get('paciente_id')
+            or request.POST.get('existing_patient_id')
+            or ''
+        ).strip()
+        try:
+            with transaction.atomic():
+                if paciente_id:
+                    if not paciente_id.isdecimal():
+                        return JsonResponse(
+                            {'ok': False, 'error': 'El identificador del paciente no es válido.'},
+                            status=400,
+                        )
+                    paciente = Paciente.objects.select_for_update().get(pk=int(paciente_id))
+                    asignado = _asignar_paciente_disponible(paciente, doctor)
+                    if not asignado:
+                        return JsonResponse({
+                            'ok': True,
+                            'created': False,
+                            'paciente': paciente_detail_payload(paciente),
+                        })
+                    paciente.refresh_from_db()
+                    return JsonResponse({
+                        'ok': True,
+                        'created': False,
+                        'paciente': paciente_detail_payload(paciente),
+                    })
+
+                nombre = (request.POST.get('nombre') or '').strip()
+                email = (request.POST.get('email') or '').strip()
+                if not nombre or not email:
+                    return JsonResponse(
+                        {'ok': False, 'error': 'Faltan nombre o correo.'},
+                        status=400,
+                    )
+                try:
+                    edad = int(request.POST.get('edad') or 0)
+                    avance = min(100, max(0, int(request.POST.get('avance') or 0)))
+                except ValueError:
+                    return JsonResponse(
+                        {'ok': False, 'error': 'Edad o avance inválidos.'},
+                        status=400,
+                    )
+                zona_afectada = (request.POST.get('zona_afectada') or '').strip()
+                telefono = (request.POST.get('telefono') or '').strip()
+                if not 0 <= edad <= 120 or len(telefono) > 20:
+                    return JsonResponse(
+                        {'ok': False, 'error': 'Revisa la edad y el teléfono del paciente.'},
+                        status=400,
+                    )
+                paciente, created = Paciente.objects.get_or_create(
+                    email=email,
+                    defaults={
+                        'nombre': nombre,
+                        'doctor': None,
+                        'usuario': None,
+                        'edad': edad,
+                        'telefono': telefono,
+                        'zona_afectada': zona_afectada,
+                        'avance': avance,
+                    },
+                )
+                paciente = Paciente.objects.select_for_update().get(pk=paciente.pk)
+                _validar_asignacion_inicial_medico(paciente, doctor)
+                paciente.nombre = nombre
+                paciente.email = email
+                paciente.edad = edad
+                paciente.telefono = telefono
+                paciente.zona_afectada = zona_afectada
+                paciente.avance = avance
+                paciente.recalcular_estado()
+                paciente.save(update_fields=[
+                    'nombre',
+                    'email',
+                    'edad',
+                    'telefono',
+                    'zona_afectada',
+                    'avance',
+                    'estado',
+                ])
+                _asignar_paciente_disponible(paciente, doctor)
+                paciente.refresh_from_db()
+                return JsonResponse({
+                    'ok': True,
+                    'created': created,
+                    'paciente': paciente_detail_payload(paciente),
+                })
+        except Paciente.DoesNotExist:
+            return JsonResponse(
+                {'ok': False, 'error': 'El paciente seleccionado no está disponible.'},
+                status=404,
+            )
+        except ValidationError as error:
+            return JsonResponse({'ok': False, 'error': error.messages[0]}, status=403)
 
     pacientes = Paciente.objects.filter(doctor=doctor).select_related('usuario').order_by('-avance', 'nombre')
     return JsonResponse({
@@ -1364,6 +1921,7 @@ def paciente_detail_api(request, paciente_id):
         Usuario,
         email=request.session.get('current_user', ''),
         role='doctor',
+        is_active=True,
     )
     if paciente.doctor_id != current_doctor.pk:
         return JsonResponse({'error': 'No tienes permiso para consultar este expediente.'}, status=403)
@@ -1382,12 +1940,20 @@ def reschedule_session_view(request, paciente_id, sesion_id):
     if not doctor:
         return JsonResponse({'success': False, 'error': 'Solo el especialista asignado puede reagendar esta cita.'}, status=403)
 
-    sesion = get_object_or_404(
-        Sesion.objects.select_for_update(),
-        pk=sesion_id,
-        paciente_id=paciente_id,
-        paciente__doctor=doctor,
-    )
+    paciente = get_object_or_404(Paciente, pk=paciente_id, doctor=doctor)
+    assignment = asignacion_vigente(paciente)
+    sesion = filtrar_queryset_por_asignaciones(
+        Sesion.objects.select_for_update().filter(
+            pk=sesion_id,
+            paciente_id=paciente_id,
+            paciente__doctor=doctor,
+        ),
+        {paciente.pk: assignment},
+        'paciente_id',
+        'fecha',
+    ).first()
+    if not sesion:
+        raise Http404
     if sesion.estado != Sesion.ESTADO_PROGRAMADA:
         return JsonResponse({'success': False, 'error': 'Solo se pueden reagendar sesiones programadas.'}, status=409)
     if SolicitudReagendamiento.objects.filter(
@@ -1576,11 +2142,22 @@ def review_reschedule_request(request, solicitud_id):
     if not doctor:
         return JsonResponse({'success': False, 'error': 'Solo el médico asignado puede revisar solicitudes.'}, status=403)
 
-    solicitud = get_object_or_404(
-        SolicitudReagendamiento.objects.select_for_update().select_related('sesion', 'sesion__paciente'),
-        pk=solicitud_id,
-        sesion__paciente__doctor=doctor,
-    )
+    patient_rows = list(Paciente.objects.filter(doctor=doctor))
+    assignments = asignaciones_vigentes_por_paciente(patient_rows, doctor_id=doctor.pk)
+    solicitud = filtrar_queryset_por_asignaciones(
+        SolicitudReagendamiento.objects.select_for_update().select_related(
+            'sesion',
+            'sesion__paciente',
+        ).filter(
+            pk=solicitud_id,
+            sesion__paciente__doctor=doctor,
+        ),
+        assignments,
+        'sesion__paciente_id',
+        'sesion__fecha',
+    ).first()
+    if not solicitud:
+        raise Http404
     if solicitud.estado != SolicitudReagendamiento.ESTADO_PENDIENTE:
         return JsonResponse({'success': False, 'error': 'La solicitud ya fue resuelta.'}, status=409)
 
@@ -1749,7 +2326,7 @@ def register_clinical_evaluation(request, paciente_id):
         messages.error(request, 'No se pudo registrar la evaluación: ' + ' '.join(
             error for errors in form.errors.values() for error in errors
         ))
-    return redirect('/principal/#dashboard')
+    return redirect('/principal/#inicio')
 
 
 @require_login
@@ -1770,7 +2347,7 @@ def add_therapeutic_goal(request, paciente_id):
         messages.error(request, 'No se pudo añadir el objetivo: ' + ' '.join(
             error for errors in form.errors.values() for error in errors
         ))
-    return redirect('/principal/#dashboard')
+    return redirect('/principal/#inicio')
 
 
 @require_login
@@ -1782,6 +2359,13 @@ def schedule_session(request, paciente_id):
         return HttpResponseForbidden('Solo el especialista asignado puede agendar sesiones.')
 
     form = ScheduleSessionForm(request.POST, paciente=paciente)
+    assignment = asignacion_vigente(paciente)
+    form.fields['objetivo_terapeutico'].queryset = filtrar_queryset_por_asignaciones(
+        form.fields['objetivo_terapeutico'].queryset,
+        {paciente.pk: assignment},
+        'paciente_id',
+        'creado_en',
+    )
     if form.is_valid():
         session = form.save(commit=False)
         session.paciente = paciente
@@ -1793,7 +2377,7 @@ def schedule_session(request, paciente_id):
         )
         if conflicto:
             messages.error(request, 'No se pudo agendar la sesión: ' + conflicto)
-            return redirect('/principal/#dashboard')
+            return redirect('/principal/#inicio')
         session.save()
         refresh_patient_progress(paciente)
         messages.success(request, f'Sesión agendada para {paciente.nombre}.')
@@ -1801,7 +2385,7 @@ def schedule_session(request, paciente_id):
         messages.error(request, 'No se pudo agendar la sesión: ' + ' '.join(
             error for errors in form.errors.values() for error in errors
         ))
-    return redirect('/principal/#dashboard')
+    return redirect('/principal/#inicio')
 
 
 @require_login
@@ -1821,9 +2405,18 @@ def complete_session(request, sesion_id):
         pk=sesion_id,
         paciente__doctor=doctor,
     )
+    assignment = asignacion_vigente(session.paciente)
+    if (
+        not assignment
+        or (
+            assignment.historial_clinico_visible_desde
+            and session.fecha < assignment.historial_clinico_visible_desde
+        )
+    ):
+        return HttpResponseForbidden('No tienes acceso a esta sesión.')
     if session.estado != Sesion.ESTADO_PROGRAMADA:
         messages.info(request, 'La sesión ya no está programada.')
-        return redirect('/principal/#dashboard')
+        return redirect('/principal/#inicio')
 
     new_status = request.POST.get('estado', Sesion.ESTADO_COMPLETADA)
     if new_status not in {
@@ -1843,10 +2436,18 @@ def complete_session(request, sesion_id):
     refresh_patient_progress(session.paciente)
     status_label = session.get_estado_display().lower()
     messages.success(request, f'Sesión de {session.paciente.nombre} actualizada: {status_label}.')
-    return redirect('/principal/#dashboard')
+    return redirect('/principal/#inicio')
 
 
 def paciente_detail_payload(paciente):
+    assignment = asignacion_vigente(paciente)
+    patient_assignments = {paciente.pk: assignment}
+    evaluations_queryset = filtrar_queryset_por_asignaciones(
+        paciente.evaluaciones.all(),
+        patient_assignments,
+        'paciente_id',
+        'fecha',
+    )
     evaluations = [
         {
             'date': timezone.localtime(item.fecha).strftime('%d/%m/%Y %H:%M'),
@@ -1856,8 +2457,14 @@ def paciente_detail_payload(paciente):
             'value': float(item.valor_actual) if item.valor_actual is not None else None,
             'unit': item.unidad,
         }
-        for item in paciente.evaluaciones.order_by('-fecha', '-pk')
+        for item in evaluations_queryset.order_by('-fecha', '-pk')
     ]
+    goals_queryset = filtrar_queryset_por_asignaciones(
+        paciente.objetivos.all(),
+        patient_assignments,
+        'paciente_id',
+        'creado_en',
+    )
     goals = [
         {
             'id': item.pk,
@@ -1867,19 +2474,21 @@ def paciente_detail_payload(paciente):
             'target': float(item.valor_objetivo),
             'unit': item.unidad,
         }
-        for item in paciente.objetivos.all()
+        for item in goals_queryset
     ]
     routines = []
-    assignments = paciente.rutinas_asignadas.prefetch_related(
-        'ejercicios',
-        'ocurrencias',
-    ).order_by('-fecha_inicio', '-pk')
-    for assignment in assignments:
+    routine_assignments = filtrar_queryset_por_asignaciones(
+        paciente.rutinas_asignadas.all(),
+        patient_assignments,
+        'paciente_id',
+        'asignada_en',
+    ).prefetch_related('ejercicios', 'ocurrencias').order_by('-fecha_inicio', '-pk')
+    for routine_assignment in routine_assignments:
         routines.append({
-            'title': assignment.titulo,
-            'start': assignment.fecha_inicio.strftime('%d/%m/%Y'),
-            'end': assignment.fecha_fin.strftime('%d/%m/%Y'),
-            'weekdays': assignment.dias_semana,
+            'title': routine_assignment.titulo,
+            'start': routine_assignment.fecha_inicio.strftime('%d/%m/%Y'),
+            'end': routine_assignment.fecha_fin.strftime('%d/%m/%Y'),
+            'weekdays': routine_assignment.dias_semana,
             'exercises': [
                 {
                     'title': exercise.titulo,
@@ -1888,7 +2497,7 @@ def paciente_detail_payload(paciente):
                     'duration': exercise.duracion_minutos,
                     'notes': exercise.notas_medico,
                 }
-                for exercise in assignment.ejercicios.all()
+                for exercise in routine_assignment.ejercicios.all()
             ],
             'occurrences': [
                 {
@@ -1898,12 +2507,18 @@ def paciente_detail_payload(paciente):
                     'difficulty': occurrence.get_dificultad_display(),
                     'comment': occurrence.comentario,
                 }
-                for occurrence in assignment.ocurrencias.all()
+                for occurrence in routine_assignment.ocurrencias.all()
             ],
         })
 
     sesiones = []
-    for sesion in paciente.sesiones.prefetch_related('solicitudes_reagendamiento').all():
+    sessions = filtrar_queryset_por_asignaciones(
+        paciente.sesiones.all(),
+        patient_assignments,
+        'paciente_id',
+        'fecha',
+    ).prefetch_related('solicitudes_reagendamiento')
+    for sesion in sessions:
         fecha_local = timezone.localtime(sesion.fecha)
         solicitud_pendiente = next((
             item for item in sesion.solicitudes_reagendamiento.all()
@@ -1935,18 +2550,27 @@ def paciente_detail_payload(paciente):
             ),
         })
 
+    avance_visible, estado_visible = progreso_visible(paciente, assignment)
+    estado_labels = dict(Paciente.ESTADO_CHOICES)
+    state_colors = {
+        Paciente.ESTADO_INICIAL: '#ef4444',
+        Paciente.ESTADO_EN_PROCESO: '#f97316',
+        Paciente.ESTADO_AVANZADO: '#facc15',
+        Paciente.ESTADO_FINALIZADO: '#22c55e',
+    }
     return {
         'id': paciente.pk,
         'nombre': paciente.nombre,
         'email': paciente.email,
         'edad': paciente.edad,
+        'telefono': paciente.telefono,
         'zona_afectada': paciente.zona_afectada,
-        'avance': paciente.avance,
-        'estado': paciente.estado,
-        'estado_display': paciente.get_estado_display(),
-        'color_estado': paciente.color_estado,
+        'avance': avance_visible,
+        'estado': estado_visible,
+        'estado_display': estado_labels[estado_visible],
+        'color_estado': state_colors[estado_visible],
         'doctor_id': paciente.doctor_id,
-        'historial_avance': paciente.get_progress_series(),
+        'historial_avance': historial_avance_visible(paciente, assignment),
         'evaluaciones': evaluations,
         'objetivos': goals,
         'rutinas': routines,

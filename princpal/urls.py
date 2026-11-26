@@ -4,9 +4,12 @@ from . import views
 
 urlpatterns = [
     path('', views.principal_view, name='principal'),
+    path('api/paciente/descartar-aviso-medico/', views.descartar_aviso_cambio_medico, name='descartar_aviso_cambio_medico'),
     path('api/session-status/', views.session_status_api, name='session_status_api'),
     path('pacientes/agregar/', views.add_paciente_view, name='agregar_paciente'),
     path('medicos/<int:doctor_id>/pacientes/', views.doctor_patients_api, name='doctor_patients_api'),
+    path('api/medico/pacientes-disponibles/', views.pacientes_disponibles_api, name='pacientes_disponibles_api'),
+    path('api/medico/pacientes-disponibles/<int:paciente_id>/asignar/', views.asignar_paciente_disponible_api, name='asignar_paciente_disponible_api'),
     path('pacientes/<int:paciente_id>/', views.paciente_detail_api, name='paciente_detail_api'),
     path('api/medico/dashboard/', views.doctor_dashboard_data_api, name='doctor_dashboard_data'),
     path('api/paciente/progreso/', views.patient_progress_data_api, name='patient_progress_data'),

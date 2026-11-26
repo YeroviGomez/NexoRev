@@ -3,6 +3,13 @@ from django.db import models
 
 
 class Mensaje(models.Model):
+    TIPO_USUARIO = 'usuario'
+    TIPO_SISTEMA = 'sistema'
+    TIPO_CHOICES = [
+        (TIPO_USUARIO, 'Usuario'),
+        (TIPO_SISTEMA, 'Sistema'),
+    ]
+
     paciente = models.ForeignKey(
         'princpal.Paciente',
         on_delete=models.CASCADE,
@@ -12,6 +19,11 @@ class Mensaje(models.Model):
         'crear_cuenta.Usuario',
         on_delete=models.SET_NULL,
         null=True,
+    )
+    tipo = models.CharField(
+        max_length=10,
+        choices=TIPO_CHOICES,
+        default=TIPO_USUARIO,
     )
     texto = models.CharField(
         max_length=2000,

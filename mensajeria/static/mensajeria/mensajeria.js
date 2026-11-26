@@ -170,9 +170,16 @@
 
   function createMessage(message) {
     const item = document.createElement('li');
-    item.className = 'mensajeria-message';
+    item.className = message.tipo_mensaje === 'sistema'
+      ? 'mensajeria-system-message'
+      : 'mensajeria-message';
     item.dataset.messageId = String(message.id);
     item.dataset.creadoEn = message.creado_en;
+    if (message.tipo_mensaje === 'sistema') {
+      item.textContent = message.texto;
+      renderedMessages.set(Number(message.id), item);
+      return item;
+    }
     const own = Number(message.autor_id) === userId;
     if (own) item.classList.add('is-own');
 
@@ -201,7 +208,9 @@
   function appendMessages(messages, prepend) {
     if (!messageList || !messages.length) return;
     let previousDate = null;
-    const firstExistingMessage = prepend && messageList.querySelector('.mensajeria-message');
+    const firstExistingMessage = prepend && messageList.querySelector(
+      '.mensajeria-message, .mensajeria-system-message',
+    );
     const existingFirstDate = firstExistingMessage
       ? new Date(firstExistingMessage.dataset.creadoEn).toDateString()
       : null;
@@ -256,7 +265,8 @@
       if (!response.ok) throw new Error(data.error || 'No se pudieron marcar los mensajes como leídos.');
       updateUnread(data);
     } catch (error) {
-      showStatus(error.message, true);
+      noticeText.textContent = error.message || 'No se pudo descartar el aviso.';
+      notice.setAttribute('role', 'alert');
     }
   }
 
@@ -335,6 +345,43 @@
       }
       return;
     }
+    if (payload.tipo === 'cambio_medico') {
+      const notice = document.getElementById('medicalChangeNotice');
+      const noticeText = document.getElementById('medicalChangeNoticeText');
+      if (userRole === 'paciente' && notice && noticeText) {
+        noticeText.textContent = `Tu médico ha cambiado. Ahora te atiende Dr. ${payload.doctor_nombre}.`;
+        notice.hidden = false;
+      }
+      if (conversationList) loadConversations(true);
+      if (Number(payload.paciente_id) === activePatientId && payload.mensaje) {
+        const message = userRole === 'doctor' && payload.mensaje_medico
+          ? payload.mensaje_medico
+          : payload.mensaje;
+        appendMessages([message], false);
+        markAsRead(activePatientId);
+      } else if (
+        userRole === 'paciente'
+        && page.classList.contains('mensajeria-page')
+        && !patientIdFromPage
+      ) {
+        window.location.reload();
+      }
+      return;
+    }
+    if (payload.tipo === 'acceso_revocado') {
+      const patientId = Number(payload.paciente_id);
+      conversations.delete(patientId);
+      renderConversationList();
+      if (activePatientId === patientId) {
+        activePatientId = null;
+        if (messageList) messageList.replaceChildren();
+        if (chatContent) chatContent.hidden = true;
+        if (chatEmpty) chatEmpty.hidden = false;
+        page.classList.remove('mensajeria-chat-open');
+        showStatus('El paciente fue reasignado y ya no tienes acceso a su conversación.', true);
+      }
+      return;
+    }
     if (payload.tipo === 'leido' && Number(payload.leido_por) !== userId) {
       if (Number(payload.paciente_id) !== activePatientId) return;
       for (const id of payload.mensajes_ids || []) {
@@ -389,19 +436,52 @@
     socket.addEventListener('error', () => setConnectionStatus('Reconectando…', true));
   }
 
-  async function loadConversations() {
+  async function loadConversations(refresh = false) {
     if (!conversationList) return;
     try {
       let initial = [];
-      const embedded = document.getElementById('mensajeria-conversaciones');
-      if (embedded) initial = JSON.parse(embedded.textContent);
+      if (refresh && page.dataset.conversacionesUrl) {
+        const response = await fetch(page.dataset.conversacionesUrl, {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'No se pudo actualizar la lista.');
+        initial = data.conversaciones || [];
+        conversations.clear();
+      } else {
+        const embedded = document.getElementById('mensajeria-conversaciones');
+        if (embedded) initial = JSON.parse(embedded.textContent);
+      }
       for (const conversation of initial) {
         conversations.set(Number(conversation.paciente_id), conversation);
       }
       renderConversationList();
     } catch {
-      showStatus('No se pudo cargar la lista de pacientes.', true);
+      showStatus('No se pudo actualizar la lista de pacientes.', true);
     }
+  }
+
+  const notice = document.getElementById('medicalChangeNotice');
+  const dismissNotice = document.getElementById('dismissMedicalChangeNotice');
+  if (notice && dismissNotice) {
+    dismissNotice.addEventListener('click', async () => {
+      try {
+        const response = await fetch(notice.dataset.dismissUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'No se pudo descartar el aviso.');
+        notice.hidden = true;
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    });
   }
 
   if (search) search.addEventListener('input', filterConversations);

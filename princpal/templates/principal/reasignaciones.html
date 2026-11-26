@@ -1,0 +1,104 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Asignaciones médicas | Nexo ReV</title>
+  <link rel="stylesheet" href="{% static 'estilo.css' %}">
+  <link rel="stylesheet" href="{% static 'princpal/css/asignaciones.css' %}">
+</head>
+<body>
+  <main class="assignment-admin">
+    <header class="assignment-heading">
+      <div>
+        <p class="assignment-eyebrow">ADMINISTRACIÓN</p>
+        <h1>Asignaciones médicas</h1>
+        <p>Asigna o reasigna al médico responsable. Los cambios conservan el historial según el tipo de caso.</p>
+      </div>
+      <a class="assignment-secondary-button" href="/admin/">Administración de Django</a>
+    </header>
+
+    {% if messages %}
+      <ul class="assignment-notices" role="status">
+        {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+
+    <form class="assignment-search" method="get">
+      <label for="assignmentSearch">Buscar paciente por nombre o correo</label>
+      <div>
+        <input id="assignmentSearch" type="search" name="q" value="{{ termino }}" placeholder="Nombre o correo">
+        <button class="assignment-primary-button" type="submit">Buscar</button>
+        {% if termino %}<a class="assignment-secondary-button" href="{% url 'admin_reasignaciones' %}">Limpiar</a>{% endif %}
+      </div>
+    </form>
+
+    <section class="assignment-patient-list" aria-label="Pacientes">
+      {% for paciente in pacientes %}
+        <article class="assignment-patient-card">
+          <div class="assignment-patient-summary">
+            <div>
+              <h2>{{ paciente.nombre }}</h2>
+              <p>{{ paciente.email }}</p>
+              <p>
+                Médico actual:
+                <strong>{% if paciente.doctor %}{{ paciente.doctor.nombre }}{% else %}Sin asignar{% endif %}</strong>
+                <span class="assignment-status">{% if paciente.doctor %}Asignado{% else %}Pendiente{% endif %}</span>
+              </p>
+              {% if not paciente.usuario_id %}
+                <p class="assignment-warning">Falta vincular la cuenta del paciente antes de asignar un médico.</p>
+              {% endif %}
+            </div>
+            {% if paciente.usuario_id %}
+              <a class="assignment-primary-button" href="{% url 'admin_reasignar_medico' paciente.pk %}">
+                {% if paciente.doctor_id or paciente.asignaciones.all %}Reasignar{% else %}Asignar médico{% endif %}
+              </a>
+            {% else %}
+              <button class="assignment-primary-button" type="button" disabled>Asignar médico</button>
+            {% endif %}
+          </div>
+
+          <details class="assignment-history">
+            <summary>Historial de asignaciones ({{ paciente.asignaciones.all|length }})</summary>
+            {% if paciente.asignaciones.all %}
+              <div class="assignment-table-scroll">
+                <table>
+                  <thead>
+                    <tr><th>Médico</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th>Motivo</th><th>Autorización</th><th>Creada por</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for asignacion in paciente.asignaciones.all %}
+                      <tr>
+                        <td>{{ asignacion.doctor.nombre }}</td>
+                        <td>{{ asignacion.get_tipo_display }}</td>
+                        <td>{{ asignacion.inicio|date:"d/m/Y H:i" }}</td>
+                        <td>{% if asignacion.fin %}{{ asignacion.fin|date:"d/m/Y H:i" }}{% else %}Vigente{% endif %}</td>
+                        <td>{{ asignacion.motivo }}</td>
+                        <td>{% if asignacion.paciente_autorizo_historial %}Sí{% else %}No{% endif %}</td>
+                        <td>
+                          {% if asignacion.creada_por %}
+                            {{ asignacion.creada_por.get_full_name|default:asignacion.creada_por.get_username }}
+                          {% elif asignacion.creada_por_medico %}
+                            {{ asignacion.creada_por_medico.nombre }} (médico)
+                          {% else %}
+                            Sistema / migración
+                          {% endif %}
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <p>Aún no hay asignaciones registradas.</p>
+            {% endif %}
+          </details>
+        </article>
+      {% empty %}
+        <p class="assignment-empty">No se encontraron pacientes.</p>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>

@@ -447,21 +447,6 @@ const bindFavoriteButtons = () => {
 };
 bindFavoriteButtons();
 
-const toggleAddPatientFormButton = document.getElementById('toggleAddPatientForm');
-const doctorAddPatientForm = document.getElementById('doctorAddPatientForm');
-if (toggleAddPatientFormButton && doctorAddPatientForm) {
-  toggleAddPatientFormButton.addEventListener('click', () => {
-    const isHidden = doctorAddPatientForm.hasAttribute('hidden');
-    if (isHidden) {
-      doctorAddPatientForm.removeAttribute('hidden');
-      toggleAddPatientFormButton.textContent = 'Cerrar formulario';
-      return;
-    }
-    doctorAddPatientForm.setAttribute('hidden', 'hidden');
-    toggleAddPatientFormButton.textContent = 'Añadir paciente';
-  });
-}
-
 const applyDoctorPatientFilters = () => {
   const filterSelect = document.getElementById('doctorPatientFilter');
   const sortSelect = document.getElementById('doctorPatientSort');
@@ -676,7 +661,8 @@ const loadPatientRecord = async (patientId) => {
         <span>Zona afectada<strong>${escapeRecordText(patient.zona_afectada || 'Sin registrar')}</strong></span>
       </div>
       <p><strong>Correo:</strong> ${escapeRecordText(patient.email)}</p>
-      <button type="button" class="dashboard-manage-link doctor-profile-exit" data-profile-exit>Volver al dashboard general</button>
+      <p><strong>Teléfono:</strong> ${escapeRecordText(patient.telefono || 'Sin registrar')}</p>
+      <button type="button" class="dashboard-manage-link doctor-profile-exit" data-profile-exit>Volver a Inicio</button>
       <h3>Gráfica de progreso</h3>
       <svg class="doctor-record-chart" viewBox="0 0 320 150" preserveAspectRatio="none" aria-label="Gráfica de progreso">
         <polyline points="${(patient.historial_avance || []).map((item, index, values) => `${16 + index * ((320 - 32) / Math.max(values.length - 1, 1))},${134 - (Number(item.avance) || 0) * 1.18}`).join(' ')}" fill="none" stroke="${escapeRecordText(patient.color_estado)}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
@@ -767,8 +753,8 @@ doctorRecordView?.addEventListener('click', (event) => {
   }
   if (event.target.closest('[data-profile-exit]')) {
     document.dispatchEvent(new CustomEvent('patient-profile-exit'));
-    showView('dashboard');
-    history.replaceState(null, '', '#dashboard');
+    showView('inicio');
+    history.replaceState(null, '', '#inicio');
     return;
   }
   const formButton = event.target.closest('[data-profile-form]');
@@ -1245,6 +1231,7 @@ function openTutorialPrompt(scope = null) {
       calendario: document.body.dataset.currentUserRole === "paciente"
         ? "Sesiones y cambios"
         : "Calendario profesional",
+      rutinas: "Rutinas",
       videos: "Videos",
       favoritos: "Favoritos",
       historial: "Historial",
@@ -1283,13 +1270,12 @@ const tutorialSteps = [
     view: "dashboard",
     icon: "pulse",
     title: "Dashboard profesional",
-    subtitle: "Da seguimiento al tratamiento de tus pacientes desde un solo lugar.",
+    subtitle: "Analiza la evolución clínica y la adherencia de tus pacientes.",
     boxTitle: "Cómo funciona:",
     items: [
       "Consulta indicadores de pacientes activos, progreso, dolor y objetivos.",
       "Filtra y ordena la información por paciente, fechas y estado del tratamiento.",
-      "Revisa solicitudes de cambio de sesión y responde a tus pacientes.",
-      "Registra evaluaciones, define objetivos, agenda sesiones y asigna rutinas.",
+      "Consulta las métricas y gráficas filtradas por paciente y período.",
     ],
   }] : []),
   {
@@ -1297,15 +1283,17 @@ const tutorialSteps = [
     icon: "home",
     title: document.body.dataset.currentUserRole === "doctor" ? "Inicio - Panel de pacientes" : "Inicio - Tu espacio de rehabilitación",
     subtitle: document.body.dataset.currentUserRole === "doctor"
-      ? "Organiza tus pacientes y accede a sus expedientes."
+      ? "Revisa tu agenda, gestiona solicitudes y atiende a tus pacientes."
       : "Consulta tu avance y accede rápidamente a ejercicios e historial.",
     boxTitle: "Cómo funciona:",
     items: document.body.dataset.currentUserRole === "doctor"
       ? [
+        "Consulta las sesiones de hoy, las solicitudes pendientes y las sesiones vencidas sin cerrar.",
+        "Usa Acceso rápido para abrir los formularios clínicos en un modal.",
+        "Responde las solicitudes de cambio y actualiza las sesiones programadas.",
         "Filtra los pacientes por etapa y ordénalos con las listas desplegables.",
         "Selecciona un paciente para abrir su expediente.",
-        "Usa “Añadir paciente” para asignar o registrar a una persona.",
-        "Los accesos rápidos llevan a Videos y al Historial.",
+        "Consulta dolor actual, asistencia y última sesión respetando la visibilidad clínica.",
       ]
       : [
         "Elige la zona afectada cuando el selector corporal esté habilitado; por ahora aparece como “Próximamente”.",
@@ -1313,6 +1301,19 @@ const tutorialSteps = [
         "Los accesos rápidos llevan a Videos y al Historial.",
       ],
   },
+  ...(document.body.dataset.currentUserRole === "doctor" ? [{
+    view: "rutinas",
+    icon: "video",
+    title: "Rutinas - Plantillas y retroalimentación",
+    subtitle: "Organiza las rutinas asignables y revisa las respuestas de tus pacientes.",
+    boxTitle: "Cómo funciona:",
+    items: [
+      "Crea y ordena plantillas con los videos disponibles.",
+      "Edita, activa o desactiva plantillas existentes.",
+      "Consulta la retroalimentación registrada al completar rutinas.",
+      "Usa “Asignar rutina” para abrir el formulario clínico.",
+    ],
+  }] : []),
   ...(document.body.dataset.currentUserRole === "paciente" ? [{
     view: "progreso",
     icon: "history",
@@ -1356,7 +1357,7 @@ const tutorialSteps = [
       "Navega entre meses o vuelve rápidamente a la fecha actual.",
       "Selecciona un día para consultar sus sesiones programadas.",
       "La agenda muestra el horario, el objetivo y el paciente de cada sesión.",
-      "Las solicitudes de cambio se revisan y responden desde el Dashboard.",
+      "Las solicitudes de cambio se revisan y responden desde Inicio.",
     ],
   }] : []),
   {
@@ -1494,7 +1495,7 @@ function closeTutorial() {
 const proTourSteps = [
   ...(document.body.dataset.currentUserRole === "doctor" ? [
     {
-      view: "dashboard",
+      view: "inicio",
       selector: "#rescheduleRequestsCard",
       title: "Revisa solicitudes de cambio",
       description: "Consulta las solicitudes de tus pacientes. Puedes aprobarlas, rechazarlas o proponer otra fecha y enviar una respuesta.",
@@ -1542,40 +1543,22 @@ const proTourSteps = [
       description: "Compara los valores clínicos registrados con las metas definidas para cada paciente.",
     },
     {
-      view: "dashboard",
-      selector: "#dashboardPatientSummary",
-      title: "Resumen de pacientes",
-      description: "Consulta el progreso, dolor actual, sesiones y última sesión de cada paciente. El enlace permite volver a administrar pacientes.",
+      view: "inicio",
+      selector: "#doctorQuickActions",
+      title: "Acceso rápido",
+      description: "Abre desde Inicio los formularios para agendar sesiones, asignar rutinas, registrar evaluaciones o añadir pacientes.",
     },
     {
-      view: "dashboard",
-      selector: "#evaluationForm",
-      title: "Registra una evaluación",
-      description: "Selecciona al paciente e ingresa el dolor EVA. También puedes registrar una métrica clínica, su valor y unidad antes de guardar.",
+      view: "inicio",
+      selector: "#doctorHomeSessions",
+      title: "Sesiones programadas",
+      description: "Marca las sesiones vencidas como completadas, no asistidas o canceladas.",
     },
     {
-      view: "dashboard",
-      selector: "#goalForm",
-      title: "Define un objetivo terapéutico",
-      description: "Elige un paciente, describe el objetivo y la métrica, indica si el valor debe aumentar o reducirse y guarda el valor meta.",
-    },
-    {
-      view: "dashboard",
-      selector: "#sessionForm",
-      title: "Agenda una sesión",
-      description: "Selecciona al paciente y uno de sus objetivos, define fecha, duración y enlace o ubicación para agregar la sesión al calendario.",
-    },
-    {
-      view: "dashboard",
-      selector: "#routineForm",
-      title: "Asigna una rutina",
-      description: "Elige un paciente, selecciona una rutina del catálogo e indica la fecha programada.",
-    },
-    {
-      view: "dashboard",
-      selector: "#dashboardPendingSessionsCard",
-      title: "Actualiza el estado de las sesiones",
-      description: "Marca una sesión como completada, cancelada o no asistida. Solo las programadas pueden cambiar de estado.",
+      view: "rutinas",
+      selector: "#routineTemplateForm",
+      title: "Gestiona tus rutinas",
+      description: "Crea plantillas y consulta la retroalimentación; también puedes asignar una rutina desde aquí.",
     },
   ] : []),
   ...(document.body.dataset.currentUserRole === "doctor" ? [] : [
@@ -1644,9 +1627,9 @@ const proTourSteps = [
   ...(document.body.dataset.currentUserRole === "doctor" ? [
     {
       view: "inicio",
-      selector: "#toggleAddPatientForm",
+      selector: '[data-open-form-modal="doctorAddPatientForm"]',
       title: "Añade o asigna un paciente",
-      description: "Pulsa “Añadir paciente” para mostrar el formulario. Puedes asignar a un paciente registrado o introducir los datos de uno nuevo.",
+      description: "Pulsa “Añadir paciente” para abrir el formulario en un modal.",
     },
     {
       view: "inicio",

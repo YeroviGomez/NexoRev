@@ -1,17 +1,31 @@
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+from importlib import import_module
 import tempfile
 from datetime import timedelta
+from threading import Barrier
+from types import SimpleNamespace
+from unittest import skipUnless
 from unittest.mock import patch
 
+from asgiref.sync import async_to_sync
+from channels.layers import InMemoryChannelLayer
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import Client, TestCase, override_settings
+from django.db import close_old_connections, connection
+from django.db.migrations.executor import MigrationExecutor
+from django.test import Client, TestCase, TransactionTestCase, override_settings
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
 
 from crear_cuenta.models import Usuario
+from mensajeria.models import Mensaje
 from .models import (
+	AsignacionMedico,
 	Diagnostico,
 	EjercicioPlantillaRutina,
 	EjercicioRutinaAsignada,
@@ -25,6 +39,22 @@ from .models import (
 	SolicitudReagendamiento,
 	VideoView,
 )
+from .servicios import asignar_paciente_inicial, reasignar_medico
+
+
+def crear_paciente_asignado(doctor, **campos):
+	paciente = Paciente.objects.create(doctor=None, **campos)
+	paciente.doctor = doctor
+	paciente._cambio_medico_por_servicio = True
+	paciente.save(update_fields=['doctor'])
+	AsignacionMedico.objects.create(
+		paciente=paciente,
+		doctor=doctor,
+		tipo=AsignacionMedico.TIPO_INICIAL,
+		inicio=timezone.now(),
+		motivo='Asignación inicial de prueba.',
+	)
+	return paciente
 
 
 class DiagnosticFormTests(TestCase):
@@ -180,9 +210,9 @@ class SessionRescheduleTests(TestCase):
 			email='paciente-cita-test@example.com',
 			nombre='Paciente de cita',
 		)
-		self.paciente = Paciente.objects.create(
+		self.paciente = crear_paciente_asignado(
+			self.doctor,
 			usuario=self.usuario,
-			doctor=self.doctor,
 			nombre=self.usuario.nombre,
 			email=self.usuario.email,
 		)
@@ -341,9 +371,9 @@ class SessionRescheduleTests(TestCase):
 			email='otro-paciente-choque@example.com',
 			nombre='Otro paciente',
 		)
-		otro_paciente = Paciente.objects.create(
+		otro_paciente = crear_paciente_asignado(
+			self.doctor,
 			usuario=otro_usuario,
-			doctor=self.doctor,
 			nombre=otro_usuario.nombre,
 			email=otro_usuario.email,
 		)
@@ -375,9 +405,9 @@ class RescheduleRequestTests(TestCase):
 			email='paciente-solicitud@example.com',
 			nombre='Paciente de prueba',
 		)
-		self.paciente = Paciente.objects.create(
+		self.paciente = crear_paciente_asignado(
+			self.doctor,
 			usuario=self.usuario,
-			doctor=self.doctor,
 			nombre=self.usuario.nombre,
 			email=self.usuario.email,
 		)
@@ -1105,9 +1135,9 @@ class MedicalDashboardTests(TestCase):
 			email='dashboard-patient@example.com',
 			nombre='Paciente Dashboard',
 		)
-		self.patient = Paciente.objects.create(
+		self.patient = crear_paciente_asignado(
+			self.doctor,
 			usuario=self.patient_user,
-			doctor=self.doctor,
 			nombre=self.patient_user.nombre,
 			email=self.patient_user.email,
 			avance=65,
@@ -1117,6 +1147,138 @@ class MedicalDashboardTests(TestCase):
 		session = self.client.session
 		session['current_user'] = self.doctor.email
 		session.save()
+
+	def test_doctor_inicio_is_operational_and_dashboard_is_read_only(self):
+		page = self.client.get(reverse('principal'))
+		dashboard_markup = render_to_string(
+			'principal/dashboard.html',
+			{
+				'usuario': self.doctor,
+				'today': timezone.localdate().isoformat(),
+				'dashboard_patients': [],
+			},
+		)
+
+		self.assertEqual(page.status_code, 200)
+		self.assertEqual(page.context['active_view'], 'inicio')
+		self.assertContains(page, 'Tu consulta de hoy')
+		self.assertContains(page, 'doctorHomeSessions')
+		self.assertContains(page, 'doctorHomeFeedback')
+		self.assertContains(page, 'data-open-form-modal="sessionForm"')
+		self.assertNotIn('Resumen de pacientes', dashboard_markup)
+		for form_id in ('evaluationForm', 'goalForm', 'sessionForm', 'routineForm', 'routineTemplateForm'):
+			self.assertNotIn(f'id="{form_id}"', dashboard_markup)
+		for form_id in ('evaluationForm', 'goalForm', 'sessionForm', 'routineForm', 'doctorAddPatientForm'):
+			self.assertEqual(page.content.count(f'id="{form_id}"'.encode()), 1)
+
+		patient_client = Client()
+		patient_session = patient_client.session
+		patient_session['current_user'] = self.patient_user.email
+		patient_session.save()
+		patient_page = patient_client.get(reverse('principal'))
+		self.assertEqual(patient_page.context['active_view'], 'inicio')
+		self.assertContains(patient_page, 'Selecciona la zona afectada')
+		self.assertContains(patient_page, 'Explorar videos de ejercicios')
+		self.assertNotContains(patient_page, 'Tu consulta de hoy')
+		self.assertNotContains(patient_page, 'doctorFormModal')
+		self.assertEqual(
+			patient_client.get(reverse('doctor_dashboard_data')).status_code,
+			403,
+		)
+
+	def test_doctor_home_counts_and_patient_metrics_use_visible_dashboard_data(self):
+		now = timezone.now()
+		today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+		EvaluacionClinica.objects.create(paciente=self.patient, nivel_dolor=4)
+		Sesion.objects.create(
+			paciente=self.patient,
+			fecha=today_start,
+			objetivo='Sesión completada hoy',
+			estado=Sesion.ESTADO_COMPLETADA,
+			realizada=True,
+			realizada_en=today_start,
+		)
+		Sesion.objects.create(
+			paciente=self.patient,
+			fecha=now - timedelta(days=2),
+			objetivo='Sesión sin asistencia',
+			estado=Sesion.ESTADO_NO_ASISTIO,
+		)
+		overdue = Sesion.objects.create(
+			paciente=self.patient,
+			fecha=now - timedelta(days=1),
+			objetivo='Sesión vencida',
+			estado=Sesion.ESTADO_PROGRAMADA,
+		)
+		future = Sesion.objects.create(
+			paciente=self.patient,
+			fecha=now + timedelta(days=1),
+			objetivo='Sesión futura',
+			estado=Sesion.ESTADO_PROGRAMADA,
+		)
+		SolicitudReagendamiento.objects.create(
+			sesion=overdue,
+			motivo='No puedo asistir en ese horario.',
+			fecha_original=overdue.fecha,
+			fecha_propuesta=now + timedelta(days=2),
+		)
+
+		page = self.client.get(reverse('principal'))
+		self.assertEqual(
+			page.context['doctor_home_counts'],
+			{'today': 1, 'pending_requests': 1, 'overdue': 1},
+		)
+		patient = page.context['doctor_patients'][0]
+		self.assertEqual(patient.dolor_actual, 4)
+		self.assertEqual(patient.asistencia, 33)
+		self.assertEqual(patient.ultima_sesion, today_start.strftime('%d/%m/%Y'))
+		self.assertEqual(
+			{session['id'] for session in page.context['doctor_home_sessions']},
+			{overdue.pk, future.pk},
+		)
+		self.assertContains(page, 'Vencida sin cerrar')
+
+		complete_response = self.client.post(
+			reverse('complete_session', args=[overdue.pk]),
+			{'estado': Sesion.ESTADO_COMPLETADA},
+		)
+		self.assertRedirects(complete_response, '/principal/#inicio', fetch_redirect_response=False)
+		updated_page = self.client.get(reverse('principal'))
+		self.assertEqual(updated_page.context['doctor_home_counts']['overdue'], 0)
+		self.assertNotIn(
+			overdue.pk,
+			{session['id'] for session in updated_page.context['doctor_home_sessions']},
+		)
+
+	def test_rutinas_shows_five_latest_feedback_and_the_complete_list(self):
+		now = timezone.now()
+		for hours_ago in range(6):
+			assignment = RutinaAsignada.objects.create(
+				paciente=self.patient,
+				video_id=f'feedback-home-{hours_ago}',
+				titulo='Rutina de seguimiento',
+				fecha_programada=timezone.localdate() - timedelta(days=hours_ago),
+			)
+			OcurrenciaRutina.objects.create(
+				asignacion=assignment,
+				fecha=timezone.localdate() - timedelta(days=hours_ago),
+				completada_en=now - timedelta(hours=hours_ago),
+				nivel_dolor=hours_ago,
+				dificultad=OcurrenciaRutina.DIFICULTAD_ADECUADA,
+				comentario=f'comentario-{hours_ago}',
+			)
+
+		page = self.client.get(reverse('principal'))
+		recent = page.context['doctor_home_feedback_recent']
+		all_feedback = page.context['doctor_home_feedback']
+		self.assertEqual(len(recent), 5)
+		self.assertEqual(len(all_feedback), 6)
+		self.assertEqual(
+			[item['comment'] for item in recent],
+			[f'comentario-{hours_ago}' for hours_ago in range(5)],
+		)
+		self.assertContains(page, 'Ver todas')
+		self.assertContains(page, 'comentario-5')
 
 	def test_dashboard_uses_assigned_patient_clinical_records(self):
 		evaluation = EvaluacionClinica.objects.create(
@@ -1146,7 +1308,8 @@ class MedicalDashboardTests(TestCase):
 		response = self.client.get(reverse('doctor_dashboard_data'))
 
 		self.assertEqual(page.status_code, 200)
-		self.assertEqual(page.context['active_view'], 'dashboard')
+		self.assertEqual(page.context['active_view'], 'inicio')
+		self.assertContains(page, 'Tu consulta de hoy')
 		self.assertContains(page, 'Dashboard médico')
 		self.assertEqual(response.status_code, 200)
 		patient_data = response.json()['patients'][0]
@@ -1236,8 +1399,8 @@ class MedicalDashboardTests(TestCase):
 		self.assertContains(response, 'El horario se cruza con otra sesión del paciente y del médico asignado.')
 
 	def test_agendar_rechaza_objetivos_de_otro_paciente(self):
-		otro_paciente = Paciente.objects.create(
-			doctor=self.doctor,
+		otro_paciente = crear_paciente_asignado(
+			self.doctor,
 			nombre='Paciente distinto',
 			email='paciente-distinto@example.com',
 		)
@@ -1267,8 +1430,8 @@ class MedicalDashboardTests(TestCase):
 			nombre='Otro especialista',
 			role=Usuario.ROLE_DOCTOR,
 		)
-		other_patient = Paciente.objects.create(
-			doctor=other_doctor,
+		other_patient = crear_paciente_asignado(
+			other_doctor,
 			nombre='Paciente ajeno',
 			email='paciente-ajeno-dashboard@example.com',
 		)
@@ -1340,6 +1503,315 @@ class MedicalDashboardTests(TestCase):
 		self.assertFalse(past_session.realizada)
 		self.assertIsNone(past_session.realizada_en)
 
+	def test_pacientes_disponibles_solo_incluye_perfiles_sin_asignaciones_y_minimiza_datos(self):
+		disponible = Paciente.objects.create(
+			nombre='Carlos Disponible',
+			email='carlos.disponible@gmail.com',
+			edad=42,
+			telefono='telefono-privado-503',
+			direccion='direccion-privada-17',
+			zona_afectada='Rodilla',
+			fecha_nacimiento='1988-04-15',
+			avance=93,
+		)
+		EvaluacionClinica.objects.create(
+			paciente=disponible,
+			nivel_dolor=9,
+			metrica='CLINICAL_SECRET',
+		)
+		otro_doctor = Usuario.objects.create(
+			email='otro-disponibles-doctor@example.com',
+			nombre='Otro especialista',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		crear_paciente_asignado(
+			otro_doctor,
+			nombre='Paciente con médico',
+			email='paciente-con-medico@example.com',
+		)
+		paciente_historico = Paciente.objects.create(
+			nombre='Paciente con historial',
+			email='paciente-con-historial@example.com',
+		)
+		AsignacionMedico.objects.create(
+			paciente=paciente_historico,
+			doctor=otro_doctor,
+			tipo=AsignacionMedico.TIPO_INICIAL,
+			inicio=timezone.now() - timedelta(days=30),
+			fin=timezone.now() - timedelta(days=20),
+			motivo='Asignación histórica de prueba.',
+		)
+
+		response = self.client.get(reverse('pacientes_disponibles_api'))
+
+		self.assertEqual(response.status_code, 200)
+		data = response.json()
+		self.assertEqual(data['available_count'], 1)
+		self.assertEqual([item['id'] for item in data['items']], [disponible.pk])
+		self.assertEqual(
+			set(data['items'][0]),
+			{'id', 'iniciales', 'nombre', 'edad', 'zona_afectada', 'fecha_registro', 'correo_enmascarado'},
+		)
+		self.assertEqual(data['items'][0]['correo_enmascarado'], 'c***@gmail.com')
+		body = response.content.decode()
+		for dato_privado in (
+			'carlos.disponible@gmail.com',
+			'telefono-privado-503',
+			'direccion-privada-17',
+			'1988-04-15',
+			'CLINICAL_SECRET',
+		):
+			self.assertNotIn(dato_privado, body)
+		self.assertNotIn('"avance"', body)
+		self.assertNotIn('"estado"', body)
+
+		page = self.client.get(reverse('principal'))
+		self.assertEqual(page.context['available_patients_count'], 1)
+		self.assertContains(page, 'aria-expanded="false"')
+		self.assertNotContains(page, 'Carlos Disponible')
+
+	def test_pacientes_disponibles_api_rechaza_paciente_anonimo_inactivo_y_staff(self):
+		disponible = Paciente.objects.create(
+			nombre='Paciente disponible',
+			email='disponible-rechazo@example.com',
+		)
+		paciente_client = Client()
+		paciente_session = paciente_client.session
+		paciente_session['current_user'] = self.patient_user.email
+		paciente_session.save()
+		inactive_doctor = Usuario.objects.create(
+			email='medico-inactivo-disponibles@example.com',
+			nombre='Médico inactivo',
+			role=Usuario.ROLE_DOCTOR,
+			is_active=False,
+		)
+		inactive_client = Client()
+		inactive_session = inactive_client.session
+		inactive_session['current_user'] = inactive_doctor.email
+		inactive_session.save()
+		staff_client = Client()
+		staff_client.force_login(
+			get_user_model().objects.create_user(username='staff-disponibles'),
+		)
+
+		anonymous_client = Client()
+		self.assertEqual(
+			anonymous_client.get(reverse('pacientes_disponibles_api')).status_code,
+			401,
+		)
+		self.assertEqual(
+			anonymous_client.post(reverse(
+				'asignar_paciente_disponible_api',
+				args=[disponible.pk],
+			)).status_code,
+			401,
+		)
+		for client in (paciente_client, inactive_client):
+			self.assertEqual(client.get(reverse('pacientes_disponibles_api')).status_code, 403)
+			self.assertEqual(
+				client.post(reverse(
+					'asignar_paciente_disponible_api',
+					args=[disponible.pk],
+				)).status_code,
+				403,
+			)
+		self.assertEqual(
+			staff_client.get(reverse('pacientes_disponibles_api')).status_code,
+			401,
+		)
+		self.assertEqual(
+			staff_client.post(reverse(
+				'asignar_paciente_disponible_api',
+				args=[disponible.pk],
+			)).status_code,
+			401,
+		)
+		self.assertIsNone(disponible.doctor_id)
+		self.assertFalse(AsignacionMedico.objects.filter(paciente=disponible).exists())
+
+	def test_pacientes_disponibles_busca_y_pagina_en_lotes_de_20(self):
+		for index in range(21):
+			Paciente.objects.create(
+				nombre=f'Disponible {index:02d}',
+				email=f'disponible-paginado-{index}@example.com',
+			)
+
+		first_page = self.client.get(reverse('pacientes_disponibles_api'))
+		second_page = self.client.get(
+			reverse('pacientes_disponibles_api'),
+			{'page': 2},
+		)
+		search_page = self.client.get(
+			reverse('pacientes_disponibles_api'),
+			{'q': 'Disponible 20'},
+		)
+		short_search = self.client.get(
+			reverse('pacientes_disponibles_api'),
+			{'q': 'D'},
+		)
+
+		self.assertEqual(len(first_page.json()['items']), 20)
+		self.assertTrue(first_page.json()['has_next'])
+		self.assertEqual(len(second_page.json()['items']), 1)
+		self.assertFalse(second_page.json()['has_next'])
+		self.assertEqual(short_search.status_code, 400)
+		self.assertEqual(
+			short_search.json()['error'],
+			'Escribe al menos 2 caracteres para buscar.',
+		)
+		self.assertEqual(
+			[item['nombre'] for item in search_page.json()['items']],
+			['Disponible 20'],
+		)
+
+	def test_agregar_paciente_disponible_revalida_con_csrf_y_crea_asignacion_inicial(self):
+		disponible = Paciente.objects.create(
+			nombre='Paciente listo',
+			email='paciente-listo@example.com',
+		)
+		client = Client(enforce_csrf_checks=True)
+		session = client.session
+		session['current_user'] = self.doctor.email
+		session.save()
+		url = reverse(
+			'asignar_paciente_disponible_api',
+			args=[disponible.pk],
+		)
+
+		sin_csrf = client.post(url)
+		self.assertEqual(sin_csrf.status_code, 403)
+		self.assertIsNone(disponible.doctor_id)
+
+		self.assertEqual(client.get(reverse('principal')).status_code, 200)
+		csrf_token = client.cookies['csrftoken'].value
+		channel_layer = InMemoryChannelLayer()
+		doctor_channel = async_to_sync(channel_layer.new_channel)()
+		async_to_sync(channel_layer.group_add)(
+			f'usuario_{self.doctor.pk}',
+			doctor_channel,
+		)
+		with patch('mensajeria.servicios.get_channel_layer', return_value=channel_layer):
+			with self.captureOnCommitCallbacks(execute=True) as callbacks:
+				response = client.post(url, HTTP_X_CSRFTOKEN=csrf_token)
+
+		self.assertEqual(response.status_code, 201)
+		self.assertEqual(response.json()['available_count'], 0)
+		self.assertNotIn(disponible.email, response.content.decode())
+		self.assertEqual(len(callbacks), 1)
+		disponible.refresh_from_db()
+		self.assertIsNone(disponible.usuario_id)
+		self.assertEqual(disponible.doctor_id, self.doctor.pk)
+		asignacion = AsignacionMedico.objects.get(paciente=disponible, fin__isnull=True)
+		self.assertEqual(asignacion.tipo, AsignacionMedico.TIPO_INICIAL)
+		self.assertEqual(asignacion.creada_por_medico_id, self.doctor.pk)
+		self.assertEqual(asignacion.inicio.date(), timezone.localdate())
+		mensaje_sistema = Mensaje.objects.get(
+			paciente=disponible,
+			tipo=Mensaje.TIPO_SISTEMA,
+		)
+		self.assertEqual(
+			mensaje_sistema.texto,
+			f'Ahora te atiende Dr. {self.doctor.nombre}.',
+		)
+		self.assertNotIn('cambió', mensaje_sistema.texto)
+		notificacion = async_to_sync(channel_layer.receive)(doctor_channel)
+		self.assertEqual(
+			notificacion['payload']['mensaje']['paciente_id'],
+			disponible.pk,
+		)
+		self.assertIn(
+			'Asignación inicial:',
+			notificacion['payload']['mensaje_medico']['texto'],
+		)
+		self.assertEqual(
+			self.client.get(reverse('principal')).context['doctor_patients'][-1].pk,
+			disponible.pk,
+		)
+		self.assertFalse(AsignacionMedico.objects.filter(
+			paciente=disponible,
+			fin__isnull=True,
+		).exclude(pk=asignacion.pk).exists())
+
+	def test_agregar_paciente_ya_asignado_responde_conflicto_para_refrescar_lista(self):
+		otro_doctor = Usuario.objects.create(
+			email='medico-ganador-disponible@example.com',
+			nombre='Médico asignado',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		paciente = crear_paciente_asignado(
+			otro_doctor,
+			nombre='Paciente tomado',
+			email='paciente-tomado@example.com',
+		)
+
+		response = self.client.post(reverse(
+			'asignar_paciente_disponible_api',
+			args=[paciente.pk],
+		))
+
+		self.assertEqual(response.status_code, 409)
+		self.assertEqual(
+			response.json()['error'],
+			'Este paciente ya fue asignado a otro médico.',
+		)
+		paciente.refresh_from_db()
+		self.assertEqual(paciente.doctor_id, otro_doctor.pk)
+		self.assertEqual(AsignacionMedico.objects.filter(paciente=paciente).count(), 1)
+
+
+@skipUnless(connection.vendor == 'postgresql', 'La prueba concurrente requiere bloqueos de fila PostgreSQL.')
+class AvailablePatientsConcurrencyTests(TransactionTestCase):
+	reset_sequences = True
+
+	def setUp(self):
+		self.doctor_one = Usuario.objects.create(
+			email='concurrente-uno@example.com',
+			nombre='Médico Uno',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		self.doctor_two = Usuario.objects.create(
+			email='concurrente-dos@example.com',
+			nombre='Médico Dos',
+			role=Usuario.ROLE_DOCTOR,
+		)
+		self.patient = Paciente.objects.create(
+			nombre='Paciente concurrente',
+			email='paciente-concurrente@example.com',
+		)
+
+	def test_dos_medicos_no_pueden_tomar_el_mismo_paciente(self):
+		clients = []
+		for doctor in (self.doctor_one, self.doctor_two):
+			client = Client()
+			session = client.session
+			session['current_user'] = doctor.email
+			session.save()
+			clients.append(client)
+
+		barrier = Barrier(2)
+
+		def asignar(client):
+			close_old_connections()
+			try:
+				barrier.wait(timeout=10)
+				return client.post(reverse(
+					'asignar_paciente_disponible_api',
+					args=[self.patient.pk],
+				)).status_code
+			finally:
+				close_old_connections()
+
+		with ThreadPoolExecutor(max_workers=2) as executor:
+			statuses = list(executor.map(asignar, clients))
+
+		self.assertEqual(sorted(statuses), [201, 409])
+		self.assertEqual(AsignacionMedico.objects.filter(
+			paciente=self.patient,
+			fin__isnull=True,
+		).count(), 1)
+		self.patient.refresh_from_db()
+		self.assertIn(self.patient.doctor_id, {self.doctor_one.pk, self.doctor_two.pk})
+
 
 class PatientProgressTests(TestCase):
 	def setUp(self):
@@ -1352,9 +1824,9 @@ class PatientProgressTests(TestCase):
 			email='progress-patient@example.com',
 			nombre='Paciente',
 		)
-		self.patient = Paciente.objects.create(
+		self.patient = crear_paciente_asignado(
+			self.doctor,
 			usuario=self.user,
-			doctor=self.doctor,
 			nombre=self.user.nombre,
 			email=self.user.email,
 			avance=0,
@@ -1801,3 +2273,553 @@ class PatientProgressTests(TestCase):
 			'Selecciona al menos un día de la semana.',
 		)
 		self.assertFalse(RutinaAsignada.objects.filter(paciente=self.patient).exists())
+
+
+class ReasignacionMedicoTests(TestCase):
+    def setUp(self):
+        self.doctor_anterior = Usuario.objects.create(
+            email='medico-anterior-reasignacion@example.com',
+            nombre='Médico anterior',
+            role=Usuario.ROLE_DOCTOR,
+        )
+        self.doctor_nuevo = Usuario.objects.create(
+            email='medico-nuevo-reasignacion@example.com',
+            nombre='Médico nuevo',
+            role=Usuario.ROLE_DOCTOR,
+        )
+        self.doctor_tercero = Usuario.objects.create(
+            email='medico-tercero-reasignacion@example.com',
+            nombre='Médico tercero',
+            role=Usuario.ROLE_DOCTOR,
+        )
+        self.paciente_usuario = Usuario.objects.create(
+            email='paciente-reasignacion@example.com',
+            nombre='Paciente reasignado',
+            role=Usuario.ROLE_PACIENTE,
+        )
+        self.paciente = crear_paciente_asignado(
+            self.doctor_anterior,
+            usuario=self.paciente_usuario,
+            nombre=self.paciente_usuario.nombre,
+            email=self.paciente_usuario.email,
+        )
+        self.admin = get_user_model().objects.create_user(
+            username='admin-reasignacion',
+            password='test-password',
+            is_staff=True,
+        )
+
+    def reasignar(
+        self,
+        doctor,
+        tipo=AsignacionMedico.TIPO_CONTINUIDAD,
+        compartir=False,
+        autorizo=False,
+    ):
+        return reasignar_medico(
+            paciente=self.paciente,
+            nuevo_doctor=doctor,
+            tipo=tipo,
+            motivo='Cambio solicitado por administración.',
+            compartir_historial_clinico=compartir,
+            paciente_autorizo=autorizo,
+            admin=self.admin,
+        )
+
+    def test_inicio_medico_usa_solo_datos_clinicos_visibles_en_caso_nuevo(self):
+        now = timezone.now()
+        self.paciente.telefono = '555-1234'
+        self.paciente.zona_afectada = 'Rodilla'
+        self.paciente.save(update_fields=['telefono', 'zona_afectada'])
+        EvaluacionClinica.objects.create(paciente=self.paciente, nivel_dolor=8)
+        Sesion.objects.create(
+            paciente=self.paciente,
+            fecha=now - timedelta(days=1),
+            objetivo='Sesión anterior',
+            estado=Sesion.ESTADO_COMPLETADA,
+            realizada=True,
+            realizada_en=now - timedelta(days=1),
+        )
+        self.reasignar(
+            self.doctor_nuevo,
+            tipo=AsignacionMedico.TIPO_NUEVO_CASO,
+        )
+
+        doctor_client = Client()
+        self.autenticar(doctor_client, self.doctor_nuevo)
+        page = doctor_client.get(reverse('principal'))
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.context['doctor_home_counts']['today'], 0)
+        self.assertEqual(page.context['doctor_home_counts']['overdue'], 0)
+        patient = page.context['doctor_patients'][0]
+        self.assertIsNone(patient.dolor_actual)
+        self.assertIsNone(patient.asistencia)
+        self.assertIsNone(patient.ultima_sesion)
+        self.assertEqual(patient.nombre, self.paciente.nombre)
+        self.assertEqual(patient.edad, self.paciente.edad)
+        self.assertEqual(patient.telefono, '555-1234')
+        self.assertEqual(patient.zona_afectada, 'Rodilla')
+
+        record = doctor_client.get(
+            reverse('paciente_detail_api', args=[self.paciente.pk]),
+        ).json()['paciente']
+        self.assertEqual(record['telefono'], '555-1234')
+        self.assertEqual(record['zona_afectada'], 'Rodilla')
+        self.assertEqual(record['evaluaciones'], [])
+        self.assertEqual(record['sesiones'], [])
+
+    def test_continuidad_y_cadena_heredan_visibilidad_y_guardan_mensaje_sistema(self):
+        Mensaje.objects.create(
+            paciente=self.paciente,
+            autor=self.doctor_anterior,
+            texto='Mensaje de la conversación original.',
+        )
+        EvaluacionClinica.objects.create(paciente=self.paciente, nivel_dolor=7)
+        asignacion_b = self.reasignar(self.doctor_nuevo)
+        self.paciente.refresh_from_db()
+        asignacion_a = AsignacionMedico.objects.get(
+            paciente=self.paciente,
+            doctor=self.doctor_anterior,
+        )
+        self.assertIsNotNone(asignacion_a.fin)
+        self.assertIsNone(asignacion_b.chat_visible_desde)
+        self.assertIsNone(asignacion_b.historial_clinico_visible_desde)
+        self.assertEqual(self.paciente.doctor_id, self.doctor_nuevo.pk)
+
+        asignacion_c = self.reasignar(self.doctor_tercero)
+        self.paciente.refresh_from_db()
+        self.assertIsNone(asignacion_c.chat_visible_desde)
+        self.assertIsNone(asignacion_c.historial_clinico_visible_desde)
+        mensaje = Mensaje.objects.filter(paciente=self.paciente).order_by('-pk').first()
+        self.assertEqual(mensaje.tipo, Mensaje.TIPO_SISTEMA)
+        self.assertIsNone(mensaje.autor_id)
+        self.assertEqual(mensaje.creado_en, asignacion_c.inicio)
+        doctor_client = Client()
+        self.autenticar(doctor_client, self.doctor_tercero)
+        historial = doctor_client.get(
+            reverse('mensajeria:historial', args=[self.paciente.pk]),
+        )
+        self.assertEqual(
+            [item['texto'] for item in historial.json()['mensajes']],
+            [
+                'Mensaje de la conversación original.',
+                'Cambio de médico: el paciente ahora es atendido por Dr. Médico nuevo.',
+                'Cambio de médico: el paciente ahora es atendido por Dr. Médico tercero.',
+            ],
+        )
+        from .views import doctor_dashboard_data
+        self.assertEqual(
+            doctor_dashboard_data(self.doctor_tercero)[0]['evaluations'][0]['pain'],
+            7,
+        )
+
+    def test_caso_nuevo_restringe_chat_e_historial_y_el_paciente_conserva_todo(self):
+        mensaje_anterior = Mensaje.objects.create(
+            paciente=self.paciente,
+            autor=self.doctor_anterior,
+            texto='Conversación anterior',
+        )
+        asignacion = self.reasignar(
+            self.doctor_nuevo,
+            tipo=AsignacionMedico.TIPO_NUEVO_CASO,
+        )
+        self.paciente.refresh_from_db()
+        Mensaje.objects.filter(pk=mensaje_anterior.pk).update(
+            creado_en=asignacion.inicio - timedelta(seconds=1),
+        )
+        historial_clinico = EvaluacionClinica.objects.create(
+            paciente=self.paciente,
+            nivel_dolor=4,
+        )
+        EvaluacionClinica.objects.filter(pk=historial_clinico.pk).update(
+            fecha=asignacion.inicio - timedelta(seconds=1),
+        )
+        EvaluacionClinica.objects.create(paciente=self.paciente, nivel_dolor=2)
+
+        doctor_client = Client()
+        self.autenticar(doctor_client, self.doctor_nuevo)
+        historial_doctor = doctor_client.get(
+            reverse('mensajeria:historial', args=[self.paciente.pk]),
+        )
+        self.assertEqual(
+            [item['texto'] for item in historial_doctor.json()['mensajes']],
+            ['Cambio de médico: el paciente ahora es atendido por Dr. Médico nuevo.'],
+        )
+        conversaciones = doctor_client.get(
+            reverse('mensajeria:conversaciones'),
+        ).json()['conversaciones']
+        self.assertEqual(
+            [item['paciente_id'] for item in conversaciones],
+            [self.paciente.pk],
+        )
+        self.assertEqual(
+            conversaciones[0]['ultimo_mensaje'],
+            'Cambio de médico: el paciente ahora es atendido por Dr. Médico nuevo.',
+        )
+        no_leidos = doctor_client.get(reverse('mensajeria:no_leidos')).json()
+        self.assertEqual(no_leidos['total'], 1)
+
+        paciente_client = Client()
+        self.autenticar(paciente_client, self.paciente_usuario)
+        historial_paciente = paciente_client.get(
+            reverse('mensajeria:historial', args=[self.paciente.pk]),
+        )
+        self.assertEqual(
+            [item['texto'] for item in historial_paciente.json()['mensajes']],
+            ['Conversación anterior', 'Tu médico ha cambiado. Ahora te atiende Dr. Médico nuevo.'],
+        )
+
+        doctor_anterior_client = Client()
+        self.autenticar(doctor_anterior_client, self.doctor_anterior)
+        conversaciones_anteriores = doctor_anterior_client.get(
+            reverse('mensajeria:conversaciones'),
+        ).json()['conversaciones']
+        self.assertEqual(conversaciones_anteriores, [])
+        respuesta_anterior = doctor_anterior_client.get(
+            reverse('mensajeria:historial', args=[self.paciente.pk]),
+        )
+        self.assertEqual(respuesta_anterior.status_code, 403)
+        respuesta_expediente_anterior = doctor_anterior_client.get(
+            reverse('paciente_detail_api', args=[self.paciente.pk]),
+        )
+        self.assertEqual(respuesta_expediente_anterior.status_code, 403)
+        self.assertFalse(asignacion.paciente_autorizo_historial)
+        self.assertEqual(
+            asignacion.historial_clinico_visible_desde,
+            asignacion.inicio,
+        )
+
+    def test_caso_nuevo_compartido_requiere_autorizacion_y_no_comparte_chat(self):
+        EvaluacionClinica.objects.create(paciente=self.paciente, nivel_dolor=8)
+        mensaje_anterior = Mensaje.objects.create(
+            paciente=self.paciente,
+            autor=self.doctor_anterior,
+            texto='No se comparte el chat.',
+        )
+        with self.assertRaisesMessage(
+            ValidationError,
+            'Confirma que el paciente autorizó compartir su historial clínico previo.',
+        ):
+            self.reasignar(
+                self.doctor_nuevo,
+                tipo=AsignacionMedico.TIPO_NUEVO_CASO,
+                compartir=True,
+            )
+        self.assertEqual(self.paciente.doctor_id, self.doctor_anterior.pk)
+        self.assertEqual(AsignacionMedico.objects.filter(fin__isnull=True).count(), 1)
+
+        asignacion = self.reasignar(
+            self.doctor_nuevo,
+            tipo=AsignacionMedico.TIPO_NUEVO_CASO,
+            compartir=True,
+            autorizo=True,
+        )
+        self.assertTrue(asignacion.paciente_autorizo_historial)
+        self.assertIsNone(asignacion.historial_clinico_visible_desde)
+        self.assertEqual(asignacion.chat_visible_desde, asignacion.inicio)
+        self.paciente.refresh_from_db()
+        from .views import doctor_dashboard_data
+        self.assertEqual(
+            doctor_dashboard_data(self.doctor_nuevo)[0]['evaluations'][0]['pain'],
+            8,
+        )
+        doctor_client = Client()
+        self.autenticar(doctor_client, self.doctor_nuevo)
+        historial = doctor_client.get(
+            reverse('mensajeria:historial', args=[self.paciente.pk]),
+        )
+        self.assertNotIn(
+            mensaje_anterior.texto,
+            [item['texto'] for item in historial.json()['mensajes']],
+        )
+
+    def test_historial_clinico_se_filtra_para_el_medico_pero_no_para_el_paciente(self):
+        from .views import doctor_dashboard_data, paciente_detail_payload, patient_progress_payload
+
+        asignacion = self.reasignar(
+            self.doctor_nuevo,
+            tipo=AsignacionMedico.TIPO_NUEVO_CASO,
+        )
+        self.paciente.refresh_from_db()
+        antes = asignacion.inicio - timedelta(seconds=1)
+        despues = asignacion.inicio + timedelta(seconds=1)
+
+        for nivel_dolor, fecha in ((8, antes), (3, despues)):
+            evaluacion = EvaluacionClinica.objects.create(
+                paciente=self.paciente,
+                nivel_dolor=nivel_dolor,
+            )
+            EvaluacionClinica.objects.filter(pk=evaluacion.pk).update(fecha=fecha)
+
+        for nombre, fecha in (('Objetivo anterior', antes), ('Objetivo nuevo', despues)):
+            objetivo = ObjetivoTerapeutico.objects.create(
+                paciente=self.paciente,
+                nombre=nombre,
+                metrica='movilidad',
+                valor_objetivo=10,
+            )
+            ObjetivoTerapeutico.objects.filter(pk=objetivo.pk).update(creado_en=fecha)
+
+        for objetivo, fecha in (('Sesión anterior', antes), ('Sesión nueva', despues)):
+            Sesion.objects.create(paciente=self.paciente, fecha=fecha, objetivo=objetivo)
+
+        rutinas = {}
+        hoy = timezone.localdate()
+        for nombre, fecha in (('Rutina anterior', antes), ('Rutina nueva', despues)):
+            rutina = RutinaAsignada.objects.create(
+                paciente=self.paciente,
+                video_id=nombre.lower().replace(' ', '-'),
+                titulo=nombre,
+                fecha_programada=hoy,
+                fecha_inicio=hoy,
+                fecha_fin=hoy,
+            )
+            RutinaAsignada.objects.filter(pk=rutina.pk).update(asignada_en=fecha)
+            rutina.refresh_from_db()
+            rutinas[nombre] = rutina
+            OcurrenciaRutina.objects.create(
+                asignacion=rutina,
+                fecha=hoy,
+                completada_en=despues,
+                nivel_dolor=2,
+            )
+
+        diagnostico = Diagnostico.objects.create(
+            usuario=self.paciente_usuario,
+            nivel_dolor=6,
+            pregunta1='espalda',
+            pregunta2='Prueba',
+            pregunta3='si',
+        )
+        Diagnostico.objects.filter(pk=diagnostico.pk).update(fecha=antes)
+
+        self.paciente.historial_avance = [
+            {'fecha': antes.isoformat(), 'avance': 20},
+            {'fecha': despues.isoformat(), 'avance': 65},
+        ]
+        self.paciente.avance = 65
+        self.paciente.save(update_fields=['historial_avance', 'avance'])
+
+        dashboard = doctor_dashboard_data(self.doctor_nuevo)[0]
+        self.assertEqual([item['pain'] for item in dashboard['evaluations']], [3])
+        self.assertEqual([item['name'] for item in dashboard['goals']], ['Objetivo nuevo'])
+        self.assertEqual([item['objective'] for item in dashboard['sessions']], ['Sesión nueva'])
+        self.assertEqual(
+            [item['routine'] for item in dashboard['routineFeedback']],
+            ['Rutina nueva'],
+        )
+        self.assertEqual(dashboard['progressHistory'], [{'fecha': despues.isoformat(), 'avance': 65}])
+        self.assertIsNone(dashboard['diagnosisPain'])
+
+        Diagnostico.objects.filter(pk=diagnostico.pk).update(fecha=despues)
+        dashboard = doctor_dashboard_data(self.doctor_nuevo)[0]
+        self.assertEqual(dashboard['diagnosisPain'], 6)
+
+        expediente = paciente_detail_payload(self.paciente)
+        self.assertEqual(len(expediente['evaluaciones']), 1)
+        self.assertEqual([item['name'] for item in expediente['objetivos']], ['Objetivo nuevo'])
+        self.assertEqual([item['objetivo'] for item in expediente['sesiones']], ['Sesión nueva'])
+        self.assertEqual([item['title'] for item in expediente['rutinas']], ['Rutina nueva'])
+
+        progreso_paciente = patient_progress_payload(self.paciente)
+        self.assertEqual(len(progreso_paciente['goals']), 2)
+        self.assertEqual(len(progreso_paciente['routines']), 2)
+        self.assertEqual(len(progreso_paciente['progressHistory']), 2)
+
+    def test_un_fallo_al_crear_mensaje_revierte_toda_la_reasignacion(self):
+        with patch(
+            'princpal.servicios.Mensaje.objects.create',
+            side_effect=RuntimeError('fallo de prueba'),
+        ):
+            with self.assertRaisesMessage(RuntimeError, 'fallo de prueba'):
+                self.reasignar(self.doctor_nuevo)
+
+        self.paciente.refresh_from_db()
+        self.assertEqual(self.paciente.doctor_id, self.doctor_anterior.pk)
+        self.assertEqual(AsignacionMedico.objects.filter(fin__isnull=True).count(), 1)
+        self.assertFalse(Mensaje.objects.filter(paciente=self.paciente).exists())
+
+    def test_vista_administrativa_exige_staff_y_confirma_antes_de_aplicar(self):
+        doctor_client = Client()
+        self.autenticar(doctor_client, self.doctor_anterior)
+        self.assertEqual(
+            doctor_client.get(reverse('admin_reasignaciones')).status_code,
+            403,
+        )
+        paciente_client = Client()
+        self.autenticar(paciente_client, self.paciente_usuario)
+        self.assertEqual(
+            paciente_client.get(reverse('admin_reasignaciones')).status_code,
+            403,
+        )
+
+        staff_client = Client()
+        staff_client.force_login(self.admin)
+        self.assertEqual(
+            staff_client.get(reverse('admin_reasignaciones')).status_code,
+            200,
+        )
+        url = reverse('admin_reasignar_medico', args=[self.paciente.pk])
+        datos = {
+            'nuevo_doctor': str(self.doctor_nuevo.pk),
+            'tipo': AsignacionMedico.TIPO_NUEVO_CASO,
+            'compartir_historial_clinico': 'on',
+            'motivo': 'Reasignación administrativa.',
+            'accion': 'confirmar',
+        }
+        sin_autorizacion = staff_client.post(url, datos)
+        self.assertEqual(sin_autorizacion.status_code, 200)
+        self.assertContains(sin_autorizacion, 'Debes confirmar la autorización del paciente.')
+        self.assertEqual(self.paciente.doctor_id, self.doctor_anterior.pk)
+
+        datos = {
+            'nuevo_doctor': str(self.doctor_nuevo.pk),
+            'tipo': AsignacionMedico.TIPO_CONTINUIDAD,
+            'compartir_historial_clinico': 'on',
+            'motivo': 'Reasignación administrativa.',
+            'accion': 'confirmar',
+        }
+        confirmacion = staff_client.post(url, datos)
+        self.assertEqual(confirmacion.status_code, 200)
+        self.assertContains(confirmacion, 'Confirmar reasignación')
+        self.assertEqual(self.paciente.doctor_id, self.doctor_anterior.pk)
+
+        datos['accion'] = 'aplicar'
+        aplicacion = staff_client.post(url, datos)
+        self.assertEqual(aplicacion.status_code, 302)
+        self.paciente.refresh_from_db()
+        self.assertEqual(self.paciente.doctor_id, self.doctor_nuevo.pk)
+        asignacion = AsignacionMedico.objects.get(
+            paciente=self.paciente,
+            fin__isnull=True,
+        )
+        self.assertEqual(asignacion.creada_por_id, self.admin.pk)
+        self.assertIsNone(asignacion.creada_por_medico_id)
+
+    def test_medico_puede_crear_o_tomar_un_paciente_sin_asignaciones(self):
+        doctor_client = Client()
+        self.autenticar(doctor_client, self.doctor_nuevo)
+
+        alta = doctor_client.post(reverse('agregar_paciente'), {
+            'nombre': 'Paciente nuevo',
+            'email': 'paciente-nuevo-medico@example.com',
+            'edad': '34',
+            'telefono': '5551234',
+            'zona_afectada': 'Rodilla',
+            'avance': '10',
+        })
+        self.assertEqual(alta.status_code, 302)
+        paciente = Paciente.objects.get(email='paciente-nuevo-medico@example.com')
+        self.assertEqual(paciente.doctor_id, self.doctor_nuevo.pk)
+        self.assertEqual(paciente.telefono, '5551234')
+        asignacion = AsignacionMedico.objects.get(paciente=paciente, fin__isnull=True)
+        self.assertEqual(asignacion.tipo, AsignacionMedico.TIPO_INICIAL)
+        self.assertEqual(asignacion.creada_por_medico_id, self.doctor_nuevo.pk)
+
+        paciente_disponible = Paciente.objects.create(
+            nombre='Paciente disponible',
+            email='paciente-disponible@example.com',
+        )
+        respuesta = doctor_client.post(
+            reverse('doctor_patients_api', args=[self.doctor_nuevo.pk]),
+            {'paciente_id': str(paciente_disponible.pk)},
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        paciente_disponible.refresh_from_db()
+        self.assertEqual(paciente_disponible.doctor_id, self.doctor_nuevo.pk)
+        self.assertEqual(
+            AsignacionMedico.objects.get(paciente=paciente_disponible).tipo,
+            AsignacionMedico.TIPO_INICIAL,
+        )
+
+    def test_medico_no_puede_reemplazar_ni_recuperar_asignaciones_previas(self):
+        doctor_client = Client()
+        self.autenticar(doctor_client, self.doctor_nuevo)
+        reemplazo = doctor_client.post(
+            reverse('agregar_paciente'),
+            {'existing_patient_id': str(self.paciente.pk)},
+        )
+        self.assertEqual(reemplazo.status_code, 403)
+        self.paciente.refresh_from_db()
+        self.assertEqual(self.paciente.doctor_id, self.doctor_anterior.pk)
+
+        paciente_historico = Paciente.objects.create(
+            nombre='Paciente con historial',
+            email='paciente-historico-medico@example.com',
+        )
+        AsignacionMedico.objects.create(
+            paciente=paciente_historico,
+            doctor=self.doctor_anterior,
+            tipo=AsignacionMedico.TIPO_INICIAL,
+            inicio=timezone.now() - timedelta(days=30),
+            fin=timezone.now() - timedelta(days=20),
+            motivo='Asignación histórica de prueba.',
+        )
+        alta_api = doctor_client.post(
+            reverse('doctor_patients_api', args=[self.doctor_nuevo.pk]),
+            {'paciente_id': str(paciente_historico.pk)},
+        )
+        self.assertEqual(alta_api.status_code, 403)
+        paciente_historico.refresh_from_db()
+        self.assertIsNone(paciente_historico.doctor_id)
+        self.assertEqual(paciente_historico.asignaciones.count(), 1)
+
+    def test_cambio_directo_de_medico_falla_y_servicio_inicial_lo_permite(self):
+        paciente_sin_asignar = Paciente.objects.create(
+            nombre='Paciente inicial',
+            email='paciente-inicial-servicio@example.com',
+        )
+        with self.assertRaisesMessage(
+            ValidationError,
+            'No se puede cambiar el médico directamente.',
+        ):
+            paciente_sin_asignar.doctor = self.doctor_nuevo
+            paciente_sin_asignar.save(update_fields=['doctor'])
+        with self.assertRaisesMessage(
+            ValidationError,
+            'No se puede cambiar el médico directamente.',
+        ):
+            Paciente.objects.filter(pk=paciente_sin_asignar.pk).update(
+                doctor=self.doctor_nuevo,
+            )
+
+        asignacion = asignar_paciente_inicial(paciente_sin_asignar, self.doctor_nuevo)
+        paciente_sin_asignar.refresh_from_db()
+        self.assertEqual(paciente_sin_asignar.doctor_id, self.doctor_nuevo.pk)
+        self.assertEqual(asignacion.tipo, AsignacionMedico.TIPO_INICIAL)
+
+    def test_migracion_backfill_es_idempotente_y_reversible(self):
+        migracion = import_module('princpal.migrations.0017_asignacionmedico')
+        apps = MigrationExecutor(connection).loader.project_state([
+            ('princpal', '0018_normalizar_creador_asignacion'),
+        ]).apps
+        PacienteHistorico = apps.get_model('princpal', 'Paciente')
+        AsignacionHistorica = apps.get_model('princpal', 'AsignacionMedico')
+        paciente_historico = PacienteHistorico.objects.get(pk=self.paciente.pk)
+        AsignacionHistorica.objects.filter(
+            paciente_id=paciente_historico.pk,
+        ).delete()
+        schema_editor = SimpleNamespace(connection=connection)
+
+        migracion.crear_asignaciones_iniciales(apps, schema_editor)
+        migracion.crear_asignaciones_iniciales(apps, schema_editor)
+        asignaciones = AsignacionHistorica.objects.filter(
+            paciente_id=paciente_historico.pk,
+            fin__isnull=True,
+        )
+        self.assertEqual(asignaciones.count(), 1)
+        asignacion = asignaciones.get()
+        self.assertEqual(asignacion.inicio, paciente_historico.fecha_registro)
+        self.assertIsNone(asignacion.chat_visible_desde)
+        self.assertIsNone(asignacion.historial_clinico_visible_desde)
+
+        migracion.eliminar_asignaciones_al_revertir(apps, schema_editor)
+        self.assertFalse(AsignacionHistorica.objects.filter(
+            paciente_id=paciente_historico.pk,
+        ).exists())
+
+    def autenticar(self, client, usuario):
+        session = client.session
+        session['current_user'] = usuario.email
+        session['current_user_role'] = usuario.role
+        session.save()

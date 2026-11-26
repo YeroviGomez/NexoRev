@@ -34,5 +34,8 @@ def notificar_reasignacion_medico(sender, instance, **kwargs):
                 'paciente_id': instance.pk,
             },
         )
+        from mensajeria.servicios import publicar_contador_a_usuario
+
+        publicar_contador_a_usuario(medico_anterior_id)
 
     transaction.on_commit(notificar)

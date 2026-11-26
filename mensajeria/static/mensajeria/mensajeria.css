@@ -64,6 +64,7 @@
 .mensajeria-back-button { display: none; width: 2.2rem; height: 2.2rem; border: 0; border-radius: 50%; color: #246256; background: transparent; font-size: 1.9rem; line-height: 1; cursor: pointer; }
 .mensajeria-message-list { flex: 1; min-height: 0; margin: 0; padding: 1.1rem clamp(0.8rem, 3vw, 2rem); display: flex; flex-direction: column; gap: 0.35rem; overflow-x: hidden; overflow-y: auto; list-style: none; background-color: #edf3f1; background-image: radial-gradient(rgba(27, 105, 83, 0.055) 0.7px, transparent 0.7px); background-size: 14px 14px; }
 .mensajeria-date-divider { align-self: center; margin: 0.4rem 0 0.65rem; padding: 0.3rem 0.7rem; border-radius: 99px; color: #6b7b7f; background: rgba(255, 255, 255, 0.9); font-size: 0.7rem; box-shadow: 0 1px 3px rgba(20, 45, 50, 0.08); }
+.mensajeria-system-message { align-self: center; max-width: min(90%, 34rem); margin: 0.45rem 0 0.65rem; padding: 0.4rem 0.85rem; border-radius: 0.65rem; color: #647779; background: rgba(255, 255, 255, 0.88); font-size: 0.75rem; line-height: 1.4; text-align: center; box-shadow: 0 1px 3px rgba(20, 45, 50, 0.06); }
 .mensajeria-message { width: fit-content; max-width: min(78%, 36rem); margin: 0.1rem 0; padding: 0.58rem 0.72rem 0.37rem; border: 1px solid #e0e9e5; border-radius: 0.85rem 0.85rem 0.85rem 0.2rem; color: #233b3d; background: #fff; box-shadow: 0 1px 2px rgba(20, 45, 50, 0.06); overflow-wrap: anywhere; }
 .mensajeria-message.is-own { align-self: flex-end; border-color: #d0e9d8; border-radius: 0.85rem 0.85rem 0.2rem 0.85rem; background: #dff4e5; }
 .mensajeria-message-text { margin: 0; font-size: 0.9rem; line-height: 1.42; white-space: pre-wrap; }
@@ -94,6 +95,7 @@ body.dark-mode .mensajeria-message-list { background-color: #1b292b; background-
 body.dark-mode .mensajeria-message { border-color: #384748; color: #e3edeb; background: #273538; }
 body.dark-mode .mensajeria-message.is-own { border-color: #285d4f; background: #214638; }
 body.dark-mode .mensajeria-date-divider { color: #ccd8d5; background: #344447; }
+body.dark-mode .mensajeria-system-message { color: #c7d7d4; background: #344447; }
 body.dark-mode .mensajeria-chat-empty h1, body.dark-mode .mensajeria-no-doctor h1 { color: #dceae6; }
 body.dark-mode .mensajeria-chat-empty-icon, body.dark-mode .mensajeria-no-doctor-icon, body.dark-mode .mensajeria-avatar { color: #85d9bd; background: #254a40; }
 body.dark-mode .mensajeria-compose textarea { border-color: #39494b; }

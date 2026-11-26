@@ -84,18 +84,7 @@
           </div>
           <form id="doctorAddPatientForm" method="post" action="{% url 'agregar_paciente' %}" class="doctor-add-patient-form" hidden>
             {% csrf_token %}
-            <label class="existing-patient-field">
-              <span>Asignar paciente registrado</span>
-              <select name="existing_patient_id">
-                <option value="">Selecciona un paciente sin especialista</option>
-                {% for available_patient in available_patients %}
-                  <option value="{{ available_patient.id }}">{{ available_patient.nombre }} · {{ available_patient.email }}</option>
-                {% empty %}
-                  <option value="" disabled>No hay pacientes registrados disponibles</option>
-                {% endfor %}
-              </select>
-            </label>
-            <p class="form-divider">O registra un paciente nuevo</p>
+            <p class="form-divider">Registra un paciente nuevo o añade uno disponible sin historial de asignaciones.</p>
             <div class="form-grid compact">
               <label>
                 <span>Nombre</span>
@@ -108,6 +97,10 @@
               <label>
                 <span>Edad</span>
                 <input type="number" name="edad" min="0" max="120" value="0">
+              </label>
+              <label>
+                <span>Teléfono</span>
+                <input type="tel" name="telefono" maxlength="20">
               </label>
               <label>
                 <span>Zona afectada</span>

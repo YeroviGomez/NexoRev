@@ -1,7 +1,7 @@
 from functools import wraps
 
 from django.db import transaction
-from django.db.models import Count, DateTimeField, F, OuterRef, Subquery
+from django.db.models import Count, DateTimeField, F, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
@@ -21,6 +21,7 @@ from mensajeria.servicios import (
     publicar_a_participantes,
     publicar_contadores_a_participantes,
     resumen_no_leidos,
+    texto_mensaje_para_usuario,
 )
 from princpal.models import Paciente
 
@@ -42,12 +43,13 @@ def requiere_usuario_mensajeria(view_func):
     return wrapper
 
 
-def _serializar_mensaje(mensaje):
+def _serializar_mensaje(mensaje, usuario):
     return {
         'id': mensaje.pk,
         'paciente_id': mensaje.paciente_id,
         'autor_id': mensaje.autor_id,
-        'texto': mensaje.texto,
+        'tipo_mensaje': mensaje.tipo,
+        'texto': texto_mensaje_para_usuario(mensaje.texto, mensaje.tipo, usuario),
         'creado_en': mensaje.creado_en.isoformat(),
         'leido_en': mensaje.leido_en.isoformat() if mensaje.leido_en else None,
     }
@@ -57,6 +59,13 @@ def _resumen_conversaciones(usuario):
     ultimo_mensaje = Mensaje.objects.filter(paciente_id=OuterRef('pk')).order_by(
         '-creado_en', '-pk'
     )
+    if usuario.role == 'doctor':
+        ultimo_mensaje = ultimo_mensaje.filter(
+            Q(paciente__asignaciones__chat_visible_desde__isnull=True)
+            | Q(creado_en__gte=F('paciente__asignaciones__chat_visible_desde')),
+            paciente__asignaciones__doctor=usuario,
+            paciente__asignaciones__fin__isnull=True,
+        )
     pacientes = pacientes_conversables(usuario).select_related('usuario').annotate(
         ultimo_mensaje_id=Subquery(ultimo_mensaje.values('pk')[:1]),
         ultimo_mensaje_texto=Subquery(ultimo_mensaje.values('texto')[:1]),
@@ -64,6 +73,7 @@ def _resumen_conversaciones(usuario):
             ultimo_mensaje.values('creado_en')[:1],
             output_field=DateTimeField(),
         ),
+        ultimo_mensaje_tipo=Subquery(ultimo_mensaje.values('tipo')[:1]),
         ultima_actividad=Coalesce(
             Subquery(
                 ultimo_mensaje.values('creado_en')[:1],
@@ -82,7 +92,11 @@ def _resumen_conversaciones(usuario):
             'nombre': paciente.nombre,
             'usuario_nombre': paciente.usuario.nombre,
             'ultimo_mensaje_id': paciente.ultimo_mensaje_id,
-            'ultimo_mensaje': paciente.ultimo_mensaje_texto or '',
+            'ultimo_mensaje': texto_mensaje_para_usuario(
+                paciente.ultimo_mensaje_texto or '',
+                paciente.ultimo_mensaje_tipo,
+                usuario,
+            ),
             'ultimo_mensaje_fecha': (
                 paciente.ultimo_mensaje_fecha.isoformat()
                 if paciente.ultimo_mensaje_fecha else None
@@ -109,13 +123,14 @@ def inicio(request):
     }
     if usuario.role == 'doctor':
         context['conversaciones'] = _resumen_conversaciones(usuario)
-        context['ws_activo'] = bool(context['conversaciones'])
+        context['ws_activo'] = True
     elif usuario.role == 'paciente':
         paciente = (
             Paciente.objects.select_related('doctor')
             .filter(usuario=usuario)
             .first()
         )
+        context['ws_activo'] = bool(paciente)
         if paciente and paciente.doctor_id and tiene_acceso_a_paciente(usuario, paciente):
             context.update({
                 'paciente_id': paciente.pk,
@@ -154,13 +169,24 @@ def historial_mensajes(request, paciente_id):
             return JsonResponse({'error': 'No tienes acceso a esta conversación.'}, status=403)
 
         queryset = Mensaje.objects.filter(paciente=paciente).select_related('autor')
+        if usuario.role == 'doctor':
+            assignment = (
+                paciente.asignaciones.filter(
+                    doctor_id=paciente.doctor_id,
+                    fin__isnull=True,
+                )
+                .only('chat_visible_desde')
+                .first()
+            )
+            if assignment and assignment.chat_visible_desde:
+                queryset = queryset.filter(creado_en__gte=assignment.chat_visible_desde)
         if cursor:
             queryset = queryset.filter(pk__lt=cursor)
         pagina = list(queryset.order_by('-creado_en', '-pk')[:41])
         hay_mas = len(pagina) > 40
         pagina = pagina[:40]
         pagina.reverse()
-        mensajes = [_serializar_mensaje(mensaje) for mensaje in pagina]
+        mensajes = [_serializar_mensaje(mensaje, usuario) for mensaje in pagina]
     return JsonResponse({
         'mensajes': mensajes,
         'hay_mas': hay_mas,

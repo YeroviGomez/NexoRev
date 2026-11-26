@@ -1,16 +1,41 @@
+import json
+
 from asgiref.sync import async_to_sync
 from channels.db import database_sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.backends.db import SessionStore
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from crear_cuenta.models import Usuario
 from mensajeria.models import Mensaje
 from mensajeria.permisos import tiene_acceso_a_paciente
-from princpal.models import Paciente
+from princpal.servicios import reasignar_medico
+from princpal.models import AsignacionMedico, Paciente
+
+
+def crear_paciente_asignado(usuario, doctor, nombre, email):
+    paciente = Paciente.objects.create(
+        usuario=usuario,
+        doctor=None,
+        nombre=nombre,
+        email=email,
+    )
+    paciente.doctor = doctor
+    paciente._cambio_medico_por_servicio = True
+    paciente.save(update_fields=['doctor'])
+    AsignacionMedico.objects.create(
+        paciente=paciente,
+        doctor=doctor,
+        tipo=AsignacionMedico.TIPO_INICIAL,
+        inicio=timezone.now(),
+        motivo='Asignación inicial de prueba.',
+    )
+    return paciente
 
 
 class PermisosMensajeriaTests(TestCase):
@@ -30,11 +55,11 @@ class PermisosMensajeriaTests(TestCase):
             nombre='Usuario Ajeno',
             role=Usuario.ROLE_DOCTOR,
         )
-        self.paciente = Paciente.objects.create(
-            usuario=self.paciente_usuario,
-            doctor=self.doctor,
-            nombre=self.paciente_usuario.nombre,
-            email=self.paciente_usuario.email,
+        self.paciente = crear_paciente_asignado(
+            self.paciente_usuario,
+            self.doctor,
+            self.paciente_usuario.nombre,
+            self.paciente_usuario.email,
         )
 
     def test_solo_los_dos_participantes_activos_tienen_acceso(self):
@@ -44,10 +69,11 @@ class PermisosMensajeriaTests(TestCase):
         self.assertFalse(tiene_acceso_a_paciente(AnonymousUser(), self.paciente))
 
     def test_falta_de_usuario_o_medico_impide_el_acceso(self):
-        paciente_sin_usuario = Paciente.objects.create(
-            doctor=self.doctor,
-            nombre='Sin usuario',
-            email='sin-usuario-chat@example.com',
+        paciente_sin_usuario = crear_paciente_asignado(
+            None,
+            self.doctor,
+            'Sin usuario',
+            'sin-usuario-chat@example.com',
         )
         paciente_sin_medico_usuario = Usuario.objects.create(
             email='sin-medico-chat@example.com',
@@ -121,11 +147,11 @@ class PermisosMensajeriaTests(TestCase):
             nombre='Paciente sin mensajes',
             role=Usuario.ROLE_PACIENTE,
         )
-        Paciente.objects.create(
-            usuario=segunda_cuenta,
-            doctor=self.doctor,
-            nombre=segunda_cuenta.nombre,
-            email=segunda_cuenta.email,
+        crear_paciente_asignado(
+            segunda_cuenta,
+            self.doctor,
+            segunda_cuenta.nombre,
+            segunda_cuenta.email,
         )
         Mensaje.objects.create(
             paciente=self.paciente,
@@ -194,22 +220,22 @@ class MensajeriaWebsocketTests(TransactionTestCase):
             nombre='Sin conversación',
             role=Usuario.ROLE_DOCTOR,
         )
-        self.paciente = Paciente.objects.create(
-            usuario=self.paciente_usuario,
-            doctor=self.doctor,
-            nombre=self.paciente_usuario.nombre,
-            email=self.paciente_usuario.email,
+        self.paciente = crear_paciente_asignado(
+            self.paciente_usuario,
+            self.doctor,
+            self.paciente_usuario.nombre,
+            self.paciente_usuario.email,
         )
         self.otro_paciente_usuario = Usuario.objects.create(
             email='paciente-ajeno-ws@example.com',
             nombre='Paciente de otro doctor',
             role=Usuario.ROLE_PACIENTE,
         )
-        self.otro_paciente = Paciente.objects.create(
-            usuario=self.otro_paciente_usuario,
-            doctor=self.otro_doctor,
-            nombre=self.otro_paciente_usuario.nombre,
-            email=self.otro_paciente_usuario.email,
+        self.otro_paciente = crear_paciente_asignado(
+            self.otro_paciente_usuario,
+            self.otro_doctor,
+            self.otro_paciente_usuario.nombre,
+            self.otro_paciente_usuario.email,
         )
 
     def _communicator(self, usuario):
@@ -246,6 +272,13 @@ class MensajeriaWebsocketTests(TransactionTestCase):
         self.assertTrue(doctor_conectado)
         await paciente_socket.receive_json_from()
         await doctor_socket.receive_json_from()
+
+        await paciente_socket.send_json_to({
+            'tipo': 'sistema',
+            'paciente_id': self.paciente.pk,
+            'texto': 'Mensaje de sistema falso',
+        })
+        self.assertEqual((await paciente_socket.receive_json_from())['tipo'], 'error')
 
         await paciente_socket.send_json_to({
             'tipo': 'enviar',
@@ -318,8 +351,15 @@ class MensajeriaWebsocketTests(TransactionTestCase):
 
     async def _rechazar_usuarios_ajenos(self, sin_chat_socket, ajeno_socket):
         conectado, codigo = await sin_chat_socket.connect()
-        self.assertFalse(conectado)
-        self.assertEqual(codigo, 4403)
+        self.assertTrue(conectado)
+        await sin_chat_socket.receive_json_from()
+        await sin_chat_socket.send_json_to({
+            'tipo': 'abrir',
+            'paciente_id': self.paciente.pk,
+        })
+        cierre_sin_chat = await sin_chat_socket.receive_output(timeout=2)
+        self.assertEqual(cierre_sin_chat['type'], 'websocket.close')
+        self.assertEqual(cierre_sin_chat['code'], 4403)
 
         conectado, _ = await ajeno_socket.connect()
         self.assertTrue(conectado)
@@ -333,7 +373,7 @@ class MensajeriaWebsocketTests(TransactionTestCase):
         self.assertEqual(cierre['type'], 'websocket.close')
         self.assertEqual(cierre['code'], 4403)
 
-    def test_paciente_sin_medico_no_conecta(self):
+    def test_paciente_sin_medico_conecta_para_recibir_la_asignacion_en_vivo(self):
         usuario = Usuario.objects.create(
             email='sin-medico-ws@example.com',
             nombre='Sin médico',
@@ -346,30 +386,135 @@ class MensajeriaWebsocketTests(TransactionTestCase):
             email=usuario.email,
         )
         socket = self._communicator(usuario)
-        conectado, codigo = async_to_sync(socket.connect)()
-        self.assertFalse(conectado)
-        self.assertEqual(codigo, 4403)
+        async_to_sync(self._conectar_paciente_sin_medico)(socket)
 
-    def test_reasignar_medico_cierra_la_conexion_del_medico_anterior(self):
+    async def _conectar_paciente_sin_medico(self, socket):
+        conectado, _ = await socket.connect()
+        self.assertTrue(conectado)
+        resumen = await socket.receive_json_from()
+        self.assertEqual(resumen['tipo'], 'no_leidos')
+        await socket.disconnect()
+
+    def test_reasignar_medico_revoca_el_chat_y_actualiza_el_contador_anterior(self):
+        admin = get_user_model().objects.create_user(
+            username='admin-revoca-chat',
+            password='test-password',
+            is_staff=True,
+        )
         socket = self._communicator(self.doctor)
-        async_to_sync(self._cerrar_socket_tras_reasignacion)(socket)
+        async_to_sync(self._revocar_chat_tras_reasignacion)(socket, admin)
 
-    async def _cerrar_socket_tras_reasignacion(self, socket):
+    async def _revocar_chat_tras_reasignacion(self, socket, admin):
         conectado, _ = await socket.connect()
         self.assertTrue(conectado)
         await socket.receive_json_from()
         await socket.send_json_to({
-            'tipo': 'abrir',
+            'tipo': 'enviar',
             'paciente_id': self.paciente.pk,
+            'texto': 'Mensaje antes de la reasignación.',
         })
+        self.assertEqual((await socket.receive_json_from())['tipo'], 'mensaje')
+        self.assertEqual((await socket.receive_json_from())['tipo'], 'no_leidos')
 
         def reasignar():
-            paciente = Paciente.objects.get(pk=self.paciente.pk)
-            paciente.doctor = self.otro_doctor
-            paciente.save(update_fields=['doctor'])
+            reasignar_medico(
+                paciente=Paciente.objects.get(pk=self.paciente.pk),
+                nuevo_doctor=self.otro_doctor,
+                tipo=AsignacionMedico.TIPO_CONTINUIDAD,
+                motivo='Cambio de médico de prueba.',
+                compartir_historial_clinico=False,
+                paciente_autorizo=False,
+                admin=admin,
+            )
 
         await database_sync_to_async(reasignar)()
+        revocacion = await socket.receive_output(timeout=2)
+        self.assertEqual(revocacion['type'], 'websocket.send')
+        payload = json.loads(revocacion['text'])
+        self.assertEqual(payload['tipo'], 'acceso_revocado')
+        self.assertEqual(payload['paciente_id'], self.paciente.pk)
+        contador = await socket.receive_json_from(timeout=2)
+        self.assertEqual(contador['tipo'], 'no_leidos')
+        self.assertEqual(contador['total'], 0)
+        await socket.send_json_to({
+            'tipo': 'enviar',
+            'paciente_id': self.paciente.pk,
+            'texto': 'Intento posterior a la reasignación.',
+        })
         cierre = await socket.receive_output(timeout=2)
         self.assertEqual(cierre['type'], 'websocket.close')
         self.assertEqual(cierre['code'], 4403)
-        await socket.wait()
+        await socket.disconnect()
+
+    def test_reasignacion_notifica_en_vivo_a_paciente_y_medicos(self):
+        admin = get_user_model().objects.create_user(
+            username='admin-websocket',
+            password='test-password',
+            is_staff=True,
+        )
+        paciente_socket = self._communicator(self.paciente_usuario)
+        doctor_anterior_socket = self._communicator(self.doctor)
+        doctor_nuevo_socket = self._communicator(self.otro_doctor)
+        async_to_sync(self._recibir_notificacion_reasignacion)(
+            paciente_socket,
+            doctor_anterior_socket,
+            doctor_nuevo_socket,
+            admin,
+        )
+
+    async def _recibir_notificacion_reasignacion(
+        self,
+        paciente_socket,
+        doctor_anterior_socket,
+        doctor_nuevo_socket,
+        admin,
+    ):
+        for socket in (paciente_socket, doctor_anterior_socket, doctor_nuevo_socket):
+            conectado, _ = await socket.connect()
+            self.assertTrue(conectado)
+            self.assertEqual((await socket.receive_json_from())['tipo'], 'no_leidos')
+
+        def reasignar():
+            reasignar_medico(
+                paciente=Paciente.objects.get(pk=self.paciente.pk),
+                nuevo_doctor=self.otro_doctor,
+                tipo='continuidad',
+                motivo='Cambio en tiempo real.',
+                compartir_historial_clinico=False,
+                paciente_autorizo=False,
+                admin=admin,
+            )
+
+        await database_sync_to_async(reasignar)()
+
+        revocacion = await doctor_anterior_socket.receive_json_from(timeout=2)
+        self.assertEqual(revocacion['tipo'], 'acceso_revocado')
+        self.assertEqual(revocacion['paciente_id'], self.paciente.pk)
+        evento_paciente = await paciente_socket.receive_json_from(timeout=2)
+        evento_doctor = await doctor_nuevo_socket.receive_json_from(timeout=2)
+        self.assertEqual(evento_paciente['tipo'], 'cambio_medico')
+        self.assertEqual(evento_doctor['tipo'], 'cambio_medico')
+        self.assertEqual(evento_paciente['mensaje']['tipo_mensaje'], Mensaje.TIPO_SISTEMA)
+        self.assertEqual(
+            evento_paciente['mensaje']['texto'],
+            'Tu médico ha cambiado. Ahora te atiende Dr. Otro Doctor.',
+        )
+        self.assertEqual(
+            evento_doctor['mensaje_medico']['texto'],
+            'Cambio de médico: el paciente ahora es atendido por Dr. Otro Doctor.',
+        )
+
+        contador_anterior = await doctor_anterior_socket.receive_json_from(timeout=2)
+        contador_paciente = await paciente_socket.receive_json_from(timeout=2)
+        contador_nuevo = await doctor_nuevo_socket.receive_json_from(timeout=2)
+        self.assertEqual(contador_anterior['total'], 0)
+        self.assertEqual(contador_paciente['total'], 1)
+        mensajes_nuevos = await database_sync_to_async(
+            lambda: list(Mensaje.objects.filter(
+                paciente__doctor=self.otro_doctor,
+                leido_en__isnull=True,
+            ).values_list('texto', flat=True))
+        )()
+        self.assertEqual(contador_nuevo['total'], 1, mensajes_nuevos)
+        for socket in (paciente_socket, doctor_anterior_socket, doctor_nuevo_socket):
+            await socket.disconnect()

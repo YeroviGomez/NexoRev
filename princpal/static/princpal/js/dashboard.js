@@ -9,12 +9,12 @@
   const dateFrom = byId('dashboardDateFrom');
   const dateTo = byId('dashboardDateTo');
   const sortSelect = byId('dashboardSort');
-  const patientRows = byId('dashboardPatientRows');
-  const pendingRows = byId('dashboardPendingSessions');
   const rescheduleRows = byId('dashboardRescheduleRequests');
   const rescheduleEmpty = byId('dashboardRescheduleRequestsEmpty');
   const rescheduleData = byId('dashboard-reschedule-request-data');
   const routineTemplateDataElement = byId('routine-template-data');
+  const homeRoot = byId('inicioView');
+  const formModal = byId('doctorFormModal');
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const colors = ['#119b72', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
   let patients = [];
@@ -49,15 +49,26 @@
   const formatNumber = (value) => Number(value).toLocaleString('es-SV', {
     maximumFractionDigits: 1,
   });
+  const localDateKey = (date) => [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
 
-  const formatDate = (date) => date
-    ? new Intl.DateTimeFormat('es-SV', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(date))
-    : 'Sin registro';
-  const formatDateTime = (date) => date
-    ? new Intl.DateTimeFormat('es-SV', {
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    }).format(new Date(date))
-    : 'Sin registro';
+  const updateHomeSummary = () => {
+    const now = new Date();
+    const sessions = patients.flatMap((patient) => patient.sessions);
+    const todayCount = sessions.filter((session) => (
+      localDateKey(new Date(session.scheduledDate)) === localDateKey(now)
+    )).length;
+    const overdueCount = sessions.filter((session) => (
+      session.status === 'programada' && new Date(session.scheduledDate) < now
+    )).length;
+    const todayCountElement = byId('doctorHomeTodayCount');
+    const overdueCountElement = byId('doctorHomeOverdueCount');
+    if (todayCountElement) todayCountElement.textContent = String(todayCount);
+    if (overdueCountElement) overdueCountElement.textContent = String(overdueCount);
+  };
 
   const withinDateRange = (date) => {
     if (!date) return false;
@@ -143,6 +154,7 @@
     context.hidden = !profilePatientId;
     byId('dashboardProfilePatientName').textContent = patientName || '';
     root.classList.toggle('has-locked-profile-patient', Boolean(profilePatientId));
+    formModal?.classList.toggle('has-locked-profile-patient', Boolean(profilePatientId));
     updateSelectOptions();
     document.querySelectorAll('.dashboard-form [name="patient_id"]').forEach((select) => {
       select.dispatchEvent(new Event('change'));
@@ -155,15 +167,9 @@
   document.addEventListener('patient-profile-exit', () => setProfilePatient('', ''));
   document.addEventListener('patient-profile-action', (event) => {
     if (!profilePatientId) return;
-    document.querySelector(`[data-nav="dashboard"]`)?.click();
-    const form = byId(event.detail.formName);
-    form?.scrollIntoView({
-      behavior: document.documentElement.dataset.motion === 'off' ? 'auto' : 'smooth',
-      block: 'center',
-    });
-    form?.querySelector('input:not([type="hidden"]), select:not([name="patient_id"]), textarea')?.focus({
-      preventScroll: true,
-    });
+    document.dispatchEvent(new CustomEvent('open-doctor-form-modal', {
+      detail: { formName: event.detail.formName },
+    }));
   });
   byId('dashboardProfileUnlock')?.addEventListener('click', () => {
     setProfilePatient('', '');
@@ -276,8 +282,30 @@
   const drawProgressChart = (records) => {
     const svg = byId('progressChart');
     svg.replaceChildren();
-    const ordered = [...records].sort((left, right) => (right.visibleProgress ?? -1) - (left.visibleProgress ?? -1)
-      || left.name.localeCompare(right.name, 'es'));
+    const attendedCount = (patient) => patient.visibleSessions
+      .filter((session) => session.completed && new Date(session.scheduledDate || session.date) <= new Date())
+      .length;
+    const lastCompletedDate = (patient) => patient.visibleSessions
+      .filter((session) => session.completed)
+      .reduce((latest, session) => !latest || session.date > latest ? session.date : latest, '');
+    const ordered = [...records].sort((left, right) => {
+      if (sortSelect.value === 'progress_asc') {
+        return (left.visibleProgress ?? 101) - (right.visibleProgress ?? 101)
+          || left.name.localeCompare(right.name, 'es');
+      }
+      if (sortSelect.value === 'sessions_desc') {
+        return attendedCount(right) - attendedCount(left) || left.name.localeCompare(right.name, 'es');
+      }
+      if (sortSelect.value === 'sessions_asc') {
+        return attendedCount(left) - attendedCount(right) || left.name.localeCompare(right.name, 'es');
+      }
+      if (sortSelect.value === 'last_session_desc') {
+        return lastCompletedDate(right).localeCompare(lastCompletedDate(left))
+          || left.name.localeCompare(right.name, 'es');
+      }
+      return (right.visibleProgress ?? -1) - (left.visibleProgress ?? -1)
+        || left.name.localeCompare(right.name, 'es');
+    });
     const width = 720;
     const rowHeight = 38;
     const top = 16;
@@ -335,143 +363,6 @@
         svgElement('text', { x: labelWidth + plotWidth + 12, y: y + 25, class: 'chart-comparison-value' }, `Meta: ${formatNumber(goal.target)} ${goal.unit}`),
       );
     });
-  };
-
-  const renderTable = (records, goals) => {
-    patientRows.replaceChildren();
-    const sorted = [...records];
-    const isSessionDue = (session) => new Date(session.scheduledDate || session.date) <= new Date();
-    const attendanceSessions = (patient) => patient.visibleSessions.filter(isSessionDue);
-    const lastCompletedDate = (patient) => attendanceSessions(patient)
-      .filter((session) => session.completed)
-      .reduce((latest, session) => !latest || session.date > latest ? session.date : latest, '');
-    const sessionCounts = (patient) => attendanceSessions(patient).reduce(
-      (count, session) => count + Number(session.completed),
-      0,
-    );
-    const sortValue = sortSelect.value;
-    sorted.sort((left, right) => {
-      if (sortValue === 'progress_asc') return (left.visibleProgress ?? 101) - (right.visibleProgress ?? 101)
-        || left.name.localeCompare(right.name, 'es');
-      if (sortValue === 'sessions_desc') return sessionCounts(right) - sessionCounts(left) || left.name.localeCompare(right.name, 'es');
-      if (sortValue === 'sessions_asc') return sessionCounts(left) - sessionCounts(right) || left.name.localeCompare(right.name, 'es');
-      if (sortValue === 'last_session_desc') return lastCompletedDate(right).localeCompare(lastCompletedDate(left))
-        || left.name.localeCompare(right.name, 'es');
-      return (right.visibleProgress ?? -1) - (left.visibleProgress ?? -1) || left.name.localeCompare(right.name, 'es');
-    });
-
-    const latestPain = (patient) => patient.visibleEvaluations.at(-1);
-    sorted.forEach((patient) => {
-      const completed = sessionCounts(patient);
-      const total = attendanceSessions(patient).length;
-      const lastSession = lastCompletedDate(patient);
-      const pain = latestPain(patient);
-      const row = document.createElement('tr');
-      const name = document.createElement('th');
-      name.scope = 'row';
-      name.textContent = patient.name;
-      const progress = document.createElement('td');
-      const progressWrap = document.createElement('div');
-      progressWrap.className = 'table-progress';
-      const track = document.createElement('span');
-      track.className = 'table-progress-track';
-      const fill = document.createElement('span');
-      fill.className = 'table-progress-fill';
-      fill.style.width = `${Math.min(100, patient.visibleProgress ?? 0)}%`;
-      track.append(fill);
-      const percent = document.createElement('strong');
-      percent.textContent = patient.visibleProgress === null ? 'Sin registro' : `${patient.visibleProgress}%`;
-      progressWrap.append(track, percent);
-      progress.append(progressWrap);
-      const painCell = document.createElement('td');
-      painCell.textContent = pain ? `${pain.pain} / 10` : 'Sin registro';
-      if (pain) painCell.className = pain.pain >= 7 ? 'pain-critical' : pain.pain >= 4 ? 'pain-warning' : 'pain-positive';
-      const sessions = document.createElement('td');
-      sessions.textContent = `${completed} / ${total}`;
-      const last = document.createElement('td');
-      last.textContent = lastSession ? formatDate(lastSession) : 'Sin sesiones realizadas';
-      row.append(name, progress, painCell, sessions, last);
-      patientRows.append(row);
-    });
-
-    const pending = records.flatMap((patient) => patient.visibleSessions
-      .filter((session) => session.status === 'programada')
-      .map((session) => ({ patient, session })))
-      .sort((left, right) => left.session.scheduledDate.localeCompare(right.session.scheduledDate));
-    pendingRows.replaceChildren();
-    pending.forEach(({ patient, session }) => {
-      const row = document.createElement('tr');
-      const patientName = document.createElement('th');
-      patientName.scope = 'row';
-      patientName.textContent = patient.name;
-      const objective = document.createElement('td');
-      objective.textContent = session.objective;
-      const date = document.createElement('td');
-      date.textContent = formatDateTime(session.scheduledDate);
-      const status = document.createElement('td');
-      status.textContent = 'Programada';
-      const actionCell = document.createElement('td');
-      const form = document.createElement('form');
-      form.method = 'post';
-      form.action = root.dataset.completeUrl.replace('/0/', `/${session.id}/`);
-      form.className = 'session-complete-form';
-      const csrf = document.createElement('input');
-      csrf.type = 'hidden';
-      csrf.name = 'csrfmiddlewaretoken';
-      csrf.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
-      form.append(csrf);
-      const addStatusButton = (value, label) => {
-        const button = document.createElement('button');
-        button.type = 'submit';
-        button.name = 'estado';
-        button.value = value;
-        button.className = 'session-complete-button';
-        button.textContent = label;
-        form.append(button);
-      };
-      if (new Date(session.scheduledDate) <= new Date()) {
-        addStatusButton('completada', 'Marcar completada');
-        addStatusButton('no_asistio', 'No asistió');
-      }
-      if (session.status === 'programada') {
-        addStatusButton('cancelada', 'Cancelar');
-      }
-      actionCell.append(form);
-      row.append(patientName, objective, date, status, actionCell);
-      pendingRows.append(row);
-    });
-    byId('dashboardEmpty').hidden = sorted.length > 0;
-    byId('dashboardSessionsEmpty').hidden = pending.length > 0;
-    byId('dashboardPatientCount').textContent = `${sorted.length} ${sorted.length === 1 ? 'paciente' : 'pacientes'}`;
-  };
-
-  const renderRoutineFeedback = (records) => {
-    const tbody = byId('dashboardRoutineFeedback');
-    const empty = byId('dashboardRoutineFeedbackEmpty');
-    if (!tbody || !empty) return;
-    const feedback = records.flatMap((patient) => (patient.routineFeedback || [])
-      .filter((item) => withinDateRange(item.date))
-      .map((item) => ({ ...item, patientName: patient.name })))
-      .sort((left, right) => right.date.localeCompare(left.date));
-    tbody.replaceChildren();
-    feedback.forEach((item) => {
-      const row = document.createElement('tr');
-      [
-        item.patientName,
-        item.routine,
-        item.dateDisplay,
-        item.pain === null ? '—' : `${item.pain} / 10`,
-        item.difficulty || '—',
-        item.comment || '—',
-      ].forEach((value, index) => {
-        const cell = index === 0 ? document.createElement('th') : document.createElement('td');
-        if (index === 0) cell.scope = 'row';
-        cell.textContent = value;
-        row.append(cell);
-      });
-      tbody.append(row);
-    });
-    empty.hidden = feedback.length > 0;
   };
 
   const renderRescheduleRequests = () => {
@@ -542,11 +433,13 @@
     if (count) {
       count.textContent = `${rescheduleRequests.length} pendiente${rescheduleRequests.length === 1 ? '' : 's'}`;
     }
+    const homeCount = byId('doctorHomePendingCount');
+    if (homeCount) homeCount.textContent = String(rescheduleRequests.length);
   };
 
   document.addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-request-action]');
-    if (!button || !button.closest('#dashboardView, #doctorRecordView')) return;
+    if (!button || !button.closest('#inicioView, #doctorRecordView')) return;
     const controls = button.closest('.reschedule-review-actions');
     const alternative = controls.querySelector('input[type="datetime-local"]');
     const responseInput = controls.querySelector('input[type="text"]');
@@ -561,7 +454,7 @@
       fecha_alternativa: alternative.value,
     });
     try {
-      const url = root.dataset.rescheduleReviewUrl
+      const url = homeRoot.dataset.rescheduleReviewUrl
         .replace('/0/revisar/', `/${button.dataset.requestId}/revisar/`);
       const response = await fetch(url, {
         method: 'POST',
@@ -612,9 +505,7 @@
     drawDonut('sessionsChart', 'sessionsLegend', completedSessions, dueSessions.length, 'Atendidas', 'Programadas vencidas');
     drawProgressChart(records);
     drawComparisonChart(goals);
-    renderTable(records, goals);
-    renderRoutineFeedback(records);
-    renderRescheduleRequests();
+    updateHomeSummary();
   };
 
   document.querySelectorAll('.dashboard-form [name="patient_id"]').forEach((patientSelect) => {
@@ -882,6 +773,7 @@
   const updatePatients = (nextPatients) => {
     patients = nextPatients;
     updateSelectOptions();
+    renderRescheduleRequests();
     render();
   };
 
@@ -906,6 +798,7 @@
       if (!Array.isArray(data.patients)) throw new Error('La respuesta de datos del dashboard no es válida.');
       if (Array.isArray(data.pending_reschedule_requests)) {
         rescheduleRequests = data.pending_reschedule_requests;
+        renderRescheduleRequests();
       }
       updatePatients(data.patients);
     } catch (error) {

@@ -9,7 +9,6 @@ from django.utils import timezone
 from crear_cuenta.models import Usuario
 from mensajeria.models import Mensaje
 from mensajeria.permisos import (
-    pacientes_conversables,
     tiene_acceso_a_paciente,
     usuario_de_sesion,
 )
@@ -28,17 +27,15 @@ class MensajeriaConsumer(JsonWebsocketConsumer):
 
     def connect(self):
         self.user = usuario_de_sesion(self.scope['session'])
-        primer_paciente = (
-            pacientes_conversables(self.user)
-            .select_related('usuario', 'doctor')
-            .first()
-            if self.user else None
-        )
-        if (
-            not self.user
-            or not primer_paciente
-            or not tiene_acceso_a_paciente(self.user, primer_paciente)
-        ):
+        if not self.user or self.user.role not in {
+            Usuario.ROLE_DOCTOR,
+            Usuario.ROLE_PACIENTE,
+        }:
+            self.close(code=4403)
+            return
+        if self.user.role == Usuario.ROLE_PACIENTE and not Paciente.objects.filter(
+            usuario=self.user,
+        ).exists():
             self.close(code=4403)
             return
 
@@ -165,13 +162,8 @@ class MensajeriaConsumer(JsonWebsocketConsumer):
 
     def mensajeria_revocar_acceso(self, event):
         paciente_id = event.get('paciente_id')
-        if paciente_id not in self.active_patient_ids:
-            return
-        paciente = Paciente.objects.filter(pk=paciente_id).first()
-        user = usuario_de_sesion(self.scope['session'])
-        if not user or not paciente or not tiene_acceso_a_paciente(user, paciente):
-            self.close(code=4403)
-            return
+        self.send_json({'tipo': 'acceso_revocado', 'paciente_id': paciente_id})
+        self.active_patient_ids.discard(paciente_id)
 
     def _send_error(self, message):
         self.send_json({'tipo': 'error', 'mensaje': message})

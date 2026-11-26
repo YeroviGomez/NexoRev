@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confirmar reasignación | Nexo ReV</title>
+  <link rel="stylesheet" href="{% static 'estilo.css' %}">
+  <link rel="stylesheet" href="{% static 'princpal/css/asignaciones.css' %}">
+</head>
+<body>
+  <main class="assignment-admin assignment-form-page">
+    <a class="assignment-back-link" href="{% url 'admin_reasignar_medico' paciente.pk %}">← Volver al formulario</a>
+    <header class="assignment-heading">
+      <div>
+        <p class="assignment-eyebrow">CONFIRMACIÓN</p>
+        <h1>Reasignar a {{ paciente.nombre }}</h1>
+        <p>Revisa el acceso y las citas que conservarán su programación.</p>
+      </div>
+    </header>
+
+    <section class="assignment-confirmation-card" aria-label="Resumen de reasignación">
+      <dl>
+        <div><dt>Médico actual</dt><dd>{% if resumen.medico_actual %}{{ resumen.medico_actual.nombre }}{% else %}Sin asignar{% endif %}</dd></div>
+        <div><dt>Nuevo médico</dt><dd>{{ resumen.nuevo_doctor.nombre }}</dd></div>
+        <div><dt>Tipo</dt><dd>{{ resumen.tipo_label }}</dd></div>
+        <div><dt>Visibilidad del chat</dt><dd>{{ resumen.chat_visible }}</dd></div>
+        <div><dt>Visibilidad del historial clínico</dt><dd>{{ resumen.historial_visible }}</dd></div>
+        <div><dt>Sesiones futuras que conservarán su horario</dt><dd>{{ resumen.sesiones_futuras }}</dd></div>
+        <div><dt>Solicitudes pendientes asociadas</dt><dd>{{ resumen.solicitudes_pendientes }}</dd></div>
+        <div><dt>Motivo</dt><dd>{{ form.motivo.value }}</dd></div>
+        {% if resumen.compartir_historial %}
+          <div><dt>Autorización del paciente</dt><dd>Confirmada por el administrador</dd></div>
+        {% endif %}
+      </dl>
+      <p class="assignment-warning">Las sesiones futuras y sus solicitudes pendientes no se cancelarán ni modificarán.</p>
+    </section>
+
+    <form method="post" class="assignment-confirm-actions">
+      {% csrf_token %}
+      {{ form.nuevo_doctor.as_hidden }}
+      {{ form.tipo.as_hidden }}
+      {{ form.compartir_historial_clinico.as_hidden }}
+      {{ form.paciente_autorizo.as_hidden }}
+      {{ form.motivo.as_hidden }}
+      <a class="assignment-secondary-button" href="{% url 'admin_reasignar_medico' paciente.pk %}">Cancelar</a>
+      <button class="assignment-primary-button" type="submit" name="accion" value="aplicar">Confirmar reasignación</button>
+    </form>
+  </main>
+</body>
+</html>

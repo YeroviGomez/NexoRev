@@ -23,6 +23,9 @@
           <p class="calendar-selected-label">Fecha seleccionada <time id="calendarSelectedDate" aria-live="polite"></time></p>
         </div>
         <div class="calendar-actions">
+          {% if usuario and usuario.role == 'doctor' %}
+            <button class="calendar-today-button" type="button" data-open-form-modal="sessionForm">Agendar sesión</button>
+          {% endif %}
           <button class="calendar-today-button" id="calendarToday" type="button">Hoy</button>
           <div class="calendar-month-controls" aria-label="Cambiar de mes">
             <button class="calendar-arrow-button" id="calendarPrevious" type="button" aria-label="Mes anterior" title="Mes anterior">

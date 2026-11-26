@@ -1,0 +1,100 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Asignar médico | Nexo ReV</title>
+  <link rel="stylesheet" href="{% static 'estilo.css' %}">
+  <link rel="stylesheet" href="{% static 'princpal/css/asignaciones.css' %}">
+</head>
+<body>
+  <main class="assignment-admin assignment-form-page">
+    <a class="assignment-back-link" href="{% url 'admin_reasignaciones' %}">← Volver a pacientes</a>
+    <header class="assignment-heading">
+      <div>
+        <p class="assignment-eyebrow">ASIGNACIÓN MÉDICA</p>
+        <h1>{{ paciente.nombre }}</h1>
+        <p>{{ paciente.email }} · Médico actual: {% if paciente.doctor %}{{ paciente.doctor.nombre }}{% else %}Sin asignar{% endif %}</p>
+      </div>
+    </header>
+
+    {% if not paciente.usuario_id %}
+      <p class="assignment-warning" role="alert">Este paciente todavía no tiene una cuenta vinculada. No se puede asignar un médico.</p>
+    {% endif %}
+    {% if form.non_field_errors %}
+      <ul class="assignment-errors" role="alert">{% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <form class="assignment-form-card" method="post">
+      {% csrf_token %}
+      <div class="assignment-field">
+        {{ form.nuevo_doctor.label_tag }}
+        {{ form.nuevo_doctor }}
+        {% for error in form.nuevo_doctor.errors %}<small class="assignment-field-error">{{ error }}</small>{% endfor %}
+      </div>
+      <div class="assignment-field">
+        {{ form.tipo.label_tag }}
+        {{ form.tipo }}
+        {% for error in form.tipo.errors %}<small class="assignment-field-error">{{ error }}</small>{% endfor %}
+      </div>
+
+      <fieldset class="assignment-sharing" id="sharingOptions">
+        <div id="continuityVisibility" hidden>
+          <label><input type="checkbox" checked disabled> El médico conserva la visibilidad heredada del chat y del historial clínico</label>
+          <input type="hidden" name="compartir_historial_clinico" value="on">
+        </div>
+        <div id="newCaseVisibility">
+          <label for="{{ form.compartir_historial_clinico.id_for_label }}">{{ form.compartir_historial_clinico }} {{ form.compartir_historial_clinico.label }}</label>
+          {% for error in form.compartir_historial_clinico.errors %}<small class="assignment-field-error">{{ error }}</small>{% endfor %}
+          <label class="assignment-consent" id="patientConsent">
+            {{ form.paciente_autorizo }} {{ form.paciente_autorizo.label }}
+          </label>
+          {% for error in form.paciente_autorizo.errors %}<small class="assignment-field-error">{{ error }}</small>{% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="assignment-field">
+        {{ form.motivo.label_tag }}
+        {{ form.motivo }}
+        <small>Obligatorio; explica el motivo en al menos 10 caracteres.</small>
+        {% for error in form.motivo.errors %}<small class="assignment-field-error">{{ error }}</small>{% endfor %}
+      </div>
+
+      <button class="assignment-primary-button" type="submit" name="accion" value="confirmar"{% if not paciente.usuario_id %} disabled{% endif %}>Revisar y confirmar</button>
+    </form>
+  </main>
+  <script>
+    (() => {
+      const type = document.getElementById('id_tipo');
+      const shared = document.getElementById('id_compartir_historial_clinico');
+      const consent = document.getElementById('patientConsent');
+      const consentCheckbox = document.getElementById('id_paciente_autorizo');
+      const continuity = document.getElementById('continuityVisibility');
+      const newCase = document.getElementById('newCaseVisibility');
+      if (!type || !shared || !consent || !continuity || !newCase) return;
+      let previousType = type.value;
+      const update = () => {
+        const isContinuity = type.value === 'continuidad';
+        const isNewCase = type.value === 'nuevo_caso';
+        if (type.value !== previousType && isNewCase) {
+          shared.checked = false;
+          if (consentCheckbox) consentCheckbox.checked = false;
+        }
+        continuity.hidden = !isContinuity;
+        newCase.hidden = !isContinuity && !isNewCase;
+        shared.disabled = isContinuity || !isNewCase;
+        consent.hidden = !isNewCase || !shared.checked;
+        if (!isNewCase) {
+          shared.checked = isContinuity;
+          if (consentCheckbox) consentCheckbox.checked = false;
+        }
+        previousType = type.value;
+      };
+      type.addEventListener('change', update);
+      shared.addEventListener('change', update);
+      update();
+    })();
+  </script>
+</body>
+</html>

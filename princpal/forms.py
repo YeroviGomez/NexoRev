@@ -2,7 +2,10 @@ from django import forms
 from django.utils import timezone
 from pathlib import Path
 
+from crear_cuenta.models import Usuario
+
 from .models import (
+    AsignacionMedico,
     Diagnostico,
     EvaluacionClinica,
     ObjetivoTerapeutico,
@@ -285,3 +288,69 @@ class VideoUploadForm(forms.ModelForm):
         if video_file.size > 500 * 1024 * 1024:
             raise forms.ValidationError('El video no puede superar los 500 MB.')
         return video_file
+
+
+class ReasignacionMedicoForm(forms.Form):
+    nuevo_doctor = forms.ModelChoiceField(
+        queryset=Usuario.objects.none(),
+        label='Nuevo médico',
+        error_messages={'required': 'Selecciona un médico activo.'},
+    )
+    tipo = forms.ChoiceField(label='Tipo de asignación')
+    compartir_historial_clinico = forms.BooleanField(
+        required=False,
+        label='El nuevo médico puede ver el historial clínico previo',
+    )
+    paciente_autorizo = forms.BooleanField(
+        required=False,
+        label='Confirmo que el paciente autorizó compartir su historial clínico previo',
+    )
+    motivo = forms.CharField(
+        min_length=10,
+        max_length=4000,
+        label='Motivo',
+        widget=forms.Textarea(attrs={'rows': 4}),
+        error_messages={'min_length': 'El motivo debe tener al menos 10 caracteres.'},
+    )
+
+    def __init__(self, *args, paciente, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.paciente = paciente
+        self.fields['nuevo_doctor'].queryset = Usuario.objects.filter(
+            role=Usuario.ROLE_DOCTOR,
+            is_active=True,
+        ).exclude(pk=paciente.doctor_id).order_by('nombre', 'pk')
+        tiene_asignaciones_previas = paciente.asignaciones.exists()
+        self.fields['tipo'].choices = (
+            [(AsignacionMedico.TIPO_INICIAL, 'Asignación inicial')]
+            if not paciente.doctor_id and not tiene_asignaciones_previas
+            else [
+                (AsignacionMedico.TIPO_CONTINUIDAD, 'Continuidad'),
+                (AsignacionMedico.TIPO_NUEVO_CASO, 'Caso nuevo'),
+            ]
+        )
+        self.fields['compartir_historial_clinico'].initial = bool(
+            paciente.doctor_id or tiene_asignaciones_previas
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        tipo = cleaned_data.get('tipo')
+        compartir = cleaned_data.get('compartir_historial_clinico', False)
+        autorizo = cleaned_data.get('paciente_autorizo', False)
+
+        if tipo == AsignacionMedico.TIPO_CONTINUIDAD:
+            cleaned_data['compartir_historial_clinico'] = True
+            cleaned_data['paciente_autorizo'] = False
+        elif tipo == AsignacionMedico.TIPO_NUEVO_CASO:
+            if compartir and not autorizo:
+                self.add_error(
+                    'paciente_autorizo',
+                    'Debes confirmar la autorización del paciente.',
+                )
+            if not compartir:
+                cleaned_data['paciente_autorizo'] = False
+        else:
+            cleaned_data['compartir_historial_clinico'] = False
+            cleaned_data['paciente_autorizo'] = False
+        return cleaned_data

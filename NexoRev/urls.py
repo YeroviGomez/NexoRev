@@ -29,6 +29,16 @@ urlpatterns = [
     path('principal/', include('princpal.urls')),
     path('ajustes/', include('ajustes.urls')),
     path('mensajeria/', include('mensajeria.urls')),
+    path(
+        'administracion/reasignaciones/',
+        principal_views.lista_reasignaciones_medicas,
+        name='admin_reasignaciones',
+    ),
+    path(
+        'administracion/reasignaciones/<int:paciente_id>/',
+        principal_views.reasignar_medico_view,
+        name='admin_reasignar_medico',
+    ),
 ]
 
 if settings.DEBUG:

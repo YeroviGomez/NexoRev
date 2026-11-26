@@ -1,7 +1,33 @@
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.conf import settings
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
+
+
+class PacienteQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if {'doctor', 'doctor_id'}.intersection(kwargs):
+            raise ValidationError(
+                'No se puede cambiar el médico directamente. Usa el servicio de asignación médica.'
+            )
+        return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if {'doctor', 'doctor_id'}.intersection(fields):
+            raise ValidationError(
+                'No se puede cambiar el médico directamente. Usa el servicio de asignación médica.'
+            )
+        return super().bulk_update(objs, fields, batch_size=batch_size)
+
+    def bulk_create(self, objs, **kwargs):
+        objs = list(objs)
+        if any(paciente.doctor_id is not None for paciente in objs):
+            raise ValidationError(
+                'No se puede asignar un médico directamente. Usa el servicio de asignación médica.'
+            )
+        return super().bulk_create(objs, **kwargs)
 
 
 class Paciente(models.Model):
@@ -45,6 +71,8 @@ class Paciente(models.Model):
     estado = models.CharField('estado', max_length=20, choices=ESTADO_CHOICES, default=ESTADO_INICIAL)
     historial_avance = models.JSONField('historial de avance', default=list, blank=True)
     fecha_registro = models.DateTimeField('fecha de registro', auto_now_add=True)
+
+    objects = PacienteQuerySet.as_manager()
 
     class Meta:
         verbose_name = 'Paciente'
@@ -91,6 +119,66 @@ class Paciente(models.Model):
         if not series:
             return [{'fecha': timezone.now().strftime('%Y-%m-%d'), 'avance': self.avance}]
         return series
+
+
+class AsignacionMedico(models.Model):
+    TIPO_INICIAL = 'inicial'
+    TIPO_CONTINUIDAD = 'continuidad'
+    TIPO_NUEVO_CASO = 'nuevo_caso'
+    TIPO_CHOICES = [
+        (TIPO_INICIAL, 'Inicial'),
+        (TIPO_CONTINUIDAD, 'Continuidad'),
+        (TIPO_NUEVO_CASO, 'Caso nuevo'),
+    ]
+
+    paciente = models.ForeignKey(
+        Paciente,
+        on_delete=models.CASCADE,
+        related_name='asignaciones',
+    )
+    doctor = models.ForeignKey(
+        'crear_cuenta.Usuario',
+        on_delete=models.PROTECT,
+        related_name='asignaciones_medicas',
+        limit_choices_to={'role': 'doctor'},
+    )
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
+    inicio = models.DateTimeField()
+    fin = models.DateTimeField(null=True, blank=True)
+    chat_visible_desde = models.DateTimeField(null=True, blank=True)
+    historial_clinico_visible_desde = models.DateTimeField(null=True, blank=True)
+    paciente_autorizo_historial = models.BooleanField(default=False)
+    motivo = models.TextField()
+    creada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='asignaciones_creadas',
+    )
+    creada_por_medico = models.ForeignKey(
+        'crear_cuenta.Usuario',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='asignaciones_medicas_iniciales_creadas',
+    )
+    notificacion_descartada_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-inicio', '-pk']
+        verbose_name = 'Asignación médica'
+        verbose_name_plural = 'Asignaciones médicas'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['paciente'],
+                condition=Q(fin__isnull=True),
+                name='unique_current_medical_assignment_per_patient',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.paciente} — {self.doctor} ({self.get_tipo_display()})'
 
 
 class Sesion(models.Model):

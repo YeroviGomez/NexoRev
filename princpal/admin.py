@@ -18,6 +18,7 @@ class PacienteAdmin(admin.ModelAdmin):
     list_display = ('nombre', 'email', 'telefono', 'fecha_registro')
     search_fields = ('nombre', 'email', 'telefono')
     list_filter = ('fecha_registro',)
+    readonly_fields = ('doctor',)
 
 
 @admin.register(Sesion)
