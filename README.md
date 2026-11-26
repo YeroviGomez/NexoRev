@@ -4,8 +4,12 @@ Aplicación orientada a fisioterapia
 Orden para clonar
 
 crear entorno y activarlo
-instalar django, psycopg2-binary y Pillow
+instalar django, psycopg2-binary, Pillow, Channels, Daphne y channels-redis
 clonar repositorio con git clone: url
+
+En desarrollo, Channels usa `InMemoryChannelLayer` por defecto. Para un
+entorno con Redis, define `CHANNEL_LAYER_BACKEND=redis`; la conexión usa
+`127.0.0.1:6379`. La aplicación ASGI es `NexoRev.asgi:application`.
 
 ## Configuración del correo
 

@@ -28,6 +28,7 @@ urlpatterns = [
     path('registro/', include('crear_cuenta.urls')),
     path('principal/', include('princpal.urls')),
     path('ajustes/', include('ajustes.urls')),
+    path('mensajeria/', include('mensajeria.urls')),
 ]
 
 if settings.DEBUG:

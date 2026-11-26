@@ -1150,6 +1150,11 @@ def principal_view(request):
         routine_templates, routine_template_data = routine_template_payloads(usuario)
     else:
         routine_templates, routine_template_data = [], {}
+    mensajeria_activa = (
+        any(patient.usuario_id and patient.doctor_id for patient in doctor_patients)
+        if usuario.is_doctor
+        else bool(paciente and paciente.usuario_id and paciente.doctor_id)
+    )
 
     return render(request, 'principal.html', {
         'show_security_tips': show_security_tips,
@@ -1182,6 +1187,7 @@ def principal_view(request):
         'form': form,
         'is_diagnostic_update': diagnostico is not None,
         'active_view': active_view,
+        'mensajeria_activa': mensajeria_activa,
         'today': timezone.localdate().isoformat(),
         'completed_history': completed_history['items'],
         'completed_history_pagination': completed_history,

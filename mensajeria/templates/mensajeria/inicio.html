@@ -1,0 +1,115 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es" data-font-size="{{ usuario.tamano_letra|default:'normal' }}" data-motion="{% if usuario.desactivar_animaciones %}off{% else %}on{% endif %}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>Mensajería | Nexo ReV</title>
+  <link rel="stylesheet" href="{% static 'base.css' %}">
+  <link rel="stylesheet" href="{% static 'mensajeria/mensajeria.css' %}?v=2">
+</head>
+<body class="mensajeria-page{% if usuario.modo_oscuro %} dark-mode{% endif %}{% if usuario.role == 'paciente' %} mensajeria-paciente{% endif %}"
+      data-role="{{ usuario.role }}"
+      data-user-id="{{ usuario.pk }}"
+      data-user-name="{{ usuario.nombre|escape }}"
+      data-enable-socket="{{ ws_activo|yesno:'true,false' }}"
+      data-paciente-id="{{ paciente_id|default:'' }}"
+      data-conversaciones-url="{% url 'mensajeria:conversaciones' %}"
+      data-historial-template="{% url 'mensajeria:historial' 0 %}"
+      data-leidos-template="{% url 'mensajeria:marcar_leidos' 0 %}"
+      data-no-leidos-url="{% url 'mensajeria:no_leidos' %}"
+      data-csrf-token="{{ csrf_token }}">
+  <header class="mensajeria-topbar">
+    <a class="mensajeria-brand" href="{% url 'principal' %}" aria-label="Volver al panel Nexo ReV">
+      <svg viewBox="0 0 56 56" aria-hidden="true"><path d="M6 29h9.4l5.3-20 9.1 37 6.2-23h14" /></svg>
+      <span>Nexo ReV</span>
+    </a>
+    <p class="mensajeria-title">{% if usuario.role == 'doctor' %}Mensajes de pacientes{% else %}Chat con tu médico{% endif %}</p>
+    <a class="mensajeria-back-link" href="{% url 'principal' %}">Volver al panel</a>
+  </header>
+
+  <main class="mensajeria-layout">
+    {% if usuario.role == 'doctor' %}
+      <aside class="mensajeria-list-panel" aria-label="Conversaciones">
+        <div class="mensajeria-list-heading">
+          <div>
+            <h1>Conversaciones</h1>
+            <p>Pacientes asignados</p>
+          </div>
+          <span class="mensajeria-total-badge" id="mensajeriaTotalBadge" hidden aria-label="Mensajes sin leer">0</span>
+        </div>
+        <label class="mensajeria-search">
+          <span class="sr-only">Buscar pacientes</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 5 5" /></svg>
+          <input id="mensajeriaSearch" type="search" placeholder="Buscar paciente" autocomplete="off">
+        </label>
+        <div class="mensajeria-conversation-list" id="mensajeriaConversationList" role="list"></div>
+        <p class="mensajeria-empty-list" id="mensajeriaEmptyList" hidden>No tienes pacientes asignados con cuenta.</p>
+        <p class="mensajeria-empty-list" id="mensajeriaNoSearchResults" hidden>No hay pacientes que coincidan con la búsqueda.</p>
+      </aside>
+    {% endif %}
+
+    <section class="mensajeria-chat-panel" id="mensajeriaChatPanel" aria-label="Conversación">
+      {% if sin_medico %}
+        <div class="mensajeria-no-doctor" role="status">
+          <span class="mensajeria-no-doctor-icon" aria-hidden="true">+</span>
+          <h1>Aún no tienes un médico asignado</h1>
+          <p>Cuando tengas un médico asignado, podrás conversar aquí.</p>
+        </div>
+      {% elif usuario.role == 'doctor' %}
+        <div class="mensajeria-chat-empty" id="mensajeriaChatEmpty">
+          <div class="mensajeria-chat-empty-icon" aria-hidden="true">✉</div>
+          <h1>Selecciona una conversación</h1>
+          <p>Elige un paciente de la lista para ver los mensajes.</p>
+        </div>
+        <div class="mensajeria-chat-content" id="mensajeriaChatContent" hidden>
+          <header class="mensajeria-chat-header">
+            <button type="button" class="mensajeria-back-button" id="mensajeriaBackButton" aria-label="Volver a la lista de pacientes">‹</button>
+            <span class="mensajeria-avatar" id="mensajeriaChatAvatar" aria-hidden="true"></span>
+            <div class="mensajeria-chat-heading">
+              <h1 id="mensajeriaChatName"></h1>
+              <p>Paciente</p>
+            </div>
+            <span class="mensajeria-connection" id="mensajeriaConnection" role="status">Conectando…</span>
+          </header>
+          <ol class="mensajeria-message-list" id="mensajeriaMessageList" role="log" aria-live="polite" aria-relevant="additions text" tabindex="0"></ol>
+          <p class="mensajeria-chat-status" id="mensajeriaChatStatus" role="status" aria-live="polite"></p>
+          <form class="mensajeria-compose" id="mensajeriaCompose">
+            <label class="sr-only" for="mensajeriaText">Escribe un mensaje</label>
+            <textarea id="mensajeriaText" rows="1" maxlength="2000" placeholder="Escribe un mensaje…" required></textarea>
+            <button type="submit" aria-label="Enviar mensaje">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>
+            </button>
+          </form>
+        </div>
+      {% elif paciente_id %}
+        <div class="mensajeria-chat-content mensajeria-patient-chat" id="mensajeriaChatContent">
+          <header class="mensajeria-chat-header">
+            <span class="mensajeria-avatar" id="mensajeriaChatAvatar" aria-hidden="true">{{ doctor_nombre|slice:":1"|upper }}</span>
+            <div class="mensajeria-chat-heading">
+              <h1 id="mensajeriaChatName">{{ doctor_nombre }}</h1>
+              <p>Médico asignado</p>
+            </div>
+            <span class="mensajeria-connection" id="mensajeriaConnection" role="status">Conectando…</span>
+          </header>
+          <ol class="mensajeria-message-list" id="mensajeriaMessageList" role="log" aria-live="polite" aria-relevant="additions text" tabindex="0"></ol>
+          <p class="mensajeria-chat-status" id="mensajeriaChatStatus" role="status" aria-live="polite"></p>
+          <form class="mensajeria-compose" id="mensajeriaCompose">
+            <label class="sr-only" for="mensajeriaText">Escribe un mensaje</label>
+            <textarea id="mensajeriaText" rows="1" maxlength="2000" placeholder="Escribe un mensaje…" required></textarea>
+            <button type="submit" aria-label="Enviar mensaje">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>
+            </button>
+          </form>
+        </div>
+      {% endif %}
+    </section>
+  </main>
+
+  {% if usuario.role == 'doctor' %}
+    {{ conversaciones|json_script:"mensajeria-conversaciones" }}
+  {% endif %}
+  <script src="{% static 'mensajeria/mensajeria.js' %}?v=2" defer></script>
+</body>
+</html>

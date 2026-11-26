@@ -31,16 +31,19 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
     'crear_cuenta',
     'login',
     'princpal',
     'ajustes',
+    'mensajeria',
 ]
 
 MIDDLEWARE = [
@@ -72,6 +75,29 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'NexoRev.wsgi.application'
+ASGI_APPLICATION = 'NexoRev.asgi.application'
+
+CHANNEL_LAYER_BACKEND = os.environ.get(
+    'CHANNEL_LAYER_BACKEND',
+    'memory' if DEBUG else 'redis',
+).lower()
+if CHANNEL_LAYER_BACKEND == 'memory':
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
+elif CHANNEL_LAYER_BACKEND == 'redis':
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [('127.0.0.1', 6379)],
+            },
+        },
+    }
+else:
+    raise ValueError('CHANNEL_LAYER_BACKEND debe ser "memory" o "redis".')
 
 
 # Database
@@ -84,7 +110,7 @@ DATABASES = {
         'USER': os.environ.get('POSTGRES_USER', 'nexorev_admin'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'abcdabcdab'),
         'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
-        'PORT': os.environ.get('POSTGRES_PORT', '5436'), #5436 yero xd
+        'PORT': os.environ.get('POSTGRES_PORT', '5432'), #5436 yero xd
     }
 }
 
@@ -123,7 +149,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
