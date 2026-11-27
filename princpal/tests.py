@@ -1415,6 +1415,18 @@ class MedicalDashboardTests(TestCase):
 		self.assertEqual(patient_data['sessions'][0]['id'], session.pk)
 		self.assertTrue(patient_data['sessions'][0]['completed'])
 
+	def test_pain_alert_section_is_rendered_only_for_doctors(self):
+		doctor_page = self.client.get(reverse('principal'))
+		patient_client = Client()
+		patient_session = patient_client.session
+		patient_session['current_user'] = self.patient_user.email
+		patient_session.save()
+
+		patient_page = patient_client.get(reverse('principal'))
+
+		self.assertContains(doctor_page, 'id="painAlertsCard"')
+		self.assertNotContains(patient_page, 'id="painAlertsCard"')
+
 	def test_doctor_can_register_evaluation_goal_and_planned_session(self):
 		evaluation_response = self.client.post(
 			reverse('register_clinical_evaluation', args=[self.patient.pk]),

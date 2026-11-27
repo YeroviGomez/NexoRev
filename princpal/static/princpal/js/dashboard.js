@@ -18,6 +18,11 @@
   const weeklyReportWeek = byId('weeklyReportWeek');
   const weeklyReportPatientFilter = byId('weeklyReportPatientFilter');
   const weeklyReportRows = byId('weeklyReportPatientRows');
+  const painAlertsRoot = byId('painAlertsCard');
+  const painAlertStateFilter = byId('painAlertStateFilter');
+  const painAlertPatientFilter = byId('painAlertPatientFilter');
+  const painAlertDateFrom = byId('painAlertDateFrom');
+  const painAlertDateTo = byId('painAlertDateTo');
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const routineTemplateDataElement = byId('routine-template-data');
   const colors = ['#119b72', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
@@ -26,6 +31,11 @@
   let routineTemplates = {};
   let refreshing = false;
   let profilePatientId = '';
+  let painAlertPage = 1;
+  let painAlertPages = 1;
+  let painAlertRequestId = 0;
+  let painAlertRedirecting = false;
+  let refreshPainAlerts = null;
 
   try {
     patients = JSON.parse(dataElement.textContent || '[]');
@@ -123,6 +133,18 @@
     });
   };
 
+  const updatePainAlertPatientOptions = () => {
+    if (!painAlertPatientFilter) return;
+    const selectedPatient = painAlertPatientFilter.value;
+    painAlertPatientFilter.replaceChildren(new Option('Todos los pacientes', ''));
+    patients.forEach((patient) => {
+      painAlertPatientFilter.add(new Option(patient.name, String(patient.id)));
+    });
+    if (patients.some((patient) => String(patient.id) === selectedPatient)) {
+      painAlertPatientFilter.value = selectedPatient;
+    }
+  };
+
   const updateSelectOptions = () => {
     const selectedPatient = patientFilter.value;
     patientFilter.replaceChildren(new Option('Todos los pacientes', 'all'));
@@ -141,6 +163,7 @@
         updateSessionGoalOptions(select.value, select.form.elements.namedItem('objetivo_terapeutico'));
       }
     });
+    updatePainAlertPatientOptions();
     updateWeeklyReportPatientOptions();
   };
 
@@ -903,6 +926,259 @@
     render();
   };
 
+  if (painAlertsRoot) {
+    const painAlertRows = byId('painAlertRows');
+    const painAlertStatus = byId('painAlertStatus');
+    const painAlertEmpty = byId('painAlertEmpty');
+    const painAlertNewCount = byId('painAlertNewCount');
+    const painAlertPageStatus = byId('painAlertPageStatus');
+    const painAlertPrevious = byId('painAlertPrevious');
+    const painAlertNext = byId('painAlertNext');
+    const painAlertDateTime = new Intl.DateTimeFormat('es-SV', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: painAlertsRoot.dataset.timeZone,
+    });
+
+    const setPainAlertMessage = (message, isError = false) => {
+      painAlertStatus.textContent = message;
+      painAlertStatus.hidden = !message;
+      painAlertStatus.classList.toggle('is-error', isError);
+    };
+
+    const handlePainAlertUnauthorized = () => {
+      setPainAlertMessage('Tu sesión expiró. Te redirigiremos al inicio de sesión.', true);
+      if (painAlertRedirecting) return;
+      painAlertRedirecting = true;
+      const loginUrl = document.body.dataset.loginUrl;
+      if (loginUrl) window.setTimeout(() => window.location.assign(loginUrl), 1000);
+    };
+
+    const readPainAlertResponse = async (response) => {
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error('El servidor devolvió una respuesta no válida.');
+      }
+      if (response.status === 401) {
+        handlePainAlertUnauthorized();
+        return null;
+      }
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'No se pudo completar la solicitud de alertas.');
+      }
+      return data;
+    };
+
+    const formatPainAlertDate = (value) => {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime())
+        ? 'Fecha no disponible'
+        : painAlertDateTime.format(date);
+    };
+
+    const appendAlertCell = (row, value, tagName = 'td') => {
+      const cell = document.createElement(tagName);
+      cell.textContent = String(value ?? '');
+      if (tagName === 'th') cell.scope = 'row';
+      row.append(cell);
+      return cell;
+    };
+
+    const renderPainAlertActions = (cell, alert) => {
+      if (alert.estado === 'atendida') {
+        cell.textContent = 'Sin acciones pendientes.';
+        return;
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'pain-alert-actions';
+      if (alert.estado === 'nueva') {
+        const viewButton = document.createElement('button');
+        viewButton.type = 'button';
+        viewButton.className = 'pain-alert-action';
+        viewButton.dataset.alertAction = 'vista';
+        viewButton.dataset.alertId = String(alert.id);
+        viewButton.textContent = 'Marcar como vista';
+        actions.append(viewButton);
+      }
+
+      const noteId = `painAlertNote-${alert.id}`;
+      const counterId = `painAlertNoteCount-${alert.id}`;
+      const noteLabel = document.createElement('label');
+      noteLabel.className = 'pain-alert-note-label';
+      noteLabel.htmlFor = noteId;
+      noteLabel.append(document.createTextNode('Nota de atención (opcional)'));
+
+      const note = document.createElement('textarea');
+      note.id = noteId;
+      note.maxLength = 500;
+      note.rows = 2;
+      note.dataset.alertNote = String(alert.id);
+      note.dataset.counterId = counterId;
+      note.setAttribute('aria-describedby', counterId);
+      noteLabel.append(note);
+
+      const counter = document.createElement('span');
+      counter.className = 'pain-alert-note-counter';
+      counter.id = counterId;
+      counter.textContent = '0/500 caracteres';
+
+      const attendButton = document.createElement('button');
+      attendButton.type = 'button';
+      attendButton.className = 'pain-alert-action is-primary';
+      attendButton.dataset.alertAction = 'atendida';
+      attendButton.dataset.alertId = String(alert.id);
+      attendButton.textContent = 'Marcar como atendida';
+      actions.append(noteLabel, counter, attendButton);
+      cell.append(actions);
+    };
+
+    const renderPainAlerts = (alerts) => {
+      const stateClasses = {
+        nueva: 'is-new',
+        vista: 'is-seen',
+        atendida: 'is-attended',
+      };
+      painAlertRows.replaceChildren();
+      alerts.forEach((alert) => {
+        const row = document.createElement('tr');
+        appendAlertCell(row, alert.paciente_nombre, 'th');
+        appendAlertCell(row, formatPainAlertDate(alert.creada_en));
+        appendAlertCell(row, `${alert.nivel_dolor}/10`);
+        appendAlertCell(row, alert.regla_display);
+
+        const stateCell = document.createElement('td');
+        const state = document.createElement('span');
+        state.className = `pain-alert-state ${stateClasses[alert.estado] || ''}`.trim();
+        state.textContent = alert.estado_display || alert.estado;
+        stateCell.append(state);
+        row.append(stateCell);
+
+        const actionsCell = document.createElement('td');
+        renderPainAlertActions(actionsCell, alert);
+        row.append(actionsCell);
+        painAlertRows.append(row);
+      });
+    };
+
+    const loadPainAlerts = async ({ page = painAlertPage, showLoading = true } = {}) => {
+      const requestId = ++painAlertRequestId;
+      painAlertPage = Math.max(1, Number(page) || 1);
+      if (showLoading) setPainAlertMessage('Cargando alertas de dolor…');
+
+      const params = new URLSearchParams();
+      if (painAlertStateFilter.value) params.set('estado', painAlertStateFilter.value);
+      if (painAlertPatientFilter.value) params.set('paciente', painAlertPatientFilter.value);
+      if (painAlertDateFrom.value) params.set('fecha_desde', painAlertDateFrom.value);
+      if (painAlertDateTo.value) params.set('fecha_hasta', painAlertDateTo.value);
+      params.set('page', String(painAlertPage));
+
+      try {
+        const response = await fetch(`${painAlertsRoot.dataset.alertsUrl}?${params.toString()}`, {
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+        });
+        const data = await readPainAlertResponse(response);
+        if (!data || requestId !== painAlertRequestId) return false;
+        if (
+          !Array.isArray(data.alertas)
+          || !Number.isInteger(data.nuevas_count)
+          || !Number.isInteger(data.page)
+          || !Number.isInteger(data.pages)
+        ) {
+          throw new Error('La respuesta de alertas no tiene el formato esperado.');
+        }
+
+        painAlertPage = data.page;
+        painAlertPages = Math.max(data.pages, 1);
+        painAlertNewCount.textContent = `${data.nuevas_count} nueva${data.nuevas_count === 1 ? '' : 's'}`;
+        painAlertNewCount.setAttribute('aria-label', `${data.nuevas_count} alertas nuevas`);
+        painAlertPageStatus.textContent = (
+          `Página ${painAlertPage} de ${painAlertPages} · ${data.total} alerta${data.total === 1 ? '' : 's'}`
+        );
+        painAlertPrevious.disabled = painAlertPage <= 1;
+        painAlertNext.disabled = painAlertPage >= painAlertPages;
+        renderPainAlerts(data.alertas);
+        painAlertEmpty.hidden = data.alertas.length > 0;
+        setPainAlertMessage('');
+        return true;
+      } catch (error) {
+        if (requestId !== painAlertRequestId) return false;
+        setPainAlertMessage(
+          error instanceof Error ? error.message : 'No se pudieron cargar las alertas de dolor.',
+          true,
+        );
+        return false;
+      }
+    };
+
+    refreshPainAlerts = loadPainAlerts;
+    painAlertsRoot.addEventListener('change', (event) => {
+      if (event.target.matches('#painAlertStateFilter, #painAlertPatientFilter, #painAlertDateFrom, #painAlertDateTo')) {
+        loadPainAlerts({ page: 1 });
+      }
+    });
+    painAlertsRoot.addEventListener('input', (event) => {
+      const note = event.target.closest('textarea[data-alert-note]');
+      if (!note) return;
+      const counter = byId(note.dataset.counterId);
+      if (counter) counter.textContent = `${note.value.length}/500 caracteres`;
+    });
+    byId('painAlertReset').addEventListener('click', () => {
+      painAlertStateFilter.value = '';
+      painAlertPatientFilter.value = '';
+      painAlertDateFrom.value = '';
+      painAlertDateTo.value = '';
+      loadPainAlerts({ page: 1 });
+    });
+    painAlertPrevious.addEventListener('click', () => {
+      if (painAlertPage > 1) loadPainAlerts({ page: painAlertPage - 1 });
+    });
+    painAlertNext.addEventListener('click', () => {
+      if (painAlertPage < painAlertPages) loadPainAlerts({ page: painAlertPage + 1 });
+    });
+    painAlertsRoot.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-alert-action]');
+      if (!button) return;
+      button.disabled = true;
+      const alertId = button.dataset.alertId;
+      const action = button.dataset.alertAction;
+      const url = action === 'vista'
+        ? painAlertsRoot.dataset.alertViewUrl.replace('/0/vista/', `/${alertId}/vista/`)
+        : painAlertsRoot.dataset.alertAttendUrl.replace('/0/atendida/', `/${alertId}/atendida/`);
+      const headers = {
+        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
+      };
+      const request = { method: 'POST', headers };
+      if (action === 'atendida') {
+        const note = byId(`painAlertNote-${alertId}`);
+        request.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+        request.body = new URLSearchParams({ nota: note?.value || '' });
+      }
+
+      try {
+        const response = await fetch(url, request);
+        const data = await readPainAlertResponse(response);
+        if (!data) return;
+        const refreshed = await loadPainAlerts({ page: painAlertPage, showLoading: false });
+        if (refreshed) {
+          setPainAlertMessage(action === 'vista' ? 'Alerta marcada como vista.' : 'Alerta marcada como atendida.');
+        }
+      } catch (error) {
+        setPainAlertMessage(
+          error instanceof Error ? error.message : 'No se pudo actualizar la alerta.',
+          true,
+        );
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    loadPainAlerts();
+  }
+
   if (weeklyReportRoot) {
     const weeklyReportForm = byId('weeklyReportFilters');
     const weeklyReportPrevious = byId('weeklyReportPrevious');
@@ -1132,6 +1408,7 @@
   render();
 
   window.setInterval(async () => {
+    if (refreshPainAlerts) refreshPainAlerts({ showLoading: false });
     if (refreshing) return;
     refreshing = true;
     try {

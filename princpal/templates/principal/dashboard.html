@@ -67,6 +67,73 @@
     </div>
   </article>
 
+  <article
+    class="dashboard-card dashboard-table-card pain-alerts-card"
+    id="painAlertsCard"
+    data-alerts-url="{% url 'notif_alertas' %}"
+    data-alert-view-url="{% url 'notif_alerta_vista' 0 %}"
+    data-alert-attend-url="{% url 'notif_alerta_atendida' 0 %}"
+    data-time-zone="{{ usuario.zona_horaria }}"
+  >
+    <div class="dashboard-card-heading">
+      <div>
+        <h2>Alertas de dolor</h2>
+        <p>Alertas recientes de tus pacientes. Las fechas se muestran en tu zona horaria.</p>
+      </div>
+      <span class="pain-alert-new-count" id="painAlertNewCount" aria-label="Alertas nuevas">0 nuevas</span>
+    </div>
+
+    <div class="dashboard-filters pain-alert-filters" aria-label="Filtros de alertas de dolor">
+      <label for="painAlertStateFilter">Estado
+        <select id="painAlertStateFilter">
+          <option value="">Todos los estados</option>
+          <option value="nueva">Nueva</option>
+          <option value="vista">Vista</option>
+          <option value="atendida">Atendida</option>
+        </select>
+      </label>
+      <label for="painAlertPatientFilter">Paciente
+        <select id="painAlertPatientFilter">
+          <option value="">Todos los pacientes</option>
+        </select>
+      </label>
+      <label for="painAlertDateFrom">Desde
+        <input id="painAlertDateFrom" type="date">
+      </label>
+      <label for="painAlertDateTo">Hasta
+        <input id="painAlertDateTo" type="date">
+      </label>
+      <button type="button" class="dashboard-reset" id="painAlertReset">Limpiar filtros</button>
+    </div>
+
+    <p class="pain-alert-status" id="painAlertStatus" role="status" aria-live="polite">Cargando alertas de dolor…</p>
+    <p class="dashboard-empty" id="painAlertEmpty" hidden>No hay alertas que coincidan con los filtros.</p>
+    <div
+      class="dashboard-table-scroll pain-alert-table-scroll"
+      tabindex="0"
+      aria-label="Tabla de alertas de dolor; desplázate horizontalmente si es necesario"
+    >
+      <table class="dashboard-table pain-alert-table">
+        <thead>
+          <tr>
+            <th scope="col">Paciente</th>
+            <th scope="col">Fecha (zona del médico)</th>
+            <th scope="col">EVA</th>
+            <th scope="col">Regla</th>
+            <th scope="col">Estado</th>
+            <th scope="col">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="painAlertRows"></tbody>
+      </table>
+    </div>
+    <nav class="pain-alert-pagination" aria-label="Paginación de alertas de dolor">
+      <button type="button" class="dashboard-reset" id="painAlertPrevious" disabled>Anterior</button>
+      <span id="painAlertPageStatus" role="status" aria-live="polite">Página 1 de 1</span>
+      <button type="button" class="dashboard-reset" id="painAlertNext" disabled>Siguiente</button>
+    </nav>
+  </article>
+
   <section class="dashboard-kpis" aria-label="Métricas clave">
     <article class="dashboard-kpi kpi-patients">
       <span class="kpi-icon" aria-hidden="true">+</span>

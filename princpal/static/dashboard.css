@@ -124,6 +124,26 @@
 .reschedule-review-buttons button { min-height: 2rem; padding: 0.35rem 0.55rem; border: 0; border-radius: 0.45rem; color: #fff; background: #128365; font-size: 0.72rem; font-weight: 700; cursor: pointer; }
 .reschedule-review-buttons button[data-request-action="rechazar"] { background: #a8444a; }
 .reschedule-review-buttons button:disabled { opacity: 0.6; cursor: wait; }
+.pain-alerts-card { margin-bottom: 1.2rem; }
+.pain-alert-new-count { flex: 0 0 auto; padding: 0.4rem 0.7rem; border: 1px solid #c8e8d9; border-radius: 99px; color: #18724f; background: #effaf4; font-size: 0.76rem; font-weight: 750; }
+.pain-alert-filters { margin: 0 0 0.85rem; }
+.pain-alert-status { margin: 0.75rem 0; color: var(--dashboard-muted); font-size: 0.85rem; }
+.pain-alert-status.is-error { color: #9f3030; }
+.pain-alert-table { min-width: 900px; }
+.pain-alert-table th, .pain-alert-table td { vertical-align: top; white-space: normal; }
+.pain-alert-state { display: inline-flex; padding: 0.3rem 0.55rem; border: 1px solid #d5dce0; border-radius: 99px; color: #344852; background: #f3f6f7; font-size: 0.75rem; font-weight: 750; }
+.pain-alert-state.is-new { border-color: #efcaca; color: #8d2929; background: #fff3f3; }
+.pain-alert-state.is-seen { border-color: #e8d9ae; color: #75530b; background: #fff9e8; }
+.pain-alert-state.is-attended { border-color: #b9dfcd; color: #17614b; background: #effaf4; }
+.pain-alert-actions { display: grid; min-width: 14rem; gap: 0.45rem; }
+.pain-alert-actions button { min-height: 2.15rem; padding: 0.4rem 0.6rem; border: 1px solid #b9d8cd; border-radius: 0.5rem; color: #17614b; background: #f3faf6; font: inherit; font-size: 0.76rem; font-weight: 700; cursor: pointer; }
+.pain-alert-actions button.is-primary { border-color: #128365; color: #fff; background: #128365; }
+.pain-alert-actions button:disabled { cursor: wait; opacity: 0.65; }
+.pain-alert-note-label { display: grid; gap: 0.3rem; color: #536572; font-size: 0.72rem; font-weight: 650; white-space: normal; }
+.pain-alert-note-label textarea { width: 100%; min-height: 3.2rem; padding: 0.45rem 0.55rem; border: 1px solid #d7e0e4; border-radius: 0.48rem; color: #1e3541; background: #fff; font: inherit; font-size: 0.78rem; resize: vertical; }
+.pain-alert-note-counter { color: var(--dashboard-muted); font-size: 0.7rem; text-align: right; }
+.pain-alert-pagination { display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-top: 0.85rem; color: var(--dashboard-muted); font-size: 0.8rem; }
+.pain-alerts-card :is(button, input, select, textarea, .pain-alert-table-scroll):focus-visible { outline: 3px solid #16876b; outline-offset: 3px; }
 .table-progress { display: flex; align-items: center; gap: 0.55rem; min-width: 7.5rem; }
 .table-progress-track { display: block; width: 4rem; height: 0.42rem; overflow: hidden; border-radius: 99px; background: #e8efed; }
 .table-progress-fill { display: block; height: 100%; border-radius: inherit; background: #16a477; }
@@ -233,6 +253,16 @@ body.dark-mode .reschedule-request-count { border-color: #28584d; color: #9ce5bf
 body.dark-mode .reschedule-requests-table .request-patient-name { color: #e2eeeb; }
 body.dark-mode .reschedule-review-actions label { color: #c1d0d4; }
 body.dark-mode .reschedule-review-actions input { border-color: #46515d; color: #e2eeeb; background: #202833; }
+body.dark-mode .pain-alert-new-count { border-color: #28584d; color: #9ce5bf; background: #18332b; }
+body.dark-mode .pain-alert-status.is-error { color: #ffc2c2; }
+body.dark-mode .pain-alert-state { border-color: #46515d; color: #d3dfdf; background: #252b35; }
+body.dark-mode .pain-alert-state.is-new { border-color: #75494b; color: #ffc2c2; background: #352327; }
+body.dark-mode .pain-alert-state.is-seen { border-color: #705c31; color: #f4d889; background: #382f1e; }
+body.dark-mode .pain-alert-state.is-attended { border-color: #2b5d4b; color: #a6e3c8; background: #18332b; }
+body.dark-mode .pain-alert-actions button { border-color: #386052; color: #a6e3c8; background: #1b342d; }
+body.dark-mode .pain-alert-actions button.is-primary { border-color: #128365; color: #fff; background: #128365; }
+body.dark-mode .pain-alert-note-label { color: #c1d0d4; }
+body.dark-mode .pain-alert-note-label textarea { border-color: #46515d; color: #e2eeeb; background: #202833; }
 
 .weekly-report-view { max-width: 1440px; }
 .weekly-report-filters { align-items: flex-end; }
