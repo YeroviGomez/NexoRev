@@ -19,13 +19,9 @@
         <label for="videoCategory">Parte del cuerpo</label>
         <select id="videoCategory" name="category" required>
           <option value="" selected disabled>Selecciona una zona</option>
-          <option value="Rodilla">Rodilla</option>
-          <option value="Hombro">Hombro</option>
-          <option value="Espalda">Espalda</option>
-          <option value="Cuello">Cuello</option>
-          <option value="Tobillo">Tobillo</option>
-          <option value="Cadera">Cadera</option>
-          <option value="General">General</option>
+          {% for value, label in video_upload_zone_options %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="video-upload-field">
@@ -80,11 +76,16 @@
       <input id="videoSearch" type="search" placeholder="Buscar ejercicios...">
     </label>
 
-    <div class="filter-row" aria-label="Categorias de videos">
-      <span class="filter-label">Explorar por zona</span>
-      {% for category in categories %}
-        <button class="filter-chip{% if forloop.first %} active{% endif %}" type="button" data-category="{{ category }}" aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}">{{ category }}</button>
-      {% endfor %}
+    <div class="filter-row" aria-label="Filtros de videos">
+      <label class="difficulty-filter body-zone-filter" for="videoBodyZoneFilter">
+        <span>Parte del cuerpo</span>
+        <select id="videoBodyZoneFilter">
+          <option value="todas">Todas las zonas</option>
+          {% for label, key in body_zone_filter_options %}
+            <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <label class="difficulty-filter" for="videoDifficulty">
         <span>Dificultad</span>
         <select id="videoDifficulty">
@@ -108,10 +109,30 @@
       </button>
     </div>
     <div id="featuredVideo">
-      {% include "principal/partials/featured_video.html" with video=None %}
+      {% if recommendations_available %}
+        {% include "principal/partials/featured_video.html" with video=featured_recommendation %}
+      {% else %}
+        {% include "principal/partials/featured_video.html" with video=None %}
+      {% endif %}
     </div>
     <span id="surpriseLoading" class="htmx-indicator">Buscando una recomendación...</span>
   </section>
+
+  {% if usuario.is_paciente %}
+    <section class="video-recommendation-notice" aria-live="polite">
+      {% if recommendation_zone %}
+        <h2>Videos recomendados para {{ recommendation_zone }}</h2>
+        {% if recommendations_available %}
+          <p>Encontramos {{ recommendations_count }} video{{ recommendations_count|pluralize }} relacionado{{ recommendations_count|pluralize }} con la zona de tu diagnóstico. Aparecen primero en la biblioteca.</p>
+        {% else %}
+          <p>Aún no hay videos etiquetados para esta zona. Puedes explorar la biblioteca mientras se agregan ejercicios relacionados.</p>
+        {% endif %}
+      {% else %}
+        <h2>Personaliza tus recomendaciones</h2>
+        <p>Completa el diagnóstico y selecciona una zona corporal para ver primero los videos relacionados.</p>
+      {% endif %}
+    </section>
+  {% endif %}
 
   <button class="video-safety-trigger" id="openVideoSafetyTips" type="button">
     <span class="video-safety-icon" aria-hidden="true">!</span>

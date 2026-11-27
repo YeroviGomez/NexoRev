@@ -11,6 +11,7 @@ from django.utils import timezone
 from PIL import Image
 
 from crear_cuenta.models import Usuario
+from notificaciones.models import AlertaDolor
 from .models import (
 	Diagnostico,
 	EjercicioPlantillaRutina,
@@ -36,10 +37,26 @@ class DiagnosticFormTests(TestCase):
 		self.client = Client()
 		self.autenticar(self.client, self.usuario)
 		self.respuestas = {
-			'nivel_dolor': '4',
+			'zona_afectada': 'Rodilla derecha (vista frontal)',
 			'pregunta1': 'espalda',
-			'pregunta2': 'La sesión fue cómoda.',
-			'pregunta3': 'si',
+			'pregunta2': 'caida_golpe',
+			'pregunta3': 'menos_una_semana',
+			'pregunta4': 'mejorado',
+			'pregunta5': '5',
+			'pregunta6': 'constante',
+			'pregunta7': 'punzante',
+			'pregunta8': 'movimiento',
+			'pregunta9': 'descanso',
+			'pregunta10': 'no',
+			'pregunta11': 'nunca',
+			'pregunta12': 'ninguno',
+			'pregunta13': 'no',
+			'pregunta14': 'nada',
+			'pregunta15': 'no_afecta',
+			'pregunta16': 'ninguno',
+			'pregunta17': 'sedentario',
+			'pregunta18': 'ninguno',
+			'pregunta19': 'disminuir_dolor',
 			'comentario': 'Puedo moverme mejor.',
 		}
 
@@ -52,57 +69,111 @@ class DiagnosticFormTests(TestCase):
 		response = self.client.post('/principal/', self.respuestas)
 
 		self.assertEqual(response.status_code, 302)
+		self.assertEqual(response.url, '/principal/#inicio')
 		diagnostico = Diagnostico.objects.get(usuario=self.usuario)
-		self.assertEqual(diagnostico.nivel_dolor, 4)
+		self.assertEqual(diagnostico.nivel_dolor, 5)
 		self.assertEqual(diagnostico.pregunta1, 'espalda')
-		self.assertEqual(diagnostico.pregunta2, 'La sesión fue cómoda.')
-		self.assertEqual(diagnostico.pregunta3, 'si')
+		self.assertEqual(diagnostico.pregunta2, 'caida_golpe')
+		self.assertEqual(diagnostico.pregunta3, 'menos_una_semana')
 		self.assertEqual(diagnostico.comentario, 'Puedo moverme mejor.')
+		self.assertEqual(diagnostico.zona_afectada, 'Rodilla derecha (vista frontal)')
+		self.assertEqual(diagnostico.respuestas['pregunta19'], 'disminuir_dolor')
 		self.assertEqual(
 			EvaluacionClinica.objects.get(paciente__usuario=self.usuario).nivel_dolor,
 			diagnostico.nivel_dolor,
 		)
 
+	def test_muestra_confirmacion_al_volver_al_inicio_tras_guardar(self):
+		response = self.client.post('/principal/', self.respuestas)
+		self.assertRedirects(response, '/principal/#inicio', fetch_redirect_response=False)
+
+		home_response = self.client.get('/principal/')
+
+		self.assertEqual(home_response.status_code, 200)
+		self.assertContains(home_response, 'id="diagnosticSuccessDialog"')
+		self.assertContains(home_response, 'Tus respuestas se guardaron correctamente.')
+		self.assertContains(home_response, 'data-initial-view="inicio"')
+
+	def test_boton_de_zona_cambia_a_modificar_con_diagnostico_guardado(self):
+		self.client.post('/principal/', self.respuestas)
+
+		response = self.client.get('/principal/')
+
+		self.assertContains(response, '>Modificar</button>')
+		self.assertNotContains(response, '>Continuar al diagnóstico</button>')
+
 	def test_actualiza_el_formulario_existente_del_paciente(self):
 		self.client.post('/principal/', self.respuestas)
-		respuestas_actualizadas = {**self.respuestas, 'nivel_dolor': '7'}
+		respuestas_actualizadas = {**self.respuestas, 'pregunta5': '8'}
 		self.client.post('/principal/', respuestas_actualizadas)
 
 		self.assertEqual(Diagnostico.objects.filter(usuario=self.usuario).count(), 1)
-		self.assertEqual(Diagnostico.objects.get(usuario=self.usuario).nivel_dolor, 7)
+		self.assertEqual(Diagnostico.objects.get(usuario=self.usuario).nivel_dolor, 8)
 
-	def test_acepta_cero_en_la_escala_eva(self):
+	def test_elimina_permanentemente_las_respuestas_guardadas(self):
+		self.client.post('/principal/', self.respuestas)
+
+		response = self.client.post(
+			reverse('principal'),
+			{'action': 'delete_diagnostico'},
+		)
+
+		self.assertRedirects(response, '/principal/#diagnostico', fetch_redirect_response=False)
+		self.assertFalse(Diagnostico.objects.filter(usuario=self.usuario).exists())
+		self.assertContains(self.client.get(reverse('principal')), 'Guardar diagnóstico')
+
+	def test_guarda_el_rango_de_dolor_seleccionado(self):
 		response = self.client.get(reverse('principal'))
-		self.assertContains(response, 'min="0"')
-		self.assertContains(response, 'Nivel 0 sin dolor')
+		self.assertContains(response, '5. ¿Qué tan intenso es tu dolor ahora?')
+		self.assertContains(response, 'Leve (1 a 3 en una escala del 1 al 10)')
 
 		submission = self.client.post(
 			reverse('principal'),
-			{**self.respuestas, 'nivel_dolor': '0'},
+			{**self.respuestas, 'pregunta5': '10'},
 		)
 
 		self.assertEqual(submission.status_code, 302)
-		self.assertEqual(Diagnostico.objects.get(usuario=self.usuario).nivel_dolor, 0)
+		self.assertEqual(Diagnostico.objects.get(usuario=self.usuario).nivel_dolor, 10)
 		self.assertEqual(
 			EvaluacionClinica.objects.get(paciente__usuario=self.usuario).nivel_dolor,
-			0,
+			10,
 		)
 
-	def test_diagnostico_muestra_eva_de_cero_a_diez(self):
+	def test_diagnostico_muestra_las_19_preguntas(self):
 		response = self.client.get(reverse('principal'))
 
-		self.assertContains(response, 'min="0"')
-		self.assertContains(response, 'max="10"')
-		self.assertContains(response, 'Nivel 0 sin dolor')
+		for question_number in range(1, 20):
+			self.assertContains(response, f'pregunta{question_number}')
+		self.assertContains(response, 'Parte del cuerpo seleccionada')
 
-	def test_rechaza_dolor_eva_negativo(self):
+	def test_muestra_la_zona_afectada_del_paciente_al_inicio(self):
+		self.client.get(reverse('principal'))
+		paciente = Paciente.objects.get(usuario=self.usuario)
+		paciente.zona_afectada = 'Hombro izquierdo (vista frontal)'
+		paciente.save(update_fields=['zona_afectada'])
+
+		response = self.client.get(reverse('principal'))
+
+		self.assertContains(response, 'Parte del cuerpo seleccionada')
+		self.assertContains(response, 'Hombro izquierdo (vista frontal)')
+
+	def test_requiere_responder_todas_las_preguntas(self):
+		respuestas_incompletas = {**self.respuestas}
+		respuestas_incompletas.pop('pregunta19')
+		response = self.client.post(reverse('principal'), respuestas_incompletas)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('pregunta19', response.context['form'].errors)
+		self.assertFalse(Diagnostico.objects.exists())
+
+	def test_rechaza_una_respuesta_de_dolor_fuera_de_las_opciones(self):
 		response = self.client.post(
 			reverse('principal'),
-			{**self.respuestas, 'nivel_dolor': '-1'},
+			{**self.respuestas, 'pregunta5': '-1'},
 		)
 
 		self.assertEqual(response.status_code, 200)
-		self.assertIn('nivel_dolor', response.context['form'].errors)
+		self.assertIn('pregunta5', response.context['form'].errors)
 		self.assertFalse(Diagnostico.objects.exists())
 
 	def test_cada_paciente_solo_guarda_su_propio_formulario(self):
@@ -113,19 +184,19 @@ class DiagnosticFormTests(TestCase):
 		)
 		otro_cliente = Client()
 		self.autenticar(otro_cliente, otro_usuario)
-		respuestas_otro_usuario = {**self.respuestas, 'nivel_dolor': '8'}
+		respuestas_otro_usuario = {**self.respuestas, 'pregunta5': '8'}
 		otro_cliente.post('/principal/', respuestas_otro_usuario)
 
 		self.assertEqual(Diagnostico.objects.count(), 2)
-		self.assertEqual(Diagnostico.objects.get(usuario=self.usuario).nivel_dolor, 4)
+		self.assertEqual(Diagnostico.objects.get(usuario=self.usuario).nivel_dolor, 5)
 		self.assertEqual(Diagnostico.objects.get(usuario=otro_usuario).nivel_dolor, 8)
 
 	def test_rechaza_dolor_fuera_del_rango_y_no_guarda(self):
-		respuestas_invalidas = {**self.respuestas, 'nivel_dolor': '11'}
+		respuestas_invalidas = {**self.respuestas, 'pregunta5': '11'}
 		response = self.client.post('/principal/', respuestas_invalidas)
 
 		self.assertEqual(response.status_code, 200)
-		self.assertIn('nivel_dolor', response.context['form'].errors)
+		self.assertIn('pregunta5', response.context['form'].errors)
 		self.assertFalse(Diagnostico.objects.exists())
 
 	def test_doctor_no_puede_enviar_el_formulario_de_paciente(self):
@@ -977,6 +1048,58 @@ class AppearancePreferenceTests(TestCase):
 		self.usuario.refresh_from_db()
 		self.assertEqual(self.usuario.tamano_letra, 'normal')
 
+	def test_guarda_zona_horaria_y_preferencias_de_notificaciones(self):
+		preferencias = [
+			('zona_horaria', 'Europe/Madrid'),
+			('recordatorios_activos', False),
+			('resumen_semanal_activo', False),
+		]
+		for preference, value in preferencias:
+			with self.subTest(preference=preference):
+				response = self.client.post(
+					'/principal/api/update-appearance-preference/',
+					{'preference': preference, 'value': value},
+					content_type='application/json',
+				)
+				self.assertEqual(response.status_code, 200)
+				self.assertTrue(response.json()['success'])
+
+		self.usuario.refresh_from_db()
+		self.assertEqual(self.usuario.zona_horaria, 'Europe/Madrid')
+		self.assertFalse(self.usuario.recordatorios_activos)
+		self.assertFalse(self.usuario.resumen_semanal_activo)
+
+	def test_rechaza_zona_horaria_invalida_y_tipos_no_booleanos(self):
+		preferencias_invalidas = [
+			('zona_horaria', 'Mars/Phobos'),
+			('recordatorios_activos', 1),
+			('resumen_semanal_activo', 1),
+		]
+		for preference, value in preferencias_invalidas:
+			with self.subTest(preference=preference):
+				response = self.client.post(
+					'/principal/api/update-appearance-preference/',
+					{'preference': preference, 'value': value},
+					content_type='application/json',
+				)
+				self.assertEqual(response.status_code, 400)
+				self.assertFalse(response.json()['success'])
+
+		self.usuario.refresh_from_db()
+		self.assertEqual(self.usuario.zona_horaria, 'America/El_Salvador')
+		self.assertTrue(self.usuario.recordatorios_activos)
+		self.assertTrue(self.usuario.resumen_semanal_activo)
+
+	def test_requiere_sesion_para_actualizar_preferencias(self):
+		self.client.session.flush()
+		response = self.client.post(
+			'/principal/api/update-appearance-preference/',
+			{'preference': 'recordatorios_activos', 'value': False},
+			content_type='application/json',
+		)
+
+		self.assertEqual(response.status_code, 401)
+
 
 class VideoHistoryTests(TestCase):
 	def setUp(self):
@@ -1091,6 +1214,141 @@ class VideoHistoryTests(TestCase):
 		self.assertEqual(second_page.status_code, 200)
 		self.assertEqual(second_page.content.count(b'class="video-card"'), 3)
 		self.assertNotContains(second_page, 'Siguiente página')
+
+	def test_videos_de_la_zona_diagnosticada_aparecen_primero_y_marcados(self):
+		Diagnostico.objects.create(
+			usuario=self.usuario,
+			zona_afectada='Rodilla derecha (vista frontal)',
+		)
+		videos = [
+			{
+				'catalog_index': index,
+				'title': f'Video de {"rodilla" if index == 8 else "espalda"} {index}',
+				'description': 'Ejercicio de movilidad',
+				'level': 'Principiante',
+				'difficulty': 'easy',
+				'category': 'Rodilla' if index == 8 else 'Espalda',
+				'url': '',
+				'video_id': f'video-{index}',
+				'embed_url': '',
+			}
+			for index in range(9)
+		]
+
+		with patch('princpal.views.load_videos', return_value=videos):
+			first_page = self.client.get('/principal/api/videos/page/?page=1')
+			second_page = self.client.get('/principal/api/videos/page/?page=2')
+
+		self.assertEqual(first_page.status_code, 200)
+		self.assertContains(first_page, 'data-recommended="true"')
+		self.assertContains(first_page, 'Recomendado para tu zona')
+		self.assertContains(first_page, 'data-zone-keys="rodilla"')
+		self.assertLess(
+			first_page.content.index(b'video de rodilla 8'),
+			first_page.content.index(b'video de espalda 0'),
+		)
+		self.assertContains(first_page, reverse('video_detail', args=[8]))
+		self.assertEqual(second_page.status_code, 200)
+		self.assertNotContains(second_page, 'data-recommended="true"')
+
+	def test_pagina_de_videos_indica_cuando_no_hay_coincidencias(self):
+		Diagnostico.objects.create(
+			usuario=self.usuario,
+			zona_afectada='Mano derecha',
+		)
+		videos = [{
+			'catalog_index': 0,
+			'title': 'Movilidad de espalda',
+			'description': 'Ejercicio de movilidad',
+			'level': 'Principiante',
+			'difficulty': 'easy',
+			'category': 'Espalda',
+			'url': '',
+			'video_id': 'video-espalda',
+			'embed_url': '',
+		}]
+
+		with patch('princpal.views.load_videos', return_value=videos):
+			response = self.client.get('/principal/')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Videos recomendados para Mano derecha')
+		self.assertContains(response, 'Aún no hay videos etiquetados para esta zona')
+		self.assertNotContains(response, 'Recomendado para tu zona')
+
+	def test_filtros_y_carga_de_videos_comparten_zonas_generales(self):
+		response = self.client.get('/principal/')
+
+		for body_zone in (
+			('Cabeza', 'cabeza'),
+			('Cuello', 'cuello'),
+			('Pecho', 'pecho'),
+			('Abdomen y pelvis', 'abdomen-pelvis'),
+			('Espalda superior', 'espalda-superior'),
+			('Espalda inferior', 'espalda-inferior'),
+			('Hombro', 'hombro'),
+			('Brazo', 'brazo'),
+			('Mano', 'mano'),
+			('Muslo', 'muslo'),
+			('Rodilla', 'rodilla'),
+			('Pierna inferior', 'pierna-inferior'),
+			('Pie', 'pie'),
+		):
+			label, key = body_zone
+			self.assertContains(
+				response,
+				f'<option value="{key}">{label}</option>',
+			)
+			self.assertContains(
+				response,
+				f'<option value="{label}">{label}</option>',
+			)
+
+	def test_filtros_generales_incluyen_videos_con_etiquetas_antiguas(self):
+		from .views import video_zone_filter_keys
+
+		for category, expected_key in (
+			('Codo derecho', 'brazo'),
+			('Antebrazo izquierdo', 'brazo'),
+			('Brazo superior derecho', 'brazo'),
+			('Espalda superior derecha', 'espalda-superior'),
+			('Espalda inferior izquierda', 'espalda-inferior'),
+		):
+			keys = video_zone_filter_keys({'category': category})
+			self.assertIn(expected_key, keys)
+		self.assertNotIn(
+			'espalda-inferior',
+			video_zone_filter_keys({'category': 'Espalda superior derecha'}),
+		)
+		self.assertIn('espalda-superior', video_zone_filter_keys({'category': 'Espalda'}))
+		self.assertIn('espalda-inferior', video_zone_filter_keys({'category': 'Espalda'}))
+		self.assertEqual(
+			set(video_zone_filter_keys({'category': 'Back'})),
+			{'espalda-superior', 'espalda-inferior'},
+		)
+
+	def test_formulario_de_carga_acepta_zona_general_de_la_silueta(self):
+		from django.core.files.uploadedfile import SimpleUploadedFile
+		from .forms import VideoUploadForm
+
+		form = VideoUploadForm(
+			data={
+				'title': 'Ejercicio de rodilla',
+				'description': 'Movilidad de rodilla',
+				'level': 'Principiante',
+				'category': 'Rodilla',
+			},
+			files={
+				'file': SimpleUploadedFile(
+					'ejercicio.mp4',
+					b'contenido de prueba',
+					content_type='video/mp4',
+				),
+			},
+		)
+
+		self.assertTrue(form.is_valid(), form.errors)
+		self.assertEqual(form.cleaned_data['category'], 'Rodilla')
 # Create your tests here.
 
 
@@ -1670,6 +1928,138 @@ class PatientProgressTests(TestCase):
 		doctor_progress = self.doctor_client.get(reverse('doctor_dashboard_data')).json()['patients']
 		self.assertEqual(doctor_progress[0]['routineFeedback'][0]['pain'], 0)
 		self.assertEqual(doctor_progress[0]['routineFeedback'][0]['comment'], 'Sin molestias.')
+
+	def test_completing_with_high_eva_creates_a_pain_alert(self):
+		today = timezone.localdate()
+		assignment = RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='video-alerta-alta',
+			titulo='Rutina de alerta',
+			fecha_programada=today,
+		)
+		occurrence = OcurrenciaRutina.objects.create(asignacion=assignment, fecha=today)
+
+		response = self.patient_client.post(reverse('complete_routine_occurrence', args=[occurrence.pk]), {
+			'nivel_dolor': '8',
+			'dificultad': 'adecuada',
+		})
+
+		self.assertEqual(response.status_code, 200)
+		alerta = AlertaDolor.objects.get(ocurrencia=occurrence)
+		self.assertEqual(alerta.paciente, self.patient)
+		self.assertEqual(alerta.doctor, self.doctor)
+		self.assertEqual(alerta.nivel_dolor, 8)
+		self.assertEqual(alerta.regla, AlertaDolor.REGLA_UMBRAL)
+
+	def test_completing_with_low_eva_does_not_create_a_pain_alert(self):
+		today = timezone.localdate()
+		assignment = RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='video-alerta-baja',
+			titulo='Rutina sin alerta',
+			fecha_programada=today,
+		)
+		occurrence = OcurrenciaRutina.objects.create(asignacion=assignment, fecha=today)
+
+		response = self.patient_client.post(reverse('complete_routine_occurrence', args=[occurrence.pk]), {
+			'nivel_dolor': '3',
+			'dificultad': 'facil',
+		})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertFalse(AlertaDolor.objects.filter(ocurrencia=occurrence).exists())
+
+	def test_repeated_completion_returns_400_and_keeps_one_alert(self):
+		today = timezone.localdate()
+		assignment = RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='video-alerta-doble',
+			titulo='Rutina de doble envío',
+			fecha_programada=today,
+		)
+		occurrence = OcurrenciaRutina.objects.create(asignacion=assignment, fecha=today)
+		url = reverse('complete_routine_occurrence', args=[occurrence.pk])
+		data = {'nivel_dolor': '8', 'dificultad': 'adecuada'}
+
+		first_response = self.patient_client.post(url, data)
+		second_response = self.patient_client.post(url, data)
+
+		self.assertEqual(first_response.status_code, 200)
+		self.assertEqual(second_response.status_code, 400)
+		self.assertEqual(
+			second_response.json()['error'],
+			'Esta rutina ya está marcada como completada.',
+		)
+		self.assertEqual(AlertaDolor.objects.filter(ocurrencia=occurrence).count(), 1)
+
+	def test_alert_failure_does_not_prevent_routine_completion(self):
+		today = timezone.localdate()
+		assignment = RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='video-alerta-fallo',
+			titulo='Rutina con alerta fallida',
+			fecha_programada=today,
+		)
+		occurrence = OcurrenciaRutina.objects.create(asignacion=assignment, fecha=today)
+
+		with patch('princpal.views.crear_alerta_dolor', side_effect=RuntimeError('Fallo simulado')):
+			response = self.patient_client.post(
+				reverse('complete_routine_occurrence', args=[occurrence.pk]),
+				{'nivel_dolor': '8', 'dificultad': 'adecuada'},
+			)
+
+		self.assertEqual(response.status_code, 200)
+		occurrence.refresh_from_db()
+		self.assertIsNotNone(occurrence.completada_en)
+		self.assertEqual(occurrence.nivel_dolor, 8)
+
+	def test_alert_email_runs_only_after_the_transaction_commits(self):
+		today = timezone.localdate()
+		assignment = RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='video-alerta-commit',
+			titulo='Rutina de alerta post-commit',
+			fecha_programada=today,
+		)
+		occurrence = OcurrenciaRutina.objects.create(asignacion=assignment, fecha=today)
+
+		with patch('princpal.views.enviar_correo_alerta') as enviar_alerta:
+			with self.captureOnCommitCallbacks(execute=True):
+				response = self.patient_client.post(
+					reverse('complete_routine_occurrence', args=[occurrence.pk]),
+					{'nivel_dolor': '8', 'dificultad': 'adecuada'},
+				)
+				self.assertFalse(enviar_alerta.called)
+
+		self.assertEqual(response.status_code, 200)
+		enviar_alerta.assert_called_once()
+
+	def test_email_failure_does_not_prevent_routine_completion(self):
+		today = timezone.localdate()
+		assignment = RutinaAsignada.objects.create(
+			paciente=self.patient,
+			video_id='video-alerta-correo-fallo',
+			titulo='Rutina con correo fallido',
+			fecha_programada=today,
+		)
+		occurrence = OcurrenciaRutina.objects.create(asignacion=assignment, fecha=today)
+
+		with patch(
+			'notificaciones.services.enviar_correo',
+			return_value=(False, 'SMTP no disponible'),
+		):
+			with self.captureOnCommitCallbacks(execute=True):
+				response = self.patient_client.post(
+					reverse('complete_routine_occurrence', args=[occurrence.pk]),
+					{'nivel_dolor': '8', 'dificultad': 'adecuada'},
+				)
+
+		self.assertEqual(response.status_code, 200)
+		occurrence.refresh_from_db()
+		self.assertIsNotNone(occurrence.completada_en)
+		alerta = AlertaDolor.objects.get(ocurrencia=occurrence)
+		self.assertEqual(alerta.correo_error, 'SMTP no disponible')
+		self.assertEqual(alerta.correo_intentos, 1)
 
 	def test_assigned_template_cannot_be_deleted_and_foreign_doctor_cannot_manage_it(self):
 		template = PlantillaRutina.objects.create(doctor=self.doctor, nombre='Equilibrio')

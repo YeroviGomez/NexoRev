@@ -1,0 +1,11 @@
+Hola {{ paciente_nombre }},
+
+Estas son las rutinas y ejercicios pendientes para el {{ fecha_recordatorio }}:
+{% for rutina in rutinas_pendientes %}
+
+{{ rutina.nombre }}
+{% for ejercicio in rutina.ejercicios %}- {{ ejercicio }}
+{% endfor %}
+{% endfor %}
+
+Abrir Nexo ReV: {{ enlace_principal }}

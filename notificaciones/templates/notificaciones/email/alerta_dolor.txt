@@ -1,0 +1,7 @@
+Hola {{ doctor_nombre }},
+
+El paciente {{ paciente_nombre }} reportó un dolor EVA de {{ nivel_dolor }}/10.
+Regla disparada: {{ regla }}.
+Fecha y hora local del médico: {{ fecha_local }}.
+
+Abrir el panel médico: {{ enlace_dashboard }}

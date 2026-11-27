@@ -1,0 +1,414 @@
+.reminders-view {
+  --reminders-ink: #203b40;
+  --reminders-muted: #63777c;
+  --reminders-line: #dfe9e5;
+  color: var(--reminders-ink);
+}
+
+.reminders-toolbar {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.reminders-toolbar p,
+.reminders-feedback,
+.reminders-empty {
+  margin: 0;
+  color: var(--reminders-muted);
+  font-size: 0.9rem;
+}
+
+.reminders-toolbar a {
+  color: #08785d;
+  font-weight: 700;
+}
+
+.reminders-notice {
+  padding: 0.8rem 1rem;
+  border: 1px solid #e8c879;
+  border-radius: 0.7rem;
+  color: #62480d !important;
+  background: #fff8df;
+}
+
+.reminders-notice[hidden],
+.reminders-feedback:empty,
+.reminders-form-error[hidden] {
+  display: none;
+}
+
+.reminders-feedback {
+  margin-bottom: 0.8rem;
+}
+
+.reminders-feedback.is-error,
+.reminders-form-error {
+  color: #a43b3b;
+}
+
+.reminders-layout {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.8fr) minmax(0, 1.2fr);
+  gap: 1rem;
+}
+
+.reminders-card {
+  min-width: 0;
+  padding: 1.2rem;
+  border: 1px solid var(--reminders-line);
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 0.35rem 1.3rem rgba(26, 58, 67, 0.045);
+}
+
+.reminders-card h2 {
+  margin: 0 0 1rem;
+  color: #17382f;
+  font-size: 1.08rem;
+}
+
+.reminders-form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.reminders-hour-label,
+.reminders-weekdays legend {
+  color: #536572;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.reminders-form input[type="time"] {
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #cbdad5;
+  border-radius: 0.58rem;
+  color: #203b40;
+  background: #fff;
+  font: inherit;
+}
+
+.reminders-weekdays {
+  min-width: 0;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.reminders-weekdays legend span {
+  color: #718187;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.reminder-weekday-options {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.65rem;
+}
+
+.reminder-weekday-options label {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 2.55rem;
+  place-items: center;
+  cursor: pointer;
+}
+
+.reminder-weekday-options input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.reminder-weekday-options label span {
+  display: grid;
+  width: 100%;
+  min-height: 2.45rem;
+  place-items: center;
+  border: 1px solid #cbdad5;
+  border-radius: 0.6rem;
+  color: #456158;
+  background: #f8fbf9;
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+.reminder-weekday-options input:checked + span {
+  border-color: #12856a;
+  color: #fff;
+  background: #12856a;
+}
+
+.reminder-weekday-options input:focus-visible + span,
+.reminders-view button:focus-visible,
+.reminders-view a:focus-visible,
+.reminders-form input[type="time"]:focus-visible,
+.reminder-switch input:focus-visible + .reminder-switch-track {
+  outline: 3px solid #39a98a;
+  outline-offset: 3px;
+}
+
+.reminders-form-error {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
+.reminders-form-actions,
+.reminder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.reminders-primary-button,
+.reminders-secondary-button,
+.reminder-action-button {
+  min-height: 2.45rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.55rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reminders-primary-button {
+  color: #fff;
+  background: #128365;
+}
+
+.reminders-secondary-button,
+.reminder-action-button {
+  border-color: #cbdad5;
+  color: #17684f;
+  background: #f3faf6;
+}
+
+.reminders-primary-button:hover {
+  background: #0d7056;
+}
+
+.reminders-view button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.reminder-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reminder-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.8rem;
+  border: 1px solid #e1e9e6;
+  border-radius: 0.7rem;
+  background: #fbfdfc;
+}
+
+.reminder-details {
+  min-width: 0;
+}
+
+.reminder-time {
+  color: #203b40;
+  font-size: 1rem;
+}
+
+.reminder-details p {
+  margin: 0.25rem 0 0;
+  color: var(--reminders-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.reminder-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #52696a;
+  font-size: 0.76rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.reminder-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.reminder-switch-track {
+  position: relative;
+  width: 2.65rem;
+  height: 1.45rem;
+  border-radius: 99px;
+  background: #89979a;
+}
+
+.reminder-switch-track::after {
+  position: absolute;
+  top: 0.18rem;
+  left: 0.18rem;
+  width: 1.09rem;
+  height: 1.09rem;
+  border-radius: 50%;
+  background: #fff;
+  content: "";
+  transition: transform 0.16s ease;
+}
+
+.reminder-switch input:checked + .reminder-switch-track {
+  background: #12856a;
+}
+
+.reminder-switch input:checked + .reminder-switch-track::after {
+  transform: translateX(1.2rem);
+}
+
+.reminder-actions {
+  margin: 0;
+}
+
+.reminder-action-button {
+  min-height: 2.15rem;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+.reminder-action-button.is-delete {
+  border-color: #edd5d5;
+  color: #9f3d3d;
+  background: #fff8f8;
+}
+
+body.dark-mode .reminders-view {
+  --reminders-ink: #e2eeeb;
+  --reminders-muted: #adbbc2;
+  --reminders-line: #39434d;
+}
+
+body.dark-mode .reminders-card {
+  border-color: #343b4a;
+  background: #1a1a24;
+}
+
+body.dark-mode .reminders-card h2,
+body.dark-mode .reminder-time {
+  color: #e2eeeb;
+}
+
+body.dark-mode .reminders-toolbar a {
+  color: #9ce5bf;
+}
+
+body.dark-mode .reminders-notice {
+  border-color: #786334;
+  color: #f2dda0 !important;
+  background: #342d1e;
+}
+
+body.dark-mode .reminders-hour-label,
+body.dark-mode .reminders-weekdays legend {
+  color: #c2cdd2;
+}
+
+body.dark-mode .reminders-weekdays legend span {
+  color: #aab8bf;
+}
+
+body.dark-mode .reminders-form input[type="time"] {
+  border-color: #42495a;
+  color: #f1f5f7;
+  background: #23232d;
+}
+
+body.dark-mode .reminder-weekday-options label span {
+  border-color: #46515d;
+  color: #c3d4ce;
+  background: #202833;
+}
+
+body.dark-mode .reminder-weekday-options input:checked + span {
+  border-color: #12856a;
+  color: #fff;
+  background: #12856a;
+}
+
+body.dark-mode .reminder-item {
+  border-color: #39434d;
+  background: #202833;
+}
+
+body.dark-mode .reminder-switch,
+body.dark-mode .reminders-feedback {
+  color: #b7c8c9;
+}
+
+body.dark-mode .reminders-feedback.is-error,
+body.dark-mode .reminders-form-error {
+  color: #ffb7b7;
+}
+
+body.dark-mode .reminder-action-button,
+body.dark-mode .reminders-secondary-button {
+  border-color: #386052;
+  color: #a6e3c8;
+  background: #1b342d;
+}
+
+body.dark-mode .reminder-action-button.is-delete {
+  border-color: #634040;
+  color: #ffb7b7;
+  background: #362626;
+}
+
+@media (max-width: 900px) {
+  .reminders-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .reminder-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .reminder-switch {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .reminder-actions {
+    grid-column: 1 / -1;
+  }
+
+  .reminder-weekday-options {
+    gap: 0.2rem;
+  }
+
+  .reminder-weekday-options label span {
+    min-height: 2.2rem;
+    font-size: 0.68rem;
+  }
+}

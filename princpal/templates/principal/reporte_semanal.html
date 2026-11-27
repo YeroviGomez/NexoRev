@@ -1,0 +1,120 @@
+{% if usuario and usuario.role == 'doctor' %}
+<section
+  class="app-view dashboard-view weekly-report-view"
+  id="weeklyReportView"
+  data-view="reportes"
+  data-report-url="{% url 'notif_reporte_semanal' %}"
+>
+  <header class="page-head dashboard-heading">
+    <div>
+      <p class="dashboard-eyebrow">SEGUIMIENTO CLÍNICO</p>
+      <h1>Reportes semanales</h1>
+      <p>Consulta la actividad y el progreso semanal de tus pacientes.</p>
+    </div>
+  </header>
+
+  <form class="dashboard-filters weekly-report-filters" id="weeklyReportFilters">
+    <label for="weeklyReportWeek">Semana
+      <input type="date" id="weeklyReportWeek" name="semana">
+    </label>
+    <div class="weekly-report-week-actions" aria-label="Navegar por semanas">
+      <button class="dashboard-reset" type="button" id="weeklyReportPrevious" disabled>
+        Semana anterior
+      </button>
+      <button class="dashboard-reset" type="button" id="weeklyReportNext" disabled>
+        Semana siguiente
+      </button>
+    </div>
+    <label class="weekly-report-patient-filter" for="weeklyReportPatientFilter">
+      Pacientes
+      <select
+        id="weeklyReportPatientFilter"
+        name="pacientes"
+        multiple
+        size="4"
+        aria-describedby="weeklyReportPatientHelp"
+      ></select>
+    </label>
+    <p class="weekly-report-filter-help" id="weeklyReportPatientHelp">
+      Sin selección se incluyen todos tus pacientes. Usa Ctrl o Cmd para seleccionar varios.
+    </p>
+    <button class="dashboard-submit" type="submit">Actualizar reporte</button>
+  </form>
+
+  <div class="weekly-report-downloads" aria-label="Descargas del reporte">
+    <button class="dashboard-reset" type="button" data-report-format="pdf">
+      Descargar PDF
+    </button>
+    <button class="dashboard-reset" type="button" data-report-format="xlsx">
+      Descargar Excel
+    </button>
+  </div>
+  <p
+    class="weekly-report-state"
+    id="weeklyReportDownloadStatus"
+    role="status"
+    aria-live="polite"
+    hidden
+  ></p>
+
+  <p class="weekly-report-state" id="weeklyReportLoading" role="status" aria-live="polite" hidden>
+    Cargando el reporte semanal…
+  </p>
+  <p class="weekly-report-state is-error" id="weeklyReportError" role="alert" hidden></p>
+  <p class="weekly-report-state" id="weeklyReportEmpty" role="status" hidden>
+    No hay pacientes asignados para mostrar en este reporte.
+  </p>
+
+  <section id="weeklyReportResults" aria-label="Resultados del reporte semanal" hidden>
+    <div class="dashboard-kpis weekly-report-kpis" aria-label="Totales de la semana">
+      <article class="dashboard-kpi">
+        <p>Pacientes</p>
+        <strong id="weeklyReportTotalPatients">0</strong>
+      </article>
+      <article class="dashboard-kpi kpi-goals">
+        <p>Rutinas completadas</p>
+        <strong id="weeklyReportTotalRoutines">0/0</strong>
+        <small>Completadas / programadas</small>
+      </article>
+      <article class="dashboard-kpi">
+        <p>Adherencia total</p>
+        <strong id="weeklyReportTotalAdherence">—</strong>
+      </article>
+      <article class="dashboard-kpi kpi-pain">
+        <p>Sesiones</p>
+        <strong id="weeklyReportTotalSessions">0</strong>
+        <small>En todos los estados</small>
+      </article>
+      <article class="dashboard-kpi kpi-pain-critical">
+        <p>Alertas de dolor</p>
+        <strong id="weeklyReportTotalAlerts">0</strong>
+      </article>
+    </div>
+
+    <article class="dashboard-card dashboard-table-card weekly-report-card">
+      <div class="dashboard-card-heading">
+        <div>
+          <h2 id="weeklyReportTableTitle">Detalle por paciente</h2>
+          <p id="weeklyReportWeekLabel"></p>
+        </div>
+      </div>
+      <div class="dashboard-table-scroll" tabindex="0" aria-label="Tabla de resultados; desplázate horizontalmente si es necesario">
+        <table class="dashboard-table weekly-report-table">
+          <thead>
+            <tr>
+              <th scope="col">Paciente</th>
+              <th scope="col">Rutinas</th>
+              <th scope="col">Adherencia</th>
+              <th scope="col">EVA promedio</th>
+              <th scope="col">Variación EVA</th>
+              <th scope="col">Sesiones por estado</th>
+              <th scope="col">Alertas</th>
+            </tr>
+          </thead>
+          <tbody id="weeklyReportPatientRows"></tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+</section>
+{% endif %}

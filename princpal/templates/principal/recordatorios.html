@@ -1,0 +1,58 @@
+<section class="app-view reminders-view" id="recordatoriosView" data-view="recordatorios">
+  <header class="page-head compact section-guide-head">
+    <div>
+      <h1>Recordatorios</h1>
+      <p>Programa avisos para tus ejercicios de rutina.</p>
+    </div>
+    <button class="section-guide-trigger" type="button" data-tutorial-view="recordatorios">Guía de uso</button>
+  </header>
+
+  <div class="reminders-toolbar">
+    <p>
+      Zona horaria usada:
+      <strong id="reminderTimezone">Cargando...</strong>.
+      <a href="#perfil" data-nav="perfil">Cambiar en Perfil</a>
+    </p>
+    <p class="reminders-notice" id="reminderPreferenceNotice" role="status" hidden>
+      Los recordatorios están apagados en tus preferencias de notificación.
+      <a href="#perfil" data-nav="perfil">Activarlos en Perfil</a>
+    </p>
+  </div>
+
+  <p class="reminders-feedback" id="reminderFeedback" role="status" aria-live="polite"></p>
+
+  <div class="reminders-layout">
+    <section class="reminders-card" aria-labelledby="reminderFormTitle">
+      <h2 id="reminderFormTitle">Nuevo recordatorio</h2>
+      <form class="reminders-form" id="reminderForm">
+        <label class="reminders-hour-label" for="reminderHour">Hora</label>
+        <input id="reminderHour" name="hora" type="time" required>
+
+        <fieldset class="reminders-weekdays" aria-describedby="reminderFormError">
+          <legend>Días de la semana <span>(elige al menos uno)</span></legend>
+          <div class="reminder-weekday-options">
+            <label><input type="checkbox" name="dias_semana" value="0" aria-label="Lunes"><span>Lun</span></label>
+            <label><input type="checkbox" name="dias_semana" value="1" aria-label="Martes"><span>Mar</span></label>
+            <label><input type="checkbox" name="dias_semana" value="2" aria-label="Miércoles"><span>Mié</span></label>
+            <label><input type="checkbox" name="dias_semana" value="3" aria-label="Jueves"><span>Jue</span></label>
+            <label><input type="checkbox" name="dias_semana" value="4" aria-label="Viernes"><span>Vie</span></label>
+            <label><input type="checkbox" name="dias_semana" value="5" aria-label="Sábado"><span>Sáb</span></label>
+            <label><input type="checkbox" name="dias_semana" value="6" aria-label="Domingo"><span>Dom</span></label>
+          </div>
+        </fieldset>
+
+        <p class="reminders-form-error" id="reminderFormError" role="alert" hidden></p>
+        <div class="reminders-form-actions">
+          <button class="reminders-primary-button" type="submit">Guardar recordatorio</button>
+          <button class="reminders-secondary-button" id="reminderCancelEdit" type="button" hidden>Cancelar edición</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="reminders-card" aria-labelledby="reminderListTitle">
+      <h2 id="reminderListTitle">Tus recordatorios</h2>
+      <p class="reminders-empty" id="reminderEmpty" hidden>Aún no has creado recordatorios.</p>
+      <ul class="reminder-list" id="reminderList" aria-label="Lista de recordatorios"></ul>
+    </section>
+  </div>
+</section>

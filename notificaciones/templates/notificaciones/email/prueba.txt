@@ -1,0 +1,3 @@
+Hola {{ nombre|default:"" }},
+
+Este es un correo de prueba de Nexo ReV. La versión de texto se envió correctamente.

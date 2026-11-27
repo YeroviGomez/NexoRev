@@ -20,6 +20,112 @@ try {
 }
 const favoriteUser = document.body.dataset.currentUser?.toLowerCase() || 'anonymous';
 const favoritesStorageKey = `nexorev_favorites_${favoriteUser}`;
+const bodyZoneAreas = document.querySelectorAll('.body-map-hotspots [data-body-zone]');
+const selectedBodyZone = document.getElementById('selectedBodyZone');
+const selectedBodyView = document.getElementById('selectedBodyView');
+const clearBodyZone = document.getElementById('clearBodyZone');
+const diagnosticZoneInput = document.getElementById('id_zona_afectada');
+const diagnosticSelectedZone = document.getElementById('diagnosticSelectedZone');
+const bodyMapStage = document.querySelector('.body-map-stage');
+const bodyMapHotspots = document.querySelector('.body-map-hotspots');
+const bodyMapViewButtons = document.querySelectorAll('.body-map-views [data-body-view]');
+let currentBodyView = 'frontal';
+let selectedBodyArea = null;
+const selectedBodyZoneStorageKey = `nexorev_selected_body_zone_${favoriteUser}`;
+
+const setBodyView = (view) => {
+  currentBodyView = view;
+  bodyMapStage?.setAttribute('data-body-view', view);
+  if (bodyMapHotspots) {
+    bodyMapHotspots.setAttribute(
+      'aria-label',
+      `Zonas corporales en vista ${view === 'frontal' ? 'frontal' : 'trasera'}`,
+    );
+  }
+  bodyMapViewButtons.forEach((button) => {
+    const isActive = button.dataset.bodyView === view;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+  });
+  bodyZoneAreas.forEach((area) => {
+    const isVisible = area.dataset.bodyView === view;
+    area.style.display = isVisible ? '' : 'none';
+    area.setAttribute('tabindex', isVisible ? '0' : '-1');
+    area.setAttribute('aria-pressed', String(area === selectedBodyArea));
+  });
+};
+
+const selectBodyZone = (area) => {
+  selectedBodyArea = area;
+  bodyZoneAreas.forEach((area) => {
+    area.setAttribute('aria-pressed', String(area === selectedBodyArea));
+  });
+  const viewLabel = area.dataset.bodyView === 'frontal' ? 'Vista anterior' : 'Vista posterior';
+  const laterality = area.dataset.bodyZone.match(/(derecha|derecho|izquierda|izquierdo)$/i)?.[0];
+  if (selectedBodyZone) selectedBodyZone.textContent = area.dataset.bodyZone;
+  if (selectedBodyView) {
+    selectedBodyView.textContent = laterality
+      ? `${viewLabel} · lado ${laterality} del paciente`
+      : `${viewLabel} · región central`;
+  }
+  const label = `${area.dataset.bodyZone} (${area.dataset.bodyView === 'frontal' ? 'vista frontal' : 'vista trasera'})`;
+  if (diagnosticZoneInput) diagnosticZoneInput.value = label;
+  if (diagnosticSelectedZone) diagnosticSelectedZone.textContent = label;
+  try {
+    sessionStorage.setItem(selectedBodyZoneStorageKey, JSON.stringify({
+      zone: area.dataset.bodyZone,
+      view: area.dataset.bodyView,
+      label,
+    }));
+  } catch {
+    // The selected area is still passed directly to the diagnosis form when storage is unavailable.
+  }
+  if (clearBodyZone) clearBodyZone.hidden = false;
+};
+
+const clearSelectedBodyZone = () => {
+  selectedBodyArea = null;
+  bodyZoneAreas.forEach((area) => area.setAttribute('aria-pressed', 'false'));
+  if (selectedBodyZone) selectedBodyZone.textContent = 'Selecciona una región en el mapa';
+  if (selectedBodyView) selectedBodyView.textContent = 'La vista y el lado del paciente aparecerán aquí';
+  if (diagnosticZoneInput) diagnosticZoneInput.value = '';
+  if (diagnosticSelectedZone) diagnosticSelectedZone.textContent = 'No seleccionaste una parte del cuerpo. Vuelve al inicio para elegir una zona.';
+  try {
+    sessionStorage.removeItem(selectedBodyZoneStorageKey);
+  } catch {
+    // Clearing the current selection does not depend on session storage.
+  }
+  if (clearBodyZone) clearBodyZone.hidden = true;
+};
+
+bodyZoneAreas.forEach((area) => {
+  area.addEventListener('click', () => selectBodyZone(area));
+  area.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      area.click();
+    }
+  });
+});
+bodyMapViewButtons.forEach((button) => {
+  button.addEventListener('click', () => setBodyView(button.dataset.bodyView));
+});
+clearBodyZone?.addEventListener('click', clearSelectedBodyZone);
+try {
+  const savedBodyZone = JSON.parse(sessionStorage.getItem(selectedBodyZoneStorageKey) || 'null');
+  if (savedBodyZone && typeof savedBodyZone.zone === 'string' && typeof savedBodyZone.view === 'string') {
+    const savedArea = Array.from(bodyZoneAreas).find((area) => (
+      area.dataset.bodyZone === savedBodyZone.zone && area.dataset.bodyView === savedBodyZone.view
+    ));
+    if (savedArea) {
+      setBodyView(savedBodyZone.view);
+      selectBodyZone(savedArea);
+    }
+  }
+} catch {
+  // Storage may be disabled; selecting a zone still works for the current page.
+}
+setBodyView(currentBodyView);
 
 const checkSessionStatus = async () => {
   const statusUrl = document.body.dataset.sessionStatusUrl;
@@ -862,6 +968,268 @@ document.getElementById('clearFavorites')?.addEventListener('click', () => {
 updateFavoriteButtons();
 renderFavorites();
 
+const remindersView = document.getElementById('recordatoriosView');
+if (remindersView) {
+  const remindersEndpoint = '/principal/api/notificaciones/recordatorios/';
+  const reminderForm = document.getElementById('reminderForm');
+  const reminderList = document.getElementById('reminderList');
+  const reminderEmpty = document.getElementById('reminderEmpty');
+  const reminderFeedback = document.getElementById('reminderFeedback');
+  const reminderFormError = document.getElementById('reminderFormError');
+  const reminderFormTitle = document.getElementById('reminderFormTitle');
+  const reminderCancelEdit = document.getElementById('reminderCancelEdit');
+  const reminderTimezone = document.getElementById('reminderTimezone');
+  const reminderPreferenceNotice = document.getElementById('reminderPreferenceNotice');
+  const reminderHour = document.getElementById('reminderHour');
+  let patientReminders = [];
+  let editingReminderId = null;
+  const weekdayNames = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+  const reminderRequest = async (url, options = {}) => {
+    const headers = {
+      'X-CSRFToken': getCookie('csrftoken')
+        || document.querySelector('meta[name="csrf-token"]')?.content
+        || '',
+      ...options.headers,
+    };
+    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+    const response = await fetch(url, { ...options, headers });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || `No se pudo completar la solicitud (HTTP ${response.status}).`);
+    }
+    return data;
+  };
+
+  const setReminderFeedback = (message, isError = false) => {
+    reminderFeedback.textContent = message;
+    reminderFeedback.classList.toggle('is-error', isError);
+  };
+
+  const setReminderFormError = (message) => {
+    reminderFormError.textContent = message;
+    reminderFormError.hidden = !message;
+    reminderFormError.setAttribute('aria-live', message ? 'assertive' : 'off');
+  };
+
+  const selectedWeekdays = () => Array.from(
+    reminderForm.querySelectorAll('input[name="dias_semana"]:checked'),
+  ).map((input) => Number(input.value));
+
+  const validateReminder = (hora, activo, reminderId = null) => {
+    if (!activo) return '';
+    const otherActiveReminders = patientReminders.filter(
+      (reminder) => reminder.activo && reminder.id !== reminderId,
+    );
+    if (otherActiveReminders.some((reminder) => reminder.hora === hora)) {
+      return 'Ya existe un recordatorio activo para esa hora.';
+    }
+    if (otherActiveReminders.length >= 3) {
+      return 'El paciente ya tiene tres recordatorios activos.';
+    }
+    return '';
+  };
+
+  const renderReminders = () => {
+    reminderList.replaceChildren();
+    reminderEmpty.hidden = patientReminders.length > 0;
+
+    patientReminders.forEach((reminder) => {
+      const item = document.createElement('li');
+      item.className = 'reminder-item';
+
+      const details = document.createElement('div');
+      details.className = 'reminder-details';
+      const time = document.createElement('strong');
+      time.className = 'reminder-time';
+      time.textContent = reminder.hora;
+      const days = document.createElement('p');
+      days.textContent = reminder.dias_semana
+        .map((day) => weekdayNames[day])
+        .filter(Boolean)
+        .join(', ');
+      details.append(time, days);
+
+      const switchLabel = document.createElement('label');
+      switchLabel.className = 'reminder-switch';
+      const activeSwitch = document.createElement('input');
+      activeSwitch.type = 'checkbox';
+      activeSwitch.checked = reminder.activo;
+      activeSwitch.setAttribute('role', 'switch');
+      activeSwitch.setAttribute(
+        'aria-label',
+        `${reminder.activo ? 'Desactivar' : 'Activar'} recordatorio de las ${reminder.hora}`,
+      );
+      const switchTrack = document.createElement('span');
+      switchTrack.className = 'reminder-switch-track';
+      const switchState = document.createElement('span');
+      switchState.textContent = reminder.activo ? 'Activo' : 'Inactivo';
+      switchLabel.append(activeSwitch, switchTrack, switchState);
+
+      const actions = document.createElement('div');
+      actions.className = 'reminder-actions';
+      const editButton = document.createElement('button');
+      editButton.type = 'button';
+      editButton.className = 'reminder-action-button';
+      editButton.textContent = 'Editar';
+      editButton.setAttribute('aria-label', `Editar recordatorio de las ${reminder.hora}`);
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'reminder-action-button is-delete';
+      deleteButton.textContent = 'Eliminar';
+      deleteButton.setAttribute('aria-label', `Eliminar recordatorio de las ${reminder.hora}`);
+      actions.append(editButton, deleteButton);
+      item.append(details, switchLabel, actions);
+      reminderList.append(item);
+
+      activeSwitch.addEventListener('change', async () => {
+        const nextState = activeSwitch.checked;
+        const validationError = validateReminder(reminder.hora, nextState, reminder.id);
+        if (validationError) {
+          activeSwitch.checked = reminder.activo;
+          showAlert('No se pudo activar el recordatorio', validationError);
+          return;
+        }
+        activeSwitch.disabled = true;
+        try {
+          await reminderRequest(`${remindersEndpoint}${reminder.id}/activo/`, {
+            method: 'PATCH',
+            body: JSON.stringify({ activo: nextState }),
+          });
+          if (await loadPatientReminders()) {
+            setReminderFeedback('Se actualizó el estado del recordatorio.');
+          }
+        } catch (error) {
+          activeSwitch.checked = reminder.activo;
+          showAlert(
+            'No se pudo cambiar el estado',
+            error instanceof Error ? error.message : String(error),
+          );
+        } finally {
+          activeSwitch.disabled = false;
+        }
+      });
+
+      editButton.addEventListener('click', () => {
+        editingReminderId = reminder.id;
+        reminderHour.value = reminder.hora;
+        reminderForm.querySelectorAll('input[name="dias_semana"]').forEach((input) => {
+          input.checked = reminder.dias_semana.includes(Number(input.value));
+        });
+        reminderFormTitle.textContent = 'Editar recordatorio';
+        reminderCancelEdit.hidden = false;
+        setReminderFormError('');
+        setReminderFeedback('');
+        reminderHour.focus();
+      });
+
+      deleteButton.addEventListener('click', () => {
+        showConfirm(
+          'Eliminar recordatorio',
+          `¿Quieres eliminar el recordatorio de las ${reminder.hora}?`,
+          async () => {
+            deleteButton.disabled = true;
+            try {
+              await reminderRequest(`${remindersEndpoint}${reminder.id}/`, { method: 'DELETE' });
+              if (editingReminderId === reminder.id) resetReminderForm();
+              if (await loadPatientReminders()) {
+                setReminderFeedback('Se eliminó el recordatorio.');
+              }
+            } catch (error) {
+              deleteButton.disabled = false;
+              showAlert(
+                'No se pudo eliminar el recordatorio',
+                error instanceof Error ? error.message : String(error),
+              );
+            }
+          },
+        );
+      });
+    });
+  };
+
+  const loadPatientReminders = async () => {
+    remindersView.setAttribute('aria-busy', 'true');
+    try {
+      const data = await reminderRequest(remindersEndpoint);
+      patientReminders = data.recordatorios;
+      reminderTimezone.textContent = data.zona_horaria;
+      reminderPreferenceNotice.hidden = data.recordatorios_activos;
+      renderReminders();
+      return true;
+    } catch (error) {
+      setReminderFeedback(error instanceof Error ? error.message : String(error), true);
+      return false;
+    } finally {
+      remindersView.removeAttribute('aria-busy');
+    }
+  };
+
+  const resetReminderForm = () => {
+    reminderForm.reset();
+    editingReminderId = null;
+    reminderFormTitle.textContent = 'Nuevo recordatorio';
+    reminderCancelEdit.hidden = true;
+    setReminderFormError('');
+  };
+
+  reminderForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setReminderFormError('');
+    setReminderFeedback('');
+    if (!reminderForm.reportValidity()) return;
+
+    const days = selectedWeekdays();
+    if (days.length === 0) {
+      setReminderFormError('Selecciona al menos un día.');
+      reminderForm.querySelector('input[name="dias_semana"]')?.focus();
+      return;
+    }
+
+    const currentReminder = patientReminders.find(
+      (reminder) => reminder.id === editingReminderId,
+    );
+    const willBeActive = currentReminder?.activo ?? true;
+    const validationError = validateReminder(
+      reminderHour.value,
+      willBeActive,
+      editingReminderId,
+    );
+    if (validationError) {
+      setReminderFormError(validationError);
+      reminderHour.focus();
+      return;
+    }
+
+    const submitButton = reminderForm.querySelector('[type="submit"]');
+    submitButton.disabled = true;
+    const wasEditing = editingReminderId !== null;
+    const payload = { hora: reminderHour.value, dias_semana: days };
+    const url = wasEditing
+      ? `${remindersEndpoint}${editingReminderId}/`
+      : remindersEndpoint;
+    try {
+      await reminderRequest(url, {
+        method: wasEditing ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload),
+      });
+      resetReminderForm();
+      if (await loadPatientReminders()) {
+        setReminderFeedback(
+          wasEditing ? 'Se guardaron los cambios.' : 'Se creó el recordatorio.',
+        );
+      }
+    } catch (error) {
+      setReminderFormError(error instanceof Error ? error.message : String(error));
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+
+  reminderCancelEdit.addEventListener('click', resetReminderForm);
+  loadPatientReminders();
+}
+
 const progressStorageKey = 'nexorev_completed_routines';
 const getCompletedRoutines = () => {
   try {
@@ -1034,8 +1402,8 @@ if (document.getElementById('historyList')) {
 
 const videoSearch = document.getElementById('videoSearch');
 const videoDifficulty = document.getElementById('videoDifficulty');
+const videoBodyZoneFilter = document.getElementById('videoBodyZoneFilter');
 const videosEmpty = document.getElementById('videosEmpty');
-let selectedCategory = 'todas';
 
 const updateVideoCount = () => {
   const visible = document.querySelectorAll('#videoResults .video-card:not([hidden])').length;
@@ -1047,30 +1415,23 @@ const updateVideoCount = () => {
 const filterVideos = () => {
   const query = videoSearch?.value.trim().toLowerCase() || '';
   const difficulty = videoDifficulty?.value || 'Todas';
+  const selectedBodyZone = videoBodyZoneFilter?.value || 'todas';
   document.querySelectorAll('#videoResults .video-card').forEach((card) => {
-    const matchesCategory = selectedCategory === 'todas' || card.dataset.category === selectedCategory;
+    const matchesBodyZone = selectedBodyZone === 'todas'
+      || (card.dataset.zoneKeys || '').split(' ').includes(selectedBodyZone);
     const matchesDifficulty = difficulty === 'Todas' || card.dataset.difficulty === difficulty;
     const matchesSearch = !query || card.dataset.title.includes(query);
-    card.hidden = !(matchesCategory && matchesDifficulty && matchesSearch);
+    card.hidden = !(matchesBodyZone && matchesDifficulty && matchesSearch);
   });
   updateVideoCount();
 };
 
-document.querySelectorAll('.filter-chip').forEach((chip) => {
-  chip.addEventListener('click', () => {
-    selectedCategory = chip.dataset.category.toLowerCase();
-    document.querySelectorAll('.filter-chip').forEach((item) => {
-      const isSelected = item === chip;
-      item.classList.toggle('active', isSelected);
-      item.setAttribute('aria-pressed', String(isSelected));
-    });
-    filterVideos();
-  });
-});
-
 if (videoDifficulty) {
   videoDifficulty.addEventListener('change', filterVideos);
 };
+if (videoBodyZoneFilter) {
+  videoBodyZoneFilter.addEventListener('change', filterVideos);
+}
 if (videoSearch) {
   videoSearch.addEventListener('input', filterVideos);
 }
@@ -1308,7 +1669,7 @@ const tutorialSteps = [
         "Los accesos rápidos llevan a Videos y al Historial.",
       ]
       : [
-        "Elige la zona afectada cuando el selector corporal esté habilitado; por ahora aparece como “Próximamente”.",
+        "Elige una zona en la vista frontal o posterior; puedes seleccionar un solo lado del cuerpo a la vez.",
         "Consulta tu progreso, la gráfica de avance y las rutinas completadas hoy.",
         "Los accesos rápidos llevan a Videos y al Historial.",
       ],
@@ -1411,6 +1772,19 @@ const tutorialSteps = [
       "En Seguridad puedes configurar biometría y cambiar tu contraseña.",
     ],
   },
+  ...(document.body.dataset.currentUserRole === "paciente" ? [{
+    view: "recordatorios",
+    icon: "history",
+    title: "Recordatorios - Avisos de rutinas",
+    subtitle: "Programa avisos locales para tus ejercicios pendientes.",
+    boxTitle: "Cómo funciona:",
+    items: [
+      "Elige la hora y uno o más días de la semana para cada recordatorio.",
+      "Puedes editarlo, eliminarlo o desactivarlo desde la lista.",
+      "La zona horaria se toma de Perfil y el envío requiere que los avisos estén activos.",
+      "Los recordatorios solo se envían si tienes una rutina pendiente ese día.",
+    ],
+  }] : []),
   ...(document.body.dataset.currentUserRole === "paciente" ? [{
     view: "calendario",
     icon: "history",
@@ -1583,13 +1957,13 @@ const proTourSteps = [
     view: "inicio",
     selector: ".body-panel",
     title: "Selecciona la zona afectada",
-    description: "Aquí aparecerá el selector de las partes del cuerpo. Actualmente muestra “Próximamente”, así que todavía no permite elegir una zona ni abre un formulario asociado.",
+    description: "Haz clic en una zona de la vista frontal o posterior. Puedes elegir una sola zona a la vez y se distingue el lado izquierdo o derecho de la persona.",
     },
     {
     view: "inicio",
     selector: ".selected-panel",
     title: "Zona seleccionada",
-    description: "Este panel está pensado para mostrar la zona elegida. Como el selector corporal aún no está habilitado, por ahora indica que no hay una zona seleccionada.",
+    description: "Aquí se muestra la zona que elegiste en el mapa corporal.",
     },
   ]),
   {
@@ -1750,9 +2124,9 @@ const proTourSteps = [
   },
   {
     view: "videos",
-    selector: "#videosView .filter-chip",
+    selector: "#videoBodyZoneFilter",
     title: "Filtra por zona del cuerpo",
-    description: "Elige una categoría para ver ejercicios de esa zona. Selecciona “Todas” para mostrar de nuevo todas las zonas.",
+    description: "Elige una región corporal para filtrar los ejercicios relacionados. Selecciona “Todas las zonas” para mostrar de nuevo toda la biblioteca.",
   },
   {
     view: "videos",
@@ -2528,6 +2902,9 @@ if (resetAvatarButton) {
 const darkModeSwitch = document.querySelector(".preference-row:first-of-type .mini-switch input");
 const fontSizeSelect = document.querySelector(".font-size-select");
 const motionPreferenceToggle = document.getElementById('motionPreferenceToggle');
+const remindersPreferenceToggle = document.getElementById('recordatoriosActivosToggle');
+const weeklySummaryPreferenceToggle = document.getElementById('resumenSemanalActivoToggle');
+const timezonePreferenceSelect = document.getElementById('zonaHorariaPreference');
 const allowedFontSizes = ['normal', 'large', 'xlarge'];
 const currentUser = document.body.dataset.currentUser?.toLowerCase() || '';
 
@@ -2638,6 +3015,53 @@ if (motionPreferenceToggle) {
       showAlert('Error al guardar preferencia', error.message);
     } finally {
       motionPreferenceToggle.disabled = false;
+    }
+  });
+}
+
+if (remindersPreferenceToggle) {
+  remindersPreferenceToggle.addEventListener('change', async () => {
+    const enabled = remindersPreferenceToggle.checked;
+    remindersPreferenceToggle.disabled = true;
+    try {
+      await saveAppearancePreference('recordatorios_activos', enabled);
+    } catch (error) {
+      remindersPreferenceToggle.checked = !enabled;
+      showAlert('Error al guardar preferencia', error.message);
+    } finally {
+      remindersPreferenceToggle.disabled = false;
+    }
+  });
+}
+
+if (weeklySummaryPreferenceToggle) {
+  weeklySummaryPreferenceToggle.addEventListener('change', async () => {
+    const enabled = weeklySummaryPreferenceToggle.checked;
+    weeklySummaryPreferenceToggle.disabled = true;
+    try {
+      await saveAppearancePreference('resumen_semanal_activo', enabled);
+    } catch (error) {
+      weeklySummaryPreferenceToggle.checked = !enabled;
+      showAlert('Error al guardar preferencia', error.message);
+    } finally {
+      weeklySummaryPreferenceToggle.disabled = false;
+    }
+  });
+}
+
+if (timezonePreferenceSelect) {
+  let savedTimezone = timezonePreferenceSelect.value;
+  timezonePreferenceSelect.addEventListener('change', async () => {
+    const selectedTimezone = timezonePreferenceSelect.value;
+    timezonePreferenceSelect.disabled = true;
+    try {
+      await saveAppearancePreference('zona_horaria', selectedTimezone);
+      savedTimezone = selectedTimezone;
+    } catch (error) {
+      timezonePreferenceSelect.value = savedTimezone;
+      showAlert('Error al guardar preferencia', error.message);
+    } finally {
+      timezonePreferenceSelect.disabled = false;
     }
   });
 }

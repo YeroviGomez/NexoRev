@@ -105,7 +105,7 @@
           <p>Recibe recordatorios de ejercicios y actualizaciones</p>
         </div>
         <label class="mini-switch" aria-label="Notificaciones">
-          <input type="checkbox" checked>
+          <input id="recordatoriosActivosToggle" type="checkbox" {% if usuario.recordatorios_activos %}checked{% endif %}>
           <span></span>
         </label>
       </div>
@@ -115,9 +115,33 @@
           <p>Recibe un resumen de tu progreso cada semana</p>
         </div>
         <label class="mini-switch" aria-label="Reportes semanales">
-          <input type="checkbox" checked>
+          <input id="resumenSemanalActivoToggle" type="checkbox" {% if usuario.resumen_semanal_activo %}checked{% endif %}>
           <span></span>
         </label>
+      </div>
+      <div class="preference-row">
+        <div>
+          <h3 id="timezonePreferenceLabel">Zona horaria</h3>
+          <p>Se usa para programar tus recordatorios y reportes.</p>
+        </div>
+        <select id="zonaHorariaPreference" class="profile-timezone-select" aria-labelledby="timezonePreferenceLabel">
+          {% if usuario.zona_horaria != 'America/El_Salvador' and usuario.zona_horaria != 'America/Guatemala' and usuario.zona_horaria != 'America/Costa_Rica' and usuario.zona_horaria != 'America/Mexico_City' and usuario.zona_horaria != 'America/Bogota' and usuario.zona_horaria != 'America/Lima' and usuario.zona_horaria != 'America/Quito' and usuario.zona_horaria != 'America/Santiago' and usuario.zona_horaria != 'America/Argentina/Buenos_Aires' and usuario.zona_horaria != 'America/Sao_Paulo' and usuario.zona_horaria != 'America/Santo_Domingo' and usuario.zona_horaria != 'America/Panama' and usuario.zona_horaria != 'Europe/Madrid' %}
+            <option value="{{ usuario.zona_horaria }}" selected>{{ usuario.zona_horaria }}</option>
+          {% endif %}
+          <option value="America/El_Salvador" {% if usuario.zona_horaria == 'America/El_Salvador' %}selected{% endif %}>El Salvador</option>
+          <option value="America/Guatemala" {% if usuario.zona_horaria == 'America/Guatemala' %}selected{% endif %}>Guatemala</option>
+          <option value="America/Costa_Rica" {% if usuario.zona_horaria == 'America/Costa_Rica' %}selected{% endif %}>Costa Rica</option>
+          <option value="America/Mexico_City" {% if usuario.zona_horaria == 'America/Mexico_City' %}selected{% endif %}>México (Ciudad de México)</option>
+          <option value="America/Bogota" {% if usuario.zona_horaria == 'America/Bogota' %}selected{% endif %}>Colombia</option>
+          <option value="America/Lima" {% if usuario.zona_horaria == 'America/Lima' %}selected{% endif %}>Perú</option>
+          <option value="America/Quito" {% if usuario.zona_horaria == 'America/Quito' %}selected{% endif %}>Ecuador</option>
+          <option value="America/Santiago" {% if usuario.zona_horaria == 'America/Santiago' %}selected{% endif %}>Chile</option>
+          <option value="America/Argentina/Buenos_Aires" {% if usuario.zona_horaria == 'America/Argentina/Buenos_Aires' %}selected{% endif %}>Argentina</option>
+          <option value="America/Sao_Paulo" {% if usuario.zona_horaria == 'America/Sao_Paulo' %}selected{% endif %}>Brasil (São Paulo)</option>
+          <option value="America/Santo_Domingo" {% if usuario.zona_horaria == 'America/Santo_Domingo' %}selected{% endif %}>República Dominicana</option>
+          <option value="America/Panama" {% if usuario.zona_horaria == 'America/Panama' %}selected{% endif %}>Panamá</option>
+          <option value="Europe/Madrid" {% if usuario.zona_horaria == 'Europe/Madrid' %}selected{% endif %}>España (Madrid)</option>
+        </select>
       </div>
     </section>
 

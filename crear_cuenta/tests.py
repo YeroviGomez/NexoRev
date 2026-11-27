@@ -6,6 +6,18 @@ from django.urls import reverse
 from .models import SecurityQuestion, Usuario
 
 
+class UsuarioNotificationPreferenceDefaultsTests(TestCase):
+    def test_notification_preferences_use_their_default_values(self):
+        usuario = Usuario.objects.create(
+            email='notification-preferences@example.com',
+            nombre='Usuario de prueba',
+        )
+
+        self.assertEqual(usuario.zona_horaria, 'America/El_Salvador')
+        self.assertTrue(usuario.recordatorios_activos)
+        self.assertTrue(usuario.resumen_semanal_activo)
+
+
 class SecurityQuestionSettingsTests(TestCase):
     def setUp(self):
         self.user = Usuario.objects.create(

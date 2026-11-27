@@ -1,0 +1,19 @@
+{% extends "notificaciones/email/base.html" %}
+{% block titulo %}Recordatorio de ejercicios | Nexo ReV{% endblock %}
+{% block contenido %}
+<p style="margin:0 0 16px;">Hola {{ paciente_nombre }},</p>
+<p style="margin:0 0 16px;">Estas son las rutinas y ejercicios pendientes para el {{ fecha_recordatorio }}:</p>
+{% for rutina in rutinas_pendientes %}
+  <p style="margin:0 0 8px;"><strong>{{ rutina.nombre }}</strong></p>
+  <ul style="margin:0 0 16px; padding-left:24px;">
+    {% for ejercicio in rutina.ejercicios %}
+      <li style="margin:0 0 6px;">{{ ejercicio }}</li>
+    {% endfor %}
+  </ul>
+{% endfor %}
+<p style="margin:20px 0 0;">
+  <a href="{{ enlace_principal }}" style="display:inline-block; padding:12px 18px; border-radius:6px; background-color:#0f766e; color:#ffffff; font-weight:bold; text-decoration:none;">
+    Abrir Nexo ReV
+  </a>
+</p>
+{% endblock %}

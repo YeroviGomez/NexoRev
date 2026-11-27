@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Nexo ReV{% endblock %}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f1f5f9; color:#1f2937; font-family:Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse; background-color:#f1f5f9;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:600px; border-collapse:collapse; background-color:#ffffff;">
+          <tr>
+            <td style="padding:22px 28px; background-color:#0f766e; color:#ffffff; font-size:22px; font-weight:bold;">
+              Nexo ReV
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px; color:#1f2937; font-size:16px; line-height:1.6;">
+              {% block contenido %}{% endblock %}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px; background-color:#f8fafc; color:#64748b; font-size:12px; line-height:1.5;">
+              Este mensaje fue enviado por Nexo ReV. Si no esperabas este correo, puedes ignorarlo.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

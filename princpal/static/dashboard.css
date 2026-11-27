@@ -234,9 +234,31 @@ body.dark-mode .reschedule-requests-table .request-patient-name { color: #e2eeeb
 body.dark-mode .reschedule-review-actions label { color: #c1d0d4; }
 body.dark-mode .reschedule-review-actions input { border-color: #46515d; color: #e2eeeb; background: #202833; }
 
+.weekly-report-view { max-width: 1440px; }
+.weekly-report-filters { align-items: flex-end; }
+.weekly-report-filters > label { min-width: 12rem; }
+.weekly-report-filters .weekly-report-patient-filter { min-width: min(100%, 19rem); }
+.weekly-report-patient-filter select { min-height: 7rem; }
+.weekly-report-week-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.weekly-report-filter-help { flex-basis: 100%; margin: -0.35rem 0 0; color: var(--dashboard-muted); font-size: 0.78rem; }
+.weekly-report-downloads { display: flex; flex-wrap: wrap; gap: 0.65rem; margin: 0 0 1rem; }
+.weekly-report-downloads button[disabled] { cursor: wait; opacity: 0.65; }
+.weekly-report-state { margin: 0 0 1rem; padding: 0.85rem 1rem; border: 1px solid #cbe9dc; border-radius: 0.7rem; color: #17614b; background: #effaf4; }
+.weekly-report-state.is-error { border-color: #edc1c1; color: #8d2929; background: #fff3f3; }
+.weekly-report-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.weekly-report-card { min-width: 0; }
+.weekly-report-table { min-width: 900px; }
+.weekly-report-table th, .weekly-report-table td { white-space: normal; vertical-align: top; }
+.weekly-report-table tbody td:nth-child(6) { min-width: 11rem; }
+.weekly-report-view :is(button, input, select, .dashboard-table-scroll):focus-visible { outline: 3px solid #16876b; outline-offset: 3px; }
+body.dark-mode .weekly-report-filter-help { color: #b3c0c8; }
+body.dark-mode .weekly-report-state { border-color: #2b5d4b; color: #a6e3c8; background: #18332b; }
+body.dark-mode .weekly-report-state.is-error { border-color: #75494b; color: #ffc2c2; background: #352327; }
+
 @media (max-width: 1120px) {
   .dashboard-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-workspace { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .weekly-report-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .routine-template-layout { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -250,9 +272,12 @@ body.dark-mode .reschedule-review-actions input { border-color: #46515d; color: 
 
 @media (max-width: 560px) {
   .dashboard-kpis { grid-template-columns: minmax(0, 1fr); gap: 0.65rem; }
+  .weekly-report-kpis { grid-template-columns: minmax(0, 1fr); }
   .dashboard-kpi { min-height: 125px; }
   .dashboard-filters { align-items: stretch; flex-direction: column; }
   .dashboard-filters label, .dashboard-filters select, .dashboard-filters input, .dashboard-reset { width: 100%; }
+  .weekly-report-week-actions { flex-direction: column; }
+  .weekly-report-downloads { flex-direction: column; }
   .dashboard-card { padding: 0.95rem 0.85rem; }
   .donut-layout { gap: 0.1rem; }
   .donut-legend { min-width: 7rem; }

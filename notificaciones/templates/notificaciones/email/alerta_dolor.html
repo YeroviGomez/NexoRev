@@ -1,0 +1,13 @@
+{% extends "notificaciones/email/base.html" %}
+{% block titulo %}Alerta de dolor | Nexo ReV{% endblock %}
+{% block contenido %}
+<p style="margin:0 0 16px;">Hola {{ doctor_nombre }},</p>
+<p style="margin:0 0 12px;">El paciente <strong>{{ paciente_nombre }}</strong> reportó un dolor EVA de <strong>{{ nivel_dolor }}/10</strong>.</p>
+<p style="margin:0 0 12px;">Regla disparada: <strong>{{ regla }}</strong>.</p>
+<p style="margin:0 0 20px;">Fecha y hora local del médico: {{ fecha_local }}</p>
+<p style="margin:0;">
+  <a href="{{ enlace_dashboard }}" style="display:inline-block; padding:12px 18px; border-radius:6px; background-color:#0f766e; color:#ffffff; font-weight:bold; text-decoration:none;">
+    Abrir el panel médico
+  </a>
+</p>
+{% endblock %}

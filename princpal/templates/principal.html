@@ -38,7 +38,7 @@
       }
     });
   </script>
-  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=46">
+  <link rel="stylesheet" href="{% static 'estilo.css' %}?v=57">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
@@ -47,7 +47,13 @@
 
   <main class="app-shell">
     {% include "principal/dashboard.html" %}
+    {% if usuario and usuario.role == 'doctor' %}
+      {% include "principal/reporte_semanal.html" %}
+    {% endif %}
     {% include "principal/mi_progreso.html" %}
+    {% if usuario and usuario.role == 'paciente' %}
+      {% include "principal/recordatorios.html" %}
+    {% endif %}
     {% include "principal/home.html" %}
     {% include "principal/diagnostico.html" %}
     {% include "principal/videos.html" %}
@@ -60,11 +66,29 @@
   {% include "principal/tutorial.html" %}
   {% include "principal/security_tips.html" %}
 
+  {% if show_diagnostic_saved %}
+    <dialog class="diagnostic-success-dialog" id="diagnosticSuccessDialog" aria-labelledby="diagnosticSuccessTitle" aria-describedby="diagnosticSuccessMessage">
+      <div class="diagnostic-success-card">
+        <span class="diagnostic-success-icon" aria-hidden="true">✓</span>
+        <h2 id="diagnosticSuccessTitle">Formulario guardado</h2>
+        <p id="diagnosticSuccessMessage">Tus respuestas se guardaron correctamente. Ya estás en el menú de inicio.</p>
+        <button class="diagnostic-success-action" id="closeDiagnosticSuccess" type="button">Continuar</button>
+      </div>
+    </dialog>
+    <script>
+      const diagnosticSuccessDialog = document.getElementById("diagnosticSuccessDialog");
+      diagnosticSuccessDialog?.showModal();
+      document.getElementById("closeDiagnosticSuccess")?.addEventListener("click", () => {
+        diagnosticSuccessDialog?.close();
+      });
+    </script>
+  {% endif %}
+
   {% include "principal/scroll_to_top.html" %}
 
-  <script src="{% static 'princpal/js/principal.js' %}?v=50" defer></script>
+  <script src="{% static 'princpal/js/principal.js' %}?v=59" defer></script>
   {% if usuario and usuario.role == 'doctor' %}
-    <script src="{% static 'princpal/js/dashboard.js' %}?v=6" defer></script>
+    <script src="{% static 'princpal/js/dashboard.js' %}?v=7" defer></script>
   {% endif %}
   {% if usuario and usuario.role == 'paciente' %}
     <script src="{% static 'princpal/js/mi-progreso.js' %}?v=3" defer></script>

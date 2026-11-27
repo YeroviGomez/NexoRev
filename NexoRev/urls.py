@@ -26,6 +26,7 @@ urlpatterns = [
     path('login/', include('login.urls')),
     path('', include('login.urls')),
     path('registro/', include('crear_cuenta.urls')),
+    path('principal/api/notificaciones/', include('notificaciones.urls')),
     path('principal/', include('princpal.urls')),
     path('ajustes/', include('ajustes.urls')),
 ]

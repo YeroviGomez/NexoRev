@@ -1,0 +1,6 @@
+{% extends "notificaciones/email/base.html" %}
+{% block titulo %}Prueba de correo | Nexo ReV{% endblock %}
+{% block contenido %}
+<p style="margin:0 0 16px;">Hola {{ nombre|default:"" }},</p>
+<p style="margin:0;">Este es un correo de prueba de Nexo ReV. La versión HTML se envió correctamente.</p>
+{% endblock %}

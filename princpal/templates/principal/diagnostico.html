@@ -26,59 +26,89 @@
   {% else %}
   <header class="page-head compact section-guide-head">
     <div>
-      <h1>Formulario de Diagnostico</h1>
-      <p>Completa tu evaluacion para registrar como va tu recuperacion.</p>
+      <h1>Formulario de diagnóstico</h1>
+      <p>Te guiaremos por cuatro etapas breves. Responde a tu ritmo: no hay respuestas correctas o incorrectas.</p>
     </div>
     <button class="section-guide-trigger" type="button" data-tutorial-view="diagnostico">Guía de uso</button>
   </header>
 
   <form class="diagnostic-form panel" id="diagnosticForm" method="post" novalidate>
     {% csrf_token %}
+    {{ form.zona_afectada }}
 
-    <p class="diagnostic-client-message" id="diagnosticClientMessage" role="alert" hidden>Por favor, complete todos los campos obligatorios.</p>
+    <p class="diagnostic-client-message" id="diagnosticClientMessage" role="alert" tabindex="-1" hidden>Responde todas las preguntas obligatorias antes de guardar.</p>
 
-    <div class="pain-scale{% if form.nivel_dolor.errors %} is-invalid{% endif %}" data-required-field>
-      <div class="pain-scale-head">
-        <label for="{{ form.nivel_dolor.id_for_label }}">Nivel de dolor</label>
-        <output id="nivelDolorValue" for="{{ form.nivel_dolor.id_for_label }}">{{ form.nivel_dolor.value|default_if_none:"0" }}</output>
+    <section class="diagnostic-body-region" aria-labelledby="diagnosticBodyRegionTitle">
+      <h2 id="diagnosticBodyRegionTitle">Parte del cuerpo seleccionada</h2>
+      <p id="diagnosticSelectedZone">
+        {% if form.zona_afectada.value %}{{ form.zona_afectada.value }}{% else %}No seleccionaste una parte del cuerpo. Vuelve al inicio para elegir una zona.{% endif %}
+      </p>
+      <button type="button" class="outline-button" data-nav="inicio">Volver a seleccionar</button>
+    </section>
+
+    <div class="diagnostic-stepper" aria-label="Progreso del diagnóstico">
+      <div class="diagnostic-stepper-heading" aria-live="polite">
+        <span class="diagnostic-step-count" id="diagnosticStepCount">Etapa 1 de {{ form.question_sections|length }}</span>
+        <h2 id="diagnosticStepTitle">Conozcamos tu dolor</h2>
       </div>
-      {{ form.nivel_dolor }}
-      <div class="pain-scale-labels" aria-hidden="true">
-        <span>Nivel 0 sin dolor</span>
-        <span>Nivel 10 muy alto</span>
+      <div
+        class="diagnostic-progress-track"
+        id="diagnosticProgress"
+        role="progressbar"
+        aria-label="Progreso del diagnóstico"
+        aria-valuemin="1"
+        aria-valuemax="{{ form.question_sections|length }}"
+        aria-valuenow="1"
+      >
+        <span id="diagnosticProgressFill"></span>
       </div>
-      {{ form.nivel_dolor.errors }}
+      <p>Al final podrás guardar tus respuestas.</p>
     </div>
 
-    <p class="field-row{% if form.pregunta1.errors %} is-invalid{% endif %}" data-required-field>
-      {{ form.pregunta1.label_tag }}
-      {{ form.pregunta1 }}
-      {{ form.pregunta1.errors }}
-    </p>
-
-    <p class="field-row{% if form.pregunta2.errors %} is-invalid{% endif %}" data-required-field>
-      {{ form.pregunta2.label_tag }}
-      {{ form.pregunta2 }}
-      {{ form.pregunta2.errors }}
-    </p>
-
-    <p class="field-row{% if form.pregunta3.errors %} is-invalid{% endif %}" data-required-field>
-      {{ form.pregunta3.label_tag }}
-      {{ form.pregunta3 }}
-      {{ form.pregunta3.errors }}
-    </p>
-
-    <p class="field-row{% if form.comentario.errors %} is-invalid{% endif %}">
-      {{ form.comentario.label_tag }}
-      {{ form.comentario }}
-      {{ form.comentario.errors }}
-    </p>
+    <div class="diagnostic-questions">
+      {% for section in form.question_sections %}
+        <section class="diagnostic-question-section" data-diagnostic-step data-step-tone="{{ section.tone }}" aria-labelledby="diagnosticStepHeading{{ forloop.counter }}">
+          <div class="diagnostic-block-heading">
+            <span class="diagnostic-block-number" aria-hidden="true">{{ forloop.counter }}</span>
+            <div class="diagnostic-block-copy">
+              <span class="diagnostic-block-kicker">Bloque {{ forloop.counter }} de {{ form.question_sections|length }}</span>
+              <h2 id="diagnosticStepHeading{{ forloop.counter }}" tabindex="-1">{{ section.title }}</h2>
+            </div>
+          </div>
+          <p class="diagnostic-step-hint">{{ section.hint }}</p>
+          {% for field in section.fields %}
+            <div class="diagnostic-question{% if field.errors %} is-invalid{% endif %}" data-required-field>
+              {{ field.label_tag }}
+              {{ field }}
+              {{ field.errors }}
+            </div>
+          {% endfor %}
+          {% if forloop.last %}
+            <div class="diagnostic-question diagnostic-comment{% if form.comentario.errors %} is-invalid{% endif %}">
+              {{ form.comentario.label_tag }}
+              {{ form.comentario }}
+              {{ form.comentario.errors }}
+            </div>
+          {% endif %}
+        </section>
+      {% endfor %}
+    </div>
 
     <div class="diagnostic-actions">
-      <button class="save-button diagnostic-submit" type="submit">{% if is_diagnostic_update %}Actualizar{% else %}Guardar{% endif %}</button>
-      <button class="outline-button" type="reset" onclick="return confirm('¿Está seguro de que desea salir? Perderá los datos no guardados')">Cancelar</button>
+      <button class="outline-button diagnostic-previous" type="button" id="diagnosticPrevious" hidden>Anterior</button>
+      <button class="outline-button diagnostic-cancel" type="button" data-nav="inicio">Cancelar</button>
+      <button class="save-button diagnostic-next" type="button" id="diagnosticNext" hidden>Continuar</button>
+      <button class="save-button diagnostic-submit" type="submit">{% if is_diagnostic_update %}Actualizar{% else %}Guardar diagnóstico{% endif %}</button>
     </div>
   </form>
+
+  {% if is_diagnostic_update %}
+    <form class="diagnostic-delete-form" method="post" action="{% url 'principal' %}" onsubmit="return confirm('¿Eliminar permanentemente todas las respuestas de este diagnóstico? Esta acción no se puede deshacer.');">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="delete_diagnostico">
+      <button class="diagnostic-delete-button" type="submit">Eliminar respuestas guardadas</button>
+    </form>
+  {% endif %}
 
   {% if messages %}
     <ul class="form-alerts">
@@ -92,58 +122,119 @@
   <script>
     const diagnosticForm = document.getElementById("diagnosticForm");
     const diagnosticClientMessage = document.getElementById("diagnosticClientMessage");
-    const nivelDolor = document.getElementById("{{ form.nivel_dolor.id_for_label }}");
-    const nivelDolorValue = document.getElementById("nivelDolorValue");
-
-    if (nivelDolor && nivelDolorValue) {
-      const updatePainValue = () => {
-        nivelDolorValue.textContent = nivelDolor.value;
-        nivelDolor.setCustomValidity("");
-      };
-
-      nivelDolor.addEventListener("input", updatePainValue);
-      updatePainValue();
-    }
-
     if (diagnosticForm && diagnosticClientMessage) {
       const requiredGroups = Array.from(diagnosticForm.querySelectorAll("[data-required-field]"));
+      const diagnosticSteps = Array.from(diagnosticForm.querySelectorAll("[data-diagnostic-step]"));
+      const previousButton = document.getElementById("diagnosticPrevious");
+      const nextButton = document.getElementById("diagnosticNext");
+      const submitButton = diagnosticForm.querySelector(".diagnostic-submit");
+      const progress = document.getElementById("diagnosticProgress");
+      const progressFill = document.getElementById("diagnosticProgressFill");
+      const stepCount = document.getElementById("diagnosticStepCount");
+      const stepTitle = document.getElementById("diagnosticStepTitle");
+      let currentStepIndex = 0;
+      const fieldHasValue = (group) => Array.from(group.querySelectorAll('input[type="radio"]'))
+        .some((radio) => radio.checked);
 
-      const fieldHasValue = (group) => {
-        const radios = Array.from(group.querySelectorAll('input[type="radio"]'));
-        if (radios.length) {
-          return radios.some((radio) => radio.checked);
-        }
+      const showStep = () => {
+        const totalSteps = diagnosticSteps.length;
+        const currentStep = diagnosticSteps[currentStepIndex];
+        if (!currentStep || !previousButton || !nextButton || !submitButton || !progress || !progressFill || !stepCount || !stepTitle) return;
 
-        const field = group.querySelector("input, textarea, select");
-        return !field || String(field.value || "").trim() !== "";
+        diagnosticForm.classList.add("is-guided");
+        diagnosticSteps.forEach((step, index) => {
+          step.classList.toggle("is-current", index === currentStepIndex);
+        });
+
+        const isLastStep = currentStepIndex === totalSteps - 1;
+        previousButton.hidden = currentStepIndex === 0;
+        nextButton.hidden = isLastStep;
+        submitButton.hidden = !isLastStep;
+        stepCount.textContent = `Etapa ${currentStepIndex + 1} de ${totalSteps}`;
+        stepTitle.textContent = currentStep.querySelector("h2").textContent;
+        diagnosticForm.dataset.currentStepTone = currentStep.dataset.stepTone;
+        progress.setAttribute("aria-valuenow", String(currentStepIndex + 1));
+        progressFill.style.width = `${((currentStepIndex + 1) / totalSteps) * 100}%`;
       };
+
+      if (diagnosticSteps.length) {
+        const firstInvalidGroup = requiredGroups.find((group) => group.classList.contains("is-invalid"));
+        if (firstInvalidGroup) {
+          const invalidStepIndex = diagnosticSteps.findIndex((step) => step.contains(firstInvalidGroup));
+          if (invalidStepIndex >= 0) currentStepIndex = invalidStepIndex;
+        }
+        showStep();
+
+        previousButton.addEventListener("click", () => {
+          if (currentStepIndex > 0) {
+            currentStepIndex -= 1;
+            diagnosticClientMessage.hidden = true;
+            showStep();
+            diagnosticSteps[currentStepIndex].querySelector("h2").focus();
+          }
+        });
+
+        nextButton.addEventListener("click", () => {
+          const currentStep = diagnosticSteps[currentStepIndex];
+          const currentGroups = requiredGroups.filter((group) => currentStep.contains(group));
+          let firstInvalidGroup = null;
+          currentGroups.forEach((group) => {
+            const invalid = !fieldHasValue(group);
+            group.classList.toggle("is-invalid", invalid);
+            if (invalid && !firstInvalidGroup) firstInvalidGroup = group;
+          });
+
+          if (firstInvalidGroup) {
+            diagnosticClientMessage.hidden = false;
+            diagnosticClientMessage.textContent = "Responde las preguntas obligatorias de esta etapa para continuar.";
+            diagnosticClientMessage.focus();
+            return;
+          }
+
+          currentStepIndex += 1;
+          diagnosticClientMessage.hidden = true;
+          showStep();
+          diagnosticSteps[currentStepIndex].querySelector("h2").focus();
+        });
+      }
 
       diagnosticForm.addEventListener("submit", (event) => {
         let hasErrors = false;
-
+        let firstInvalidGroup = null;
         requiredGroups.forEach((group) => {
-          const painField = group.querySelector('#nivelDolor');
-          const painValue = Number(painField?.value);
-          const invalidPain = painField
-            && (!Number.isInteger(painValue) || painValue < 0 || painValue > 10);
-          const invalid = !fieldHasValue(group) || Boolean(invalidPain);
+          const invalid = !fieldHasValue(group);
           group.classList.toggle("is-invalid", invalid);
           hasErrors = hasErrors || invalid;
-          if (invalidPain) {
-            painField.setCustomValidity("El dolor debe estar entre 0 y 10.");
-            painField.reportValidity();
-          } else if (painField) {
-            painField.setCustomValidity("");
-          }
+          if (invalid && !firstInvalidGroup) firstInvalidGroup = group;
         });
 
         if (hasErrors) {
           event.preventDefault();
+          const invalidStepIndex = diagnosticSteps.findIndex((step) => step.contains(firstInvalidGroup));
+          if (invalidStepIndex >= 0) {
+            currentStepIndex = invalidStepIndex;
+            showStep();
+          }
           diagnosticClientMessage.hidden = false;
-          diagnosticClientMessage.textContent = "Verifica los campos obligatorios y que el dolor esté entre 0 y 10.";
+          diagnosticClientMessage.textContent = "Responde todas las preguntas obligatorias antes de guardar.";
+          diagnosticClientMessage.focus();
         } else {
           diagnosticClientMessage.hidden = true;
         }
+      });
+
+      requiredGroups.forEach((group) => {
+        group.addEventListener("change", () => {
+          if (fieldHasValue(group)) {
+            group.classList.remove("is-invalid");
+            const currentStep = diagnosticSteps[currentStepIndex];
+            const noCurrentStepErrors = currentStep
+              && requiredGroups
+                .filter((requiredGroup) => currentStep.contains(requiredGroup))
+                .every(fieldHasValue);
+            if (noCurrentStepErrors) diagnosticClientMessage.hidden = true;
+          }
+        });
       });
     }
   </script>

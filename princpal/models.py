@@ -446,9 +446,11 @@ class Diagnostico(models.Model):
         verbose_name='usuario',
     )
     nivel_dolor = models.IntegerField(default=1)
-    pregunta1 = models.CharField(max_length=255)
-    pregunta2 = models.TextField()
-    pregunta3 = models.CharField(max_length=255)
+    zona_afectada = models.CharField(max_length=150, blank=True)
+    respuestas = models.JSONField(default=dict, blank=True)
+    pregunta1 = models.CharField(max_length=255, blank=True, default='')
+    pregunta2 = models.TextField(blank=True, default='')
+    pregunta3 = models.CharField(max_length=255, blank=True, default='')
     comentario = models.TextField(blank=True, null=True)
     fecha = models.DateTimeField(auto_now_add=True)
 

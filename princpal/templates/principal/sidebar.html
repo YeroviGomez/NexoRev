@@ -25,6 +25,14 @@
         </svg>
         <span>Dashboard</span>
       </a>
+      <a class="sidebar-link" href="#reportes" data-nav="reportes">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 19V5m0 14h16" />
+          <path d="m7 15 3-4 3 2 5-7" />
+          <path d="M15 6h3v3" />
+        </svg>
+        <span>Reportes</span>
+      </a>
     {% elif usuario and usuario.role == 'paciente' %}
       <a class="sidebar-link" href="#progreso" data-nav="progreso">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -32,6 +40,13 @@
           <path d="M16 6h4v4" />
         </svg>
         <span>Mi Progreso</span>
+      </a>
+      <a class="sidebar-link" href="#recordatorios" data-nav="recordatorios">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="13" r="8" />
+          <path d="M12 9v4l3 2M9 2h6M12 2v3M19 6l1.5-1.5" />
+        </svg>
+        <span>Recordatorios</span>
       </a>
     {% endif %}
     <a class="sidebar-link active" href="#inicio" data-nav="inicio" aria-current="page">

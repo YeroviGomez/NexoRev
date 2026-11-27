@@ -1,0 +1,31 @@
+Hola {{ paciente_nombre }},
+
+Este es tu resumen de la semana del {{ semana_inicio }} al {{ semana_fin }}.
+
+Rutinas programadas: {{ resumen.rutinas.programadas }}
+Rutinas completadas: {{ resumen.rutinas.completadas }}
+Adherencia: {% if resumen.rutinas.adherencia_pct != None %}{{ resumen.rutinas.adherencia_pct|floatformat:"2u" }}%{% else %}sin rutinas programadas{% endif %}
+
+Promedio de dolor EVA: {% if resumen.eva.promedio != None %}{{ resumen.eva.promedio }}{% else %}sin registros{% endif %}
+Promedio EVA de la semana anterior: {% if resumen.eva.promedio_semana_anterior != None %}{{ resumen.eva.promedio_semana_anterior }}{% else %}sin registros{% endif %}
+Variación frente a la semana anterior: {% if resumen.eva.variacion != None %}{{ resumen.eva.variacion }}{% else %}sin datos para comparar{% endif %}
+
+Última evaluación clínica de la semana: {% if resumen.ultima_evaluacion %}{{ resumen.ultima_evaluacion.nivel_dolor }} ({{ resumen.ultima_evaluacion.fecha_local }}){% else %}sin evaluación registrada{% endif %}
+Días con actividad: {{ resumen.dias_con_actividad }}
+Alertas de dolor: {{ resumen.alertas_dolor.total }}
+{% if resumen.alertas_dolor.items %}Detalle de alertas:
+{% for alerta in resumen.alertas_dolor.items %}- {{ alerta.fecha_local }} — EVA {{ alerta.nivel_dolor }}, {{ alerta.regla }}, {{ alerta.estado }}
+{% endfor %}{% endif %}
+Objetivos cumplidos: {{ resumen.objetivos_cumplidos }} de {{ resumen.objetivos_total }}
+
+Sesiones por estado:
+{% for estado, cantidad in resumen.sesiones.por_estado.items %}- {{ estado }}: {{ cantidad }}
+{% endfor %}
+
+{% if resumen.objetivos_detalle %}Objetivos:
+{% for objetivo in resumen.objetivos_detalle %}- {{ objetivo.nombre }}: {% if objetivo.cumplido %}cumplido{% else %}pendiente{% endif %}
+{% endfor %}{% endif %}
+
+Cada avance cuenta. Sigue cuidándote a tu ritmo.
+
+Abrir Nexo ReV: {{ enlace_principal }}

@@ -13,6 +13,7 @@ from django.urls import reverse
 from functools import wraps
 from pathlib import Path
 from datetime import date, timedelta
+from zoneinfo import available_timezones
 import random
 import re
 import mimetypes
@@ -21,9 +22,11 @@ import os
 import json
 import shutil
 import subprocess
+import unicodedata
 from urllib.parse import parse_qs, urlparse
 from .forms import (
     AssignRoutineForm,
+    BODY_ZONE_FILTER_OPTIONS,
     DiagnosticoForm,
     EvaluacionClinicaForm,
     FotoPerfilForm,
@@ -51,6 +54,7 @@ from .models import (
 )
 
 from crear_cuenta.models import SECURITY_QUESTION_CHOICES, SecurityQuestion, Usuario
+from notificaciones.services import crear_alerta_dolor, enviar_correo_alerta
 
 VIDEO_PAGE_SIZE = 8
 
@@ -176,6 +180,126 @@ def load_videos():
     for index, video in enumerate(videos):
         video['catalog_index'] = index
     return videos
+
+
+def normalize_video_text(value):
+    normalized = unicodedata.normalize('NFKD', value or '')
+    return ''.join(character for character in normalized if not unicodedata.combining(character)).casefold()
+
+
+BODY_ZONE_VIDEO_TERMS = {
+    'cabeza': ('cabeza', 'cabezas', 'head'),
+    'cuello': ('cuello', 'cervical', 'neck'),
+    'espalda superior': ('espalda superior', 'dorsal', 'upper back'),
+    'espalda inferior': ('espalda inferior', 'lumbar', 'lower back'),
+    'pecho': ('pecho', 'pectoral', 'torax', 'chest'),
+    'abdomen y pelvis': ('abdomen', 'abdominal', 'pelvis', 'cadera', 'hip', 'core'),
+    'hombro': ('hombro', 'hombros', 'shoulder'),
+    'brazo': (
+        'brazo', 'brazos', 'biceps', 'triceps', 'arm', 'arms',
+        'codo', 'codos', 'elbow', 'antebrazo', 'antebrazos', 'forearm',
+    ),
+    'mano': ('mano', 'manos', 'muneca', 'munecas', 'dedo', 'dedos', 'wrist', 'hand'),
+    'muslo': ('muslo', 'muslos', 'cuadriceps', 'isquiotibiales', 'thigh'),
+    'rodilla': ('rodilla', 'rodillas', 'knee'),
+    'pierna inferior': (
+        'pierna', 'piernas', 'pantorrilla', 'pantorrillas', 'gemelo', 'gemelos',
+        'shin', 'calf', 'tobillo', 'tobillos', 'ankle',
+    ),
+    'pie': ('pie', 'pies', 'foot', 'feet'),
+}
+
+def recommended_videos_for_zone(videos, zone):
+    normalized_zone = normalize_video_text(zone)
+    if not normalized_zone:
+        return []
+
+    matching_regions = [
+        region for region in BODY_ZONE_VIDEO_TERMS
+        if region in normalized_zone
+    ]
+    if not matching_regions and any(
+        region in normalized_zone for region in ('codo', 'antebrazo')
+    ):
+        matching_regions.append('brazo')
+    if not matching_regions and 'cadera' in normalized_zone:
+        matching_regions.append('abdomen y pelvis')
+    if not matching_regions and 'tobillo' in normalized_zone:
+        matching_regions.append('pierna inferior')
+    if not matching_regions and 'espalda' in normalized_zone:
+        matching_regions.extend(('espalda superior', 'espalda inferior'))
+    region = max(matching_regions, key=len) if matching_regions else ''
+    if not region:
+        return []
+
+    selected_zone_keys = {region.replace(' ', '-')}
+    recommendations = []
+    seen_video_ids = set()
+    for video in videos:
+        if video['video_id'] in seen_video_ids:
+            continue
+        if selected_zone_keys.intersection(video_zone_filter_keys(video)):
+            recommendations.append(video)
+            seen_video_ids.add(video['video_id'])
+    return recommendations
+
+
+def video_zone_filter_keys(video):
+    searchable_text = normalize_video_text(' '.join((
+        video.get('category', ''),
+        video.get('title', ''),
+        video.get('description', ''),
+    )))
+    keys = []
+    for region, terms in BODY_ZONE_VIDEO_TERMS.items():
+        if any(
+            re.search(rf'(?<![a-z]){re.escape(term)}(?![a-z])', searchable_text)
+            for term in terms
+        ):
+            keys.append(region.replace(' ', '-'))
+    has_generic_back = any(
+        re.search(rf'(?<![a-z]){term}(?![a-z])', searchable_text)
+        for term in ('espalda', 'back')
+    )
+    has_specific_back = any(
+        re.search(rf'(?<![a-z]){term}(?![a-z])', searchable_text)
+        for term in (
+            'espalda superior', 'espalda inferior',
+            'dorsal', 'lumbar', 'upper back', 'lower back',
+        )
+    )
+    if has_generic_back and not has_specific_back:
+        keys.extend(('espalda-superior', 'espalda-inferior'))
+    return keys
+
+
+def add_video_zone_filter_keys(videos):
+    return [
+        {**video, 'body_zone_filter_keys': video_zone_filter_keys(video)}
+        for video in videos
+    ]
+
+
+def prioritize_recommended_videos(videos, zone):
+    recommendations = recommended_videos_for_zone(videos, zone)
+    recommended_ids = {video['video_id'] for video in recommendations}
+    ordered_videos = [
+        {**video, 'is_recommended': video['video_id'] in recommended_ids}
+        for video in videos
+    ]
+    ordered_videos.sort(key=lambda video: not video['is_recommended'])
+    return ordered_videos, recommendations
+
+
+def patient_recommendation_zone(email):
+    usuario = Usuario.objects.filter(email=email, is_active=True, role=Usuario.ROLE_PACIENTE).first()
+    if not usuario:
+        return ''
+    diagnostico = Diagnostico.objects.filter(usuario=usuario).first()
+    if diagnostico and diagnostico.zona_afectada:
+        return diagnostico.zona_afectada
+    paciente = Paciente.objects.filter(usuario=usuario).first()
+    return paciente.zona_afectada if paciente else ''
 
 
 def recent_video_history(videos, email, page_number=1):
@@ -853,12 +977,33 @@ def complete_routine_occurrence(request, ocurrencia_id):
     if difficulty not in dict(OcurrenciaRutina.DIFICULTAD_CHOICES):
         return JsonResponse({'success': False, 'error': 'Selecciona una dificultad válida.'}, status=400)
 
-    occurrence.nivel_dolor = int(pain_text)
-    occurrence.dificultad = difficulty
-    occurrence.comentario = comment
-    occurrence.completada_en = timezone.now()
-    occurrence.save(update_fields=['nivel_dolor', 'dificultad', 'comentario', 'completada_en'])
-    refresh_patient_progress(paciente)
+    with transaction.atomic():
+        occurrence = get_object_or_404(
+            OcurrenciaRutina.objects.select_for_update(of=('self',)).select_related('asignacion'),
+            pk=ocurrencia_id,
+            asignacion__paciente=paciente,
+        )
+        if occurrence.completada_en:
+            return JsonResponse(
+                {'success': False, 'error': 'Esta rutina ya está marcada como completada.'},
+                status=400,
+            )
+
+        occurrence.nivel_dolor = int(pain_text)
+        occurrence.dificultad = difficulty
+        occurrence.comentario = comment
+        occurrence.completada_en = timezone.now()
+        occurrence.save(update_fields=['nivel_dolor', 'dificultad', 'comentario', 'completada_en'])
+        refresh_patient_progress(paciente)
+        alerta = None
+        try:
+            with transaction.atomic():
+                alerta = crear_alerta_dolor(occurrence)
+        except Exception:
+            logger.exception('No se pudo crear alerta de dolor para la ocurrencia %s.', occurrence.pk)
+        if alerta:
+            transaction.on_commit(lambda: enviar_correo_alerta(alerta))
+
     return JsonResponse({
         'success': True,
         'message': 'Rutina marcada como completada.',
@@ -1005,6 +1150,7 @@ def generate_hls(video):
 def principal_view(request):
     show_security_tips = request.session.pop('show_security_tips', False)
     show_initial_guide = request.session.pop('show_initial_guide', False)
+    show_diagnostic_saved = request.session.pop('show_diagnostic_saved', False)
     current_user_email = request.session.get('current_user', '')
     usuario = Usuario.objects.filter(email=current_user_email, is_active=True).first()
     if not usuario:
@@ -1034,16 +1180,32 @@ def principal_view(request):
                 estado=Paciente.ESTADO_INICIAL,
             )
 
-    form = DiagnosticoForm(request.POST or None, instance=diagnostico)
+    diagnostic_initial = {
+        'zona_afectada': (
+            diagnostico.zona_afectada if diagnostico and diagnostico.zona_afectada
+            else paciente.zona_afectada if paciente else ''
+        ),
+    }
+    form = DiagnosticoForm(
+        request.POST or None,
+        instance=diagnostico,
+        initial=diagnostic_initial,
+    )
 
     if request.method == "POST":
         if not usuario.is_paciente:
             return HttpResponseForbidden('Solo los pacientes pueden enviar este formulario.')
 
+        if request.POST.get('action') == 'delete_diagnostico':
+            if diagnostico:
+                diagnostico.delete()
+                messages.success(request, 'Se eliminaron las respuestas del diagnóstico.')
+            else:
+                messages.info(request, 'No hay respuestas guardadas para eliminar.')
+            return redirect('/principal/#diagnostico')
+
         if form.is_valid():
-            diagnostico_guardado = form.save(commit=False)
-            diagnostico_guardado.usuario = usuario
-            diagnostico_guardado.save()
+            diagnostico_guardado = form.save(usuario=usuario)
             if paciente:
                 EvaluacionClinica.objects.create(
                     paciente=paciente,
@@ -1054,7 +1216,8 @@ def principal_view(request):
                 messages.success(request, "Formulario actualizado correctamente.")
             else:
                 messages.success(request, "Formulario enviado correctamente.")
-            return redirect("/principal/#diagnostico")
+            request.session['show_diagnostic_saved'] = True
+            return redirect(f"{reverse('principal')}#inicio")
         messages.error(request, "Por favor, complete todos los campos obligatorios.")
         active_view = 'diagnostico'
 
@@ -1124,11 +1287,16 @@ def principal_view(request):
         calendar_sessions.append(calendar_entry)
 
     videos = []
-    categories = ['Todas', 'Rodilla', 'Hombro', 'Espalda', 'Cuello', 'Tobillo', 'Cadera']
     videos.extend(load_videos())
-    categories = ['Todas'] + list(dict.fromkeys(video['category'] for video in videos))
+    videos = add_video_zone_filter_keys(videos)
+    recommendation_zone = (
+        diagnostico.zona_afectada if diagnostico and diagnostico.zona_afectada
+        else paciente.zona_afectada if paciente and usuario.is_paciente else ''
+    )
+    recommended_videos = recommended_videos_for_zone(videos, recommendation_zone)
+    videos_page_catalog, _ = prioritize_recommended_videos(videos, recommendation_zone)
     page_size = VIDEO_PAGE_SIZE
-    videos_page = videos[:page_size]
+    videos_page = videos_page_catalog[:page_size]
     videos_by_id = {video['video_id']: (index, video) for index, video in enumerate(videos)}
     recent_history = recent_video_history(
         videos,
@@ -1154,6 +1322,7 @@ def principal_view(request):
     return render(request, 'principal.html', {
         'show_security_tips': show_security_tips,
         'show_initial_guide': show_initial_guide,
+        'show_diagnostic_saved': show_diagnostic_saved,
         'usuario': usuario,
         'paciente': paciente,
         'doctor_patients': doctor_patients,
@@ -1178,7 +1347,12 @@ def principal_view(request):
         'videos_total': len(videos),
         'videos_has_next': len(videos) > page_size,
         'videos_next_page': 2,
-        'categories': categories,
+        'recommendation_zone': recommendation_zone,
+        'recommendations_available': bool(recommended_videos),
+        'recommendations_count': len(recommended_videos),
+        'featured_recommendation': recommended_videos[0] if recommended_videos else None,
+        'body_zone_filter_options': BODY_ZONE_FILTER_OPTIONS,
+        'video_upload_zone_options': VideoUploadForm.base_fields['category'].choices,
         'form': form,
         'is_diagnostic_update': diagnostico is not None,
         'active_view': active_view,
@@ -1225,6 +1399,12 @@ def update_appearance_preference(request):
         field_name = 'tamano_letra'
     elif preference == 'desactivar_animaciones' and isinstance(value, bool):
         field_name = 'desactivar_animaciones'
+    elif preference == 'zona_horaria' and isinstance(value, str) and value in available_timezones():
+        field_name = 'zona_horaria'
+    elif preference == 'recordatorios_activos' and isinstance(value, bool):
+        field_name = 'recordatorios_activos'
+    elif preference == 'resumen_semanal_activo' and isinstance(value, bool):
+        field_name = 'resumen_semanal_activo'
     else:
         return JsonResponse({'success': False, 'error': 'La preferencia no es válida.'}, status=400)
 
@@ -1963,22 +2143,35 @@ def diagnostico_view(request, pk=None):
     else:
         diagnostico = Diagnostico.objects.filter(usuario=usuario).first()
 
-    form = DiagnosticoForm(request.POST or None, instance=diagnostico)
+    paciente = Paciente.objects.filter(usuario=usuario).first()
+    form = DiagnosticoForm(
+        request.POST or None,
+        instance=diagnostico,
+        initial={
+            'zona_afectada': (
+                diagnostico.zona_afectada if diagnostico and diagnostico.zona_afectada
+                else paciente.zona_afectada if paciente else ''
+            ),
+        },
+    )
     if request.method == "POST":
         if form.is_valid():
-            diagnostico_guardado = form.save(commit=False)
-            diagnostico_guardado.usuario = usuario
-            diagnostico_guardado.save()
+            form.save(usuario=usuario)
             messages.success(request, "Formulario enviado correctamente.")
             return redirect("/principal/#diagnostico")
         messages.error(request, "Por favor, complete todos los campos obligatorios.")
 
-    return render(request, "principal/diagnostico.html", {"form": form})
+    return render(request, "principal/diagnostico.html", {
+        'form': form,
+        'is_diagnostic_update': diagnostico is not None,
+    })
 
 
 @require_login
 def videos_page_view(request):
-    videos = load_videos()
+    videos = add_video_zone_filter_keys(load_videos())
+    recommendation_zone = patient_recommendation_zone(request.session.get('current_user', ''))
+    videos, _ = prioritize_recommended_videos(videos, recommendation_zone)
     page_number = max(int(request.GET.get('page', 1)), 1)
     start = (page_number - 1) * VIDEO_PAGE_SIZE
     end = start + VIDEO_PAGE_SIZE
@@ -2048,11 +2241,18 @@ def surprise_video_view(request):
         return render(request, 'principal/partials/featured_video.html', {'video': None})
 
     email = request.session.get('current_user', '')
+    zone_recommendations = recommended_videos_for_zone(
+        videos,
+        patient_recommendation_zone(email),
+    )
     category_counts = VideoView.objects.filter(user_email=email).values('category').annotate(
         total=Count('id')
     ).order_by('-total')
     preferred_category = category_counts.first()['category'] if category_counts else None
-    candidates = [video for video in videos if video['category'].casefold() == preferred_category.casefold()] if preferred_category else videos
+    candidates = zone_recommendations or (
+        [video for video in videos if video['category'].casefold() == preferred_category.casefold()]
+        if preferred_category else videos
+    )
     shown_ids = request.session.get('surprise_video_ids', [])
     unseen_candidates = [video for video in candidates if video['video_id'] not in shown_ids]
     if not unseen_candidates:

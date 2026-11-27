@@ -265,4 +265,35 @@ este bloque es para hacerte dueño de la base de datos asi tenes control total
 GRANT USAGE, CREATE ON SCHEMA public TO nexorev_admin;
 ALTER SCHEMA public OWNER TO nexorev_admin;
 ALTER DATABASE nexorev_db OWNER TO nexorev_admin;
+
+## Tareas programadas
+
+Configura las tareas de gestión en el Programador de tareas de Windows usando el
+`python.exe` del entorno virtual del proyecto. En **Programa o script**, indica
+`<ruta-del-proyecto>\env\Scripts\python.exe`; en **Iniciar en**, usa
+`<ruta-del-proyecto>\env\NexoRev`. Agrega los argumentos `manage.py` y el
+comando correspondiente en **Agregar argumentos**. Las tareas solo se ejecutan
+con el equipo encendido; no se ejecutan mientras esté apagado.
+
+### Comandos programados
+
+Agrega aquí cada comando de gestión cuando se implemente, junto con su
+frecuencia y los argumentos necesarios.
+
+- `python manage.py reintentar_alertas_pendientes` — cada 5 minutos. Reintenta
+  los correos de alertas de dolor pendientes. Acepta `--dry-run` y
+  `--ahora "AAAA-MM-DD HH:MM"` para simular la fecha/hora de corte.
+- `python manage.py enviar_recordatorios` — cada 5 minutos. Envía los
+  recordatorios de rutinas pendientes según la hora local del paciente. Acepta
+  `--dry-run` y `--ahora "AAAA-MM-DD HH:MM"` como referencia UTC.
+- `python manage.py enviar_resumenes_semanales` — cada hora. Envía el resumen de
+  la semana anterior completa cuando ya pasó el horario configurado en la zona
+  del paciente. Acepta `--dry-run` y `--ahora` en UTC; puede indicarse sin sufijo,
+  con `Z` o con `+00:00`, y se rechazan otros desfases. Por ejemplo, el domingo
+  8 de marzo de 2026 a las 20:00 en El Salvador (UTC-6) equivale al lunes 9 a las
+  02:00 UTC:
+
+  ```powershell
+  python manage.py enviar_resumenes_semanales --ahora "2026-03-09 02:00"
+  ```
  

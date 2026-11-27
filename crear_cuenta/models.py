@@ -84,6 +84,9 @@ class Usuario(models.Model):
         default='normal',
     )
     desactivar_animaciones = models.BooleanField('animaciones desactivadas', default=False)
+    zona_horaria = models.CharField('zona horaria', max_length=64, default='America/El_Salvador')
+    recordatorios_activos = models.BooleanField('recordatorios activos', default=True)
+    resumen_semanal_activo = models.BooleanField('resumen semanal activo', default=True)
     fecha_creacion = models.DateTimeField('fecha de creación', auto_now_add=True)
 
     class Meta:

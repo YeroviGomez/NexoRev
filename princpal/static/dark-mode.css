@@ -88,6 +88,35 @@ html.dark-mode .search-box input, body.dark-mode .search-box input { background:
 html.dark-mode .search-box input::placeholder, body.dark-mode .search-box input::placeholder { color: #9aa3ad; }
 html.dark-mode .body-placeholder, body.dark-mode .body-placeholder { color: #c6d1da; }
 html.dark-mode .body-placeholder span, body.dark-mode .body-placeholder span { background: #0f1113; color: #dbe9ef; border: 2px dashed #2a2a33; }
+html.dark-mode .body-selection-card, body.dark-mode .body-selection-card { background: #111827; border-color: #374151; }
+html.dark-mode .selected-panel .body-selection-copy p, body.dark-mode .selected-panel .body-selection-copy p { color: #f8fafc; }
+html.dark-mode .body-selection-copy > span, body.dark-mode .body-selection-copy > span,
+html.dark-mode .body-selection-note, body.dark-mode .body-selection-note { color: #cbd5e1 !important; }
+html.dark-mode .body-selection-clear, body.dark-mode .body-selection-clear { background: #23232d; border-color: #4b5563; color: #f8fafc; }
+html.dark-mode .body-map-view, body.dark-mode .body-map-view { background: #23232d; border-color: #4b5563; color: #f8fafc; }
+html.dark-mode .body-map-view span, body.dark-mode .body-map-view span { color: #cbd5e1; }
+html.dark-mode .body-map-view.is-active, body.dark-mode .body-map-view.is-active { background: #0f766e; border-color: #2dd4bf; color: #fff; }
+html.dark-mode .body-map-view.is-active span, body.dark-mode .body-map-view.is-active span { color: #fff; }
+html.dark-mode .body-map-orientation, body.dark-mode .body-map-orientation { color: #cbd5e1; }
+html.dark-mode .diagnostic-body-region, body.dark-mode .diagnostic-body-region { background: #102a2a; border-color: #0f766e; }
+html.dark-mode .diagnostic-body-region h2, body.dark-mode .diagnostic-body-region h2,
+html.dark-mode .diagnostic-body-region p, body.dark-mode .diagnostic-body-region p,
+html.dark-mode .diagnostic-question-section h2, body.dark-mode .diagnostic-question-section h2 { color: #f8fafc; }
+html.dark-mode .diagnostic-stepper, body.dark-mode .diagnostic-stepper { background: color-mix(in srgb, var(--step-accent) 16%, #121827); border-color: color-mix(in srgb, var(--step-accent) 48%, #252b3b); }
+html.dark-mode .diagnostic-stepper-heading h2, body.dark-mode .diagnostic-stepper-heading h2 { color: #f8fafc; }
+html.dark-mode .diagnostic-step-count, body.dark-mode .diagnostic-step-count,
+html.dark-mode .diagnostic-block-kicker, body.dark-mode .diagnostic-block-kicker,
+html.dark-mode .diagnostic-block-number, body.dark-mode .diagnostic-block-number { color: color-mix(in srgb, var(--step-accent) 62%, white); }
+html.dark-mode .diagnostic-stepper > p, body.dark-mode .diagnostic-stepper > p,
+html.dark-mode .diagnostic-step-hint, body.dark-mode .diagnostic-step-hint { color: #cbd5e1; }
+html.dark-mode .diagnostic-progress-track, body.dark-mode .diagnostic-progress-track { background: color-mix(in srgb, var(--step-accent) 24%, #252b3b); }
+html.dark-mode .diagnostic-question, body.dark-mode .diagnostic-question { background: #1a1a24; border-color: color-mix(in srgb, var(--step-accent) 24%, #3a3a4e); }
+html.dark-mode .diagnostic-question-section, body.dark-mode .diagnostic-question-section { background: linear-gradient(145deg, color-mix(in srgb, var(--step-accent) 13%, #1a1a24), #1a1a24 40%); border-color: color-mix(in srgb, var(--step-accent) 35%, #3a3a4e); }
+html.dark-mode .diagnostic-block-number, body.dark-mode .diagnostic-block-number { background: color-mix(in srgb, var(--step-accent) 18%, #1a1a24); border-color: color-mix(in srgb, var(--step-accent) 38%, #3a3a4e); }
+html.dark-mode .diagnostic-form li label, body.dark-mode .diagnostic-form li label { background: #23232d; border-color: #3a3a4e; color: #f8fafc; }
+html.dark-mode .diagnostic-form li label:has(input:checked), body.dark-mode .diagnostic-form li label:has(input:checked) { background: color-mix(in srgb, var(--step-accent) 22%, #23232d); border-color: var(--step-accent); }
+html.dark-mode .diagnostic-delete-button, body.dark-mode .diagnostic-delete-button { background: #2b1b22; border-color: #7f1d1d; color: #fecaca; }
+html.dark-mode .diagnostic-delete-button:hover, body.dark-mode .diagnostic-delete-button:hover { background: #451a1a; border-color: #ef4444; }
 html.dark-mode .video-copy, body.dark-mode .video-copy { color: #e6eef0; }
 html.dark-mode .video-copy p, body.dark-mode .video-copy p { color: #cbd6de; }
 html.dark-mode .security-modal, body.dark-mode .security-modal,
@@ -95,6 +124,8 @@ html.dark-mode .video-safety-modal, body.dark-mode .video-safety-modal,
 html.dark-mode .video-upload-panel, body.dark-mode .video-upload-panel,
 html.dark-mode .video-toolbar, body.dark-mode .video-toolbar,
 html.dark-mode .featured-video-zone, body.dark-mode .featured-video-zone,
+html.dark-mode .video-recommendation-notice, body.dark-mode .video-recommendation-notice,
+html.dark-mode .diagnostic-success-card, body.dark-mode .diagnostic-success-card,
 html.dark-mode .video-card, body.dark-mode .video-card,
 html.dark-mode .videos-empty, body.dark-mode .videos-empty,
 html.dark-mode .routine-completion, body.dark-mode .routine-completion,
@@ -123,6 +154,10 @@ html.dark-mode .thumbnail-file-name, body.dark-mode .thumbnail-file-name,
 html.dark-mode .upload-preview-heading > span, body.dark-mode .upload-preview-heading > span,
 html.dark-mode .featured-copy h2, body.dark-mode .featured-copy h2,
 html.dark-mode .featured-copy p, body.dark-mode .featured-copy p,
+html.dark-mode .video-recommendation-notice h2, body.dark-mode .video-recommendation-notice h2,
+html.dark-mode .video-recommendation-notice p, body.dark-mode .video-recommendation-notice p,
+html.dark-mode .diagnostic-success-card h2, body.dark-mode .diagnostic-success-card h2,
+html.dark-mode .diagnostic-success-card p, body.dark-mode .diagnostic-success-card p,
 html.dark-mode .video-copy h2, body.dark-mode .video-copy h2,
 html.dark-mode .video-copy p, body.dark-mode .video-copy p,
 html.dark-mode .video-count, body.dark-mode .video-count,

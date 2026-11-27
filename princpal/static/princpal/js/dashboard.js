@@ -14,8 +14,12 @@
   const rescheduleRows = byId('dashboardRescheduleRequests');
   const rescheduleEmpty = byId('dashboardRescheduleRequestsEmpty');
   const rescheduleData = byId('dashboard-reschedule-request-data');
-  const routineTemplateDataElement = byId('routine-template-data');
+  const weeklyReportRoot = byId('weeklyReportView');
+  const weeklyReportWeek = byId('weeklyReportWeek');
+  const weeklyReportPatientFilter = byId('weeklyReportPatientFilter');
+  const weeklyReportRows = byId('weeklyReportPatientRows');
   const SVG_NS = 'http://www.w3.org/2000/svg';
+  const routineTemplateDataElement = byId('routine-template-data');
   const colors = ['#119b72', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
   let patients = [];
   let rescheduleRequests = [];
@@ -106,6 +110,19 @@
     };
   }));
 
+  const updateWeeklyReportPatientOptions = () => {
+    if (!weeklyReportPatientFilter) return;
+    const selectedIds = new Set(
+      Array.from(weeklyReportPatientFilter.selectedOptions, (option) => option.value),
+    );
+    weeklyReportPatientFilter.replaceChildren();
+    patients.forEach((patient) => {
+      const option = new Option(patient.name, String(patient.id));
+      option.selected = selectedIds.has(option.value);
+      weeklyReportPatientFilter.add(option);
+    });
+  };
+
   const updateSelectOptions = () => {
     const selectedPatient = patientFilter.value;
     patientFilter.replaceChildren(new Option('Todos los pacientes', 'all'));
@@ -124,6 +141,7 @@
         updateSessionGoalOptions(select.value, select.form.elements.namedItem('objetivo_terapeutico'));
       }
     });
+    updateWeeklyReportPatientOptions();
   };
 
   const updateSessionGoalOptions = (patientId, goalSelect) => {
@@ -884,6 +902,226 @@
     updateSelectOptions();
     render();
   };
+
+  if (weeklyReportRoot) {
+    const weeklyReportForm = byId('weeklyReportFilters');
+    const weeklyReportPrevious = byId('weeklyReportPrevious');
+    const weeklyReportNext = byId('weeklyReportNext');
+    const weeklyReportLoading = byId('weeklyReportLoading');
+    const weeklyReportError = byId('weeklyReportError');
+    const weeklyReportEmpty = byId('weeklyReportEmpty');
+    const weeklyReportResults = byId('weeklyReportResults');
+    const weeklyReportDownloadStatus = byId('weeklyReportDownloadStatus');
+    const reportRequestUrl = weeklyReportRoot.dataset.reportUrl;
+    let reportRequestId = 0;
+
+    const reportNumber = (value) => (
+      value === null || value === undefined ? 'Sin datos' : formatNumber(value)
+    );
+    const reportPercent = (value) => (
+      value === null || value === undefined ? 'Sin datos' : `${Number(value).toFixed(2)}%`
+    );
+    const buildReportParams = (format = null) => {
+      const params = new URLSearchParams();
+      if (weeklyReportWeek.value) params.set('semana', weeklyReportWeek.value);
+      Array.from(weeklyReportPatientFilter.selectedOptions).forEach((option) => {
+        params.append('pacientes', option.value);
+      });
+      if (format) params.set('formato', format);
+      return params;
+    };
+
+    const updateWeekNavigation = () => {
+      const disabled = !weeklyReportWeek.value;
+      weeklyReportPrevious.disabled = disabled;
+      weeklyReportNext.disabled = disabled;
+    };
+
+    const setReportKpis = (totales) => {
+      byId('weeklyReportTotalPatients').textContent = reportNumber(totales.pacientes);
+      byId('weeklyReportTotalRoutines').textContent = (
+        `${reportNumber(totales.rutinas_completadas)}/${reportNumber(totales.rutinas_programadas)}`
+      );
+      byId('weeklyReportTotalAdherence').textContent = reportPercent(totales.adherencia_pct);
+      byId('weeklyReportTotalSessions').textContent = formatNumber(
+        Object.values(totales.sesiones_por_estado || {}).reduce(
+          (total, cantidad) => total + Number(cantidad || 0),
+          0,
+        ),
+      );
+      byId('weeklyReportTotalAlerts').textContent = reportNumber(totales.alertas_dolor);
+    };
+
+    const renderWeeklyReportRows = (rows) => {
+      const sessionLabels = {
+        programada: 'Programadas',
+        completada: 'Completadas',
+        cancelada: 'Canceladas',
+        no_asistio: 'No asistió',
+      };
+      weeklyReportRows.replaceChildren();
+      rows.forEach((fila) => {
+        const resumen = fila.resumen;
+        const tr = document.createElement('tr');
+        const sesiones = Object.entries(resumen.sesiones?.por_estado || {})
+          .map(([estado, cantidad]) => `${sessionLabels[estado] || estado}: ${cantidad}`)
+          .join(' · ');
+        const values = [
+          fila.paciente_nombre,
+          `${resumen.rutinas.completadas}/${resumen.rutinas.programadas}`,
+          reportPercent(resumen.rutinas.adherencia_pct),
+          reportNumber(resumen.eva.promedio),
+          reportNumber(resumen.eva.variacion),
+          sesiones || 'Sin sesiones',
+          reportNumber(resumen.alertas_dolor.total),
+        ];
+        values.forEach((value, index) => {
+          const cell = document.createElement(index === 0 ? 'th' : 'td');
+          if (index === 0) cell.scope = 'row';
+          cell.textContent = String(value);
+          tr.append(cell);
+        });
+        weeklyReportRows.append(tr);
+      });
+    };
+
+    const loadWeeklyReport = async () => {
+      const requestId = ++reportRequestId;
+      weeklyReportLoading.hidden = false;
+      weeklyReportError.hidden = true;
+      weeklyReportEmpty.hidden = true;
+      weeklyReportResults.hidden = true;
+
+      const params = buildReportParams();
+      const query = params.toString();
+      const url = query ? `${reportRequestUrl}?${query}` : reportRequestUrl;
+
+      try {
+        const response = await fetch(url, {
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+        });
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error('El servidor devolvió una respuesta inválida.');
+        }
+        if (!response.ok || data.success !== true) {
+          throw new Error(data.error || 'No se pudo cargar el reporte semanal.');
+        }
+        if (!Array.isArray(data.pacientes) || !data.semana || !data.totales) {
+          throw new Error('La respuesta del reporte semanal tiene un formato inválido.');
+        }
+        if (requestId !== reportRequestId) return;
+
+        weeklyReportWeek.value = data.semana.inicio;
+        updateWeekNavigation();
+        byId('weeklyReportWeekLabel').textContent = (
+          `Semana del ${data.semana.inicio} al ${data.semana.fin}`
+        );
+        if (data.pacientes.length === 0) {
+          weeklyReportEmpty.hidden = false;
+          return;
+        }
+        setReportKpis(data.totales);
+        renderWeeklyReportRows(data.pacientes);
+        weeklyReportResults.hidden = false;
+      } catch (error) {
+        if (requestId !== reportRequestId) return;
+        console.error('No se pudo cargar el reporte semanal.', error);
+        weeklyReportError.textContent = error instanceof Error
+          ? error.message
+          : 'No se pudo cargar el reporte semanal.';
+        weeklyReportError.hidden = false;
+      } finally {
+        if (requestId === reportRequestId) weeklyReportLoading.hidden = true;
+      }
+    };
+
+    const downloadWeeklyReport = async (format, button) => {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      weeklyReportDownloadStatus.hidden = true;
+      weeklyReportDownloadStatus.classList.remove('is-error');
+      try {
+        const params = buildReportParams(format);
+        const response = await fetch(`${reportRequestUrl}?${params.toString()}`, {
+          headers: {
+            Accept: format === 'pdf'
+              ? 'application/pdf'
+              : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+          cache: 'no-store',
+        });
+        if (!response.ok) {
+          let data = {};
+          try {
+            data = await response.json();
+          } catch {
+            data = {};
+          }
+          throw new Error(data.error || 'No se pudo descargar el reporte.');
+        }
+
+        const expectedType = format === 'pdf' ? 'application/pdf' : 'spreadsheetml';
+        if (!(response.headers.get('Content-Type') || '').includes(expectedType)) {
+          throw new Error('El servidor devolvió un archivo con formato inesperado.');
+        }
+        const blob = await response.blob();
+        if (!blob.size) throw new Error('El archivo descargado está vacío.');
+
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const filename = disposition.match(/filename="([^"]+)"/i);
+        link.href = objectUrl;
+        link.download = filename ? filename[1] : `reporte-semanal.${format}`;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        weeklyReportDownloadStatus.textContent = 'Descarga iniciada.';
+      } catch (error) {
+        weeklyReportDownloadStatus.textContent = error instanceof Error
+          ? error.message
+          : 'No se pudo descargar el reporte.';
+        weeklyReportDownloadStatus.classList.add('is-error');
+      } finally {
+        weeklyReportDownloadStatus.hidden = false;
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
+    };
+
+    const moveReportWeek = (offset) => {
+      if (!weeklyReportWeek.value) return;
+      const selectedDate = new Date(`${weeklyReportWeek.value}T12:00:00`);
+      const daysSinceMonday = (selectedDate.getDay() + 6) % 7;
+      selectedDate.setDate(selectedDate.getDate() - daysSinceMonday + (offset * 7));
+      weeklyReportWeek.value = [
+        selectedDate.getFullYear(),
+        String(selectedDate.getMonth() + 1).padStart(2, '0'),
+        String(selectedDate.getDate()).padStart(2, '0'),
+      ].join('-');
+      loadWeeklyReport();
+    };
+
+    weeklyReportForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      loadWeeklyReport();
+    });
+    weeklyReportWeek.addEventListener('change', updateWeekNavigation);
+    weeklyReportPrevious.addEventListener('click', () => moveReportWeek(-1));
+    weeklyReportNext.addEventListener('click', () => moveReportWeek(1));
+    weeklyReportRoot.querySelectorAll('[data-report-format]').forEach((button) => {
+      button.addEventListener('click', () => {
+        downloadWeeklyReport(button.dataset.reportFormat, button);
+      });
+    });
+    updateWeekNavigation();
+    loadWeeklyReport();
+  }
 
   updateSelectOptions();
   document.querySelectorAll('.dashboard-form [name="patient_id"]').forEach((patientSelect) => {

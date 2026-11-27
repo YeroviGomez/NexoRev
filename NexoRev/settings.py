@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'login',
     'princpal',
     'ajustes',
+    'notificaciones',
 ]
 
 MIDDLEWARE = [
@@ -145,3 +146,11 @@ EMAIL_BACKEND = os.environ.get(
     if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD
     else 'django.core.mail.backends.console.EmailBackend',
 )
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '10'))
+
+ALERTA_DOLOR_UMBRAL = int(os.environ.get('ALERTA_DOLOR_UMBRAL', '7'))
+ALERTA_DOLOR_SUBIDA = int(os.environ.get('ALERTA_DOLOR_SUBIDA', '3'))
+ALERTA_DOLOR_RACHA_UMBRAL = int(os.environ.get('ALERTA_DOLOR_RACHA_UMBRAL', '6'))
+ALERTA_DOLOR_RACHA_CANTIDAD = int(os.environ.get('ALERTA_DOLOR_RACHA_CANTIDAD', '3'))
+RESUMEN_SEMANAL_DIA = int(os.environ.get('RESUMEN_SEMANAL_DIA', '6'))
+RESUMEN_SEMANAL_HORA = int(os.environ.get('RESUMEN_SEMANAL_HORA', '20'))

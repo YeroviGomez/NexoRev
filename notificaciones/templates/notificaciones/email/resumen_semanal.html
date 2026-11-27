@@ -1,0 +1,52 @@
+{% extends "notificaciones/email/base.html" %}
+{% block titulo %}Tu resumen semanal | Nexo ReV{% endblock %}
+{% block contenido %}
+<p style="margin:0 0 16px;">Hola {{ paciente_nombre }},</p>
+<p style="margin:0 0 20px;">Este es tu resumen de la semana del <strong>{{ semana_inicio }}</strong> al <strong>{{ semana_fin }}</strong>.</p>
+
+<h2 style="margin:20px 0 8px; color:#0f766e; font-size:18px;">Rutinas</h2>
+<p style="margin:0 0 6px;">Programadas: {{ resumen.rutinas.programadas }}</p>
+<p style="margin:0 0 6px;">Completadas: {{ resumen.rutinas.completadas }}</p>
+<p style="margin:0 0 16px;">Adherencia: {% if resumen.rutinas.adherencia_pct != None %}{{ resumen.rutinas.adherencia_pct|floatformat:"2u" }}%{% else %}sin rutinas programadas{% endif %}</p>
+
+<h2 style="margin:20px 0 8px; color:#0f766e; font-size:18px;">Bienestar y actividad</h2>
+<p style="margin:0 0 6px;">Promedio de dolor EVA: {% if resumen.eva.promedio != None %}{{ resumen.eva.promedio }}{% else %}sin registros{% endif %}</p>
+<p style="margin:0 0 6px;">Promedio EVA de la semana anterior: {% if resumen.eva.promedio_semana_anterior != None %}{{ resumen.eva.promedio_semana_anterior }}{% else %}sin registros{% endif %}</p>
+<p style="margin:0 0 6px;">Variación frente a la semana anterior: {% if resumen.eva.variacion != None %}{{ resumen.eva.variacion }}{% else %}sin datos para comparar{% endif %}</p>
+<p style="margin:0 0 6px;">Última evaluación clínica de la semana: {% if resumen.ultima_evaluacion %}{{ resumen.ultima_evaluacion.nivel_dolor }} ({{ resumen.ultima_evaluacion.fecha_local }}){% else %}sin evaluación registrada{% endif %}</p>
+<p style="margin:0 0 6px;">Días con actividad: {{ resumen.dias_con_actividad }}</p>
+<p style="margin:0 0 16px;">Alertas de dolor: {{ resumen.alertas_dolor.total }}</p>
+{% if resumen.alertas_dolor.items %}
+  <ul style="margin:0 0 16px; padding-left:24px;">
+    {% for alerta in resumen.alertas_dolor.items %}
+      <li style="margin:0 0 6px;">{{ alerta.fecha_local }} — EVA {{ alerta.nivel_dolor }}, {{ alerta.regla }}, {{ alerta.estado }}</li>
+    {% endfor %}
+  </ul>
+{% endif %}
+
+<h2 style="margin:20px 0 8px; color:#0f766e; font-size:18px;">Sesiones</h2>
+<ul style="margin:0 0 16px; padding-left:24px;">
+  {% for estado, cantidad in resumen.sesiones.por_estado.items %}
+    <li style="margin:0 0 6px;">{{ estado }}: {{ cantidad }}</li>
+  {% endfor %}
+</ul>
+
+<h2 style="margin:20px 0 8px; color:#0f766e; font-size:18px;">Objetivos</h2>
+<p style="margin:0 0 8px;">Cumplidos: {{ resumen.objetivos_cumplidos }} de {{ resumen.objetivos_total }}</p>
+{% if resumen.objetivos_detalle %}
+  <ul style="margin:0 0 16px; padding-left:24px;">
+    {% for objetivo in resumen.objetivos_detalle %}
+      <li style="margin:0 0 6px;">{{ objetivo.nombre }}: {% if objetivo.cumplido %}cumplido{% else %}pendiente{% endif %}</li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p style="margin:0 0 16px;">Aún no hay objetivos registrados.</p>
+{% endif %}
+
+<p style="margin:20px 0 16px;">Cada avance cuenta. Sigue cuidándote a tu ritmo.</p>
+<p style="margin:20px 0 0;">
+  <a href="{{ enlace_principal }}" style="display:inline-block; padding:12px 18px; border-radius:6px; background-color:#0f766e; color:#ffffff; font-weight:bold; text-decoration:none;">
+    Abrir Nexo ReV
+  </a>
+</p>
+{% endblock %}

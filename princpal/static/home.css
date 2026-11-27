@@ -1,13 +1,32 @@
 .home-grid { display: grid; grid-template-columns: minmax(420px, 1fr) minmax(340px, 0.98fr); gap: 2.5rem; align-items: start; }
 .home-side { display: grid; gap: 1.9rem; }
 .panel { border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); box-shadow: none; }
-.body-panel { min-height: 826px; padding: 1.9rem; }
+.body-panel { min-height: 0; padding: clamp(1.2rem, 2.4vw, 2rem); }
 .panel h2 { margin: 0; font-size: 1.35rem; font-weight: 700; }
 .panel > p { margin: 0.75rem 0 0; color: #687287; font-size: 1.18rem; }
-.body-placeholder { min-height: 670px; display: grid; place-items: center; color: #8aa1b7; text-align: center; }
-.body-placeholder span { border: 2px dashed #c6d3df; border-radius: 1rem; padding: 4rem 5rem; color: #74899d; background: #f4f9fc; font-size: 1.8rem; font-weight: 800; }
-.selected-panel { min-height: 230px; padding: 1.9rem; }
-.selected-panel p { display: grid; min-height: 116px; place-items: center; text-align: center; }
+.body-map { margin-top: 1rem; }
+.body-map-views { display: flex; justify-content: center; gap: 0.65rem; margin-bottom: 0.75rem; }
+.body-map-view { min-width: 8.5rem; border: 1px solid var(--line); border-radius: 0.8rem; padding: 0.65rem 1rem; background: var(--surface); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease; }
+.body-map-view:hover, .body-map-view:focus-visible { border-color: var(--teal); outline: 2px solid color-mix(in srgb, var(--teal) 25%, transparent); outline-offset: 1px; }
+.body-map-view.is-active { border-color: var(--teal); background: var(--teal-soft); color: #006d63; box-shadow: inset 0 0 0 1px var(--teal); }
+.body-map-stage { position: relative; width: min(100%, 23rem, calc(64vh * 315 / 700)); height: auto; max-height: 64vh; margin: 0 auto; aspect-ratio: 315 / 700; overflow: hidden; border: 1px solid #e8ebef; border-radius: 1rem; background: #fff; box-shadow: 0 8px 24px rgb(15 23 42 / 7%); }
+.body-map-hotspots { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.body-map-hotspots .body-zone-area { pointer-events: auto; }
+.body-zone-area { fill: #354157; stroke: #fff; stroke-width: 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; cursor: pointer; touch-action: manipulation; transition: fill 0.16s ease, filter 0.16s ease; }
+.body-zone-area:hover, .body-zone-area:focus-visible { fill: #51648a; filter: drop-shadow(0 1px 3px rgb(0 0 0 / 45%)); outline: none; }
+.body-zone-area[aria-pressed="true"] { fill: var(--teal); stroke-width: 4; filter: drop-shadow(0 1px 4px rgb(0 0 0 / 55%)); }
+.body-map-hint { margin-top: 0.55rem !important; color: var(--muted) !important; font-size: 0.9rem !important; }
+.selected-panel { min-height: 0; padding: 1.5rem; }
+.body-selection-card { display: flex; align-items: center; gap: 0.85rem; min-height: 5rem; margin-top: 1rem; border: 1px solid var(--line); border-radius: 0.85rem; padding: 0.9rem 1rem; background: var(--surface-soft); }
+.body-selection-marker { display: grid; width: 2.5rem; height: 2.5rem; flex: 0 0 auto; place-items: center; border: 1px solid #99f6e4; border-radius: 0.75rem; background: var(--teal-soft); }
+.body-selection-marker::before { width: 0.75rem; height: 0.75rem; border-radius: 50%; background: var(--teal); content: ""; }
+.body-selection-copy { min-width: 0; flex: 1; }
+.selected-panel .body-selection-copy p { display: block; min-height: 0; margin: 0; color: var(--ink); font-size: 1rem; font-weight: 700; text-align: left; }
+.body-selection-copy > span { display: block; margin-top: 0.25rem; color: var(--muted); font-size: 0.85rem; }
+.body-selection-clear { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 0.55rem; padding: 0.4rem 0.65rem; background: var(--surface); color: var(--ink); font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.body-selection-clear:hover, .body-selection-clear:focus-visible { border-color: var(--teal); outline: none; }
+.body-selection-note { margin: 0.85rem 0 0 !important; color: var(--muted) !important; font-size: 0.85rem !important; }
+.body-diagnosis-continue { width: 100%; margin-top: 1rem; }
 .quick-panel { padding: 1.9rem; }
 .quick-panel h2 { margin-bottom: 2rem; }
 .quick-link { width: 100%; min-height: 2.85rem; margin-top: 0.7rem; border: 1px solid var(--line); border-radius: 0.55rem; background: var(--surface); color: #030711; display: flex; align-items: center; gap: 1rem; padding: 0 1.1rem; font-weight: 700; cursor: pointer; text-align: left; }

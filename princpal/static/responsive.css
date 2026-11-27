@@ -16,9 +16,7 @@
   .app-shell { margin-left: 0; padding: 6rem 1rem 1.5rem; }
   .page-head h1 { font-size: 2rem; }
   .page-head p, .panel > p { font-size: 1rem; }
-  .body-panel { min-height: 520px; }
-  .body-placeholder { min-height: 380px; }
-  .body-placeholder span { width: 100%; padding: 3rem 1rem; }
+  .body-panel { min-height: 0; }
   .favorites-toolbar { align-items: flex-start; flex-direction: column; }
   .tutorial-basic-dialog { padding: 0; }
   .tutorial-prompt-dialog { max-height: calc(100vh - 2rem); }
