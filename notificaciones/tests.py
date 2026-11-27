@@ -5,7 +5,7 @@ import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from io import BytesIO, StringIO
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.parse import urlencode
 import zlib
 from zoneinfo import ZoneInfo
@@ -2505,4 +2505,48 @@ class ExportDependencyTests(SimpleTestCase):
             exportar_reporte_pdf,
             'reportlab',
             'PDF',
+        )
+
+
+class RunLocalCommandTests(SimpleTestCase):
+    def test_starts_runserver_without_the_auto_reloader(self):
+        server = MagicMock()
+        server.poll.side_effect = [None, 0, 0]
+
+        with (
+            patch(
+                'notificaciones.management.commands.run_local.subprocess.Popen',
+                return_value=server,
+            ) as mocked_popen,
+            patch('notificaciones.management.commands.run_local.time.sleep'),
+        ):
+            call_command('run_local', '127.0.0.1:8081', stdout=StringIO())
+
+        server_command = mocked_popen.call_args.args[0]
+        self.assertIn('runserver', server_command)
+        self.assertIn('--noreload', server_command)
+        self.assertEqual(server_command[-1], '127.0.0.1:8081')
+        self.assertEqual(mocked_popen.call_args.kwargs['cwd'], settings.BASE_DIR)
+
+    def test_runs_notification_jobs_immediately_while_server_is_running(self):
+        from notificaciones.management.commands.run_local import Command
+
+        server = MagicMock()
+        server.poll.side_effect = [None, None, None, None, None, 0]
+
+        with (
+            patch(
+                'notificaciones.management.commands.run_local.call_command',
+            ) as mocked_call_command,
+            patch('notificaciones.management.commands.run_local.time.sleep'),
+        ):
+            Command()._run_jobs(server)
+
+        self.assertEqual(
+            [call.args[0] for call in mocked_call_command.call_args_list],
+            [
+                'enviar_recordatorios',
+                'reintentar_alertas_pendientes',
+                'enviar_resumenes_semanales',
+            ],
         )

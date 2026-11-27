@@ -266,19 +266,39 @@ GRANT USAGE, CREATE ON SCHEMA public TO nexorev_admin;
 ALTER SCHEMA public OWNER TO nexorev_admin;
 ALTER DATABASE nexorev_db OWNER TO nexorev_admin;
 
-## Tareas programadas
+## Ejecución local con tareas de notificación
 
-Configura las tareas de gestión en el Programador de tareas de Windows usando el
-`python.exe` del entorno virtual del proyecto. En **Programa o script**, indica
-`<ruta-del-proyecto>\env\Scripts\python.exe`; en **Iniciar en**, usa
-`<ruta-del-proyecto>\env\NexoRev`. Agrega los argumentos `manage.py` y el
-comando correspondiente en **Agregar argumentos**. Las tareas solo se ejecutan
-con el equipo encendido; no se ejecutan mientras esté apagado.
+Desde la carpeta `env\NexoRev`, inicia el servidor local y las tareas
+periódicas con:
 
-### Comandos programados
+```powershell
+python manage.py run_local
+```
 
-Agrega aquí cada comando de gestión cuando se implemente, junto con su
-frecuencia y los argumentos necesarios.
+Si el entorno virtual no está activado, puedes invocar directamente su Python:
+
+```powershell
+..\Scripts\python.exe manage.py run_local
+```
+
+Usa `run_local` en lugar de `runserver` cuando quieras que se ejecuten también
+las tareas automáticas; no inicies ambos comandos al mismo tiempo. `run_local`
+inicia el mismo servidor local, pero sin el recargador automático. También
+ejecuta los recordatorios y los reintentos de alertas cada cinco minutos, y los
+resúmenes semanales cada hora.
+Las tareas se revisan al iniciar y luego según su frecuencia. Para usar otro
+puerto, pasa la dirección como en `runserver`, por ejemplo:
+`python manage.py run_local 127.0.0.1:8001`.
+
+Mantén abierta la terminal y la computadora encendida. `Ctrl+C` detiene tanto
+el servidor como las tareas; esta opción no inicia Nexo automáticamente después
+de reiniciar Windows y está destinada al desarrollo local.
+
+Como alternativa, si se ejecuta el servidor sin `run_local` o se despliega en
+un servidor, programa los comandos de gestión con el planificador del sistema
+operativo o del proveedor de hosting.
+
+### Comandos y frecuencias
 
 - `python manage.py reintentar_alertas_pendientes` — cada 5 minutos. Reintenta
   los correos de alertas de dolor pendientes. Acepta `--dry-run` y
@@ -296,4 +316,45 @@ frecuencia y los argumentos necesarios.
   ```powershell
   python manage.py enviar_resumenes_semanales --ahora "2026-03-09 02:00"
   ```
+
+## Configuración segura del correo SMTP
+
+Las credenciales de Gmail no se guardan en el código ni se deben subir a GitHub.
+Configúralas como variables permanentes del usuario en Windows.
+
+1. Activa la verificación en dos pasos de la cuenta de Google.
+2. Genera una **contraseña de aplicación** desde **Cuenta de Google > Seguridad > Contraseñas de aplicaciones**.
+3. Abre PowerShell y reemplaza los marcadores por tus datos reales:
+
+```powershell
+setx EMAIL_HOST_USER "******"
+setx EMAIL_HOST_PASSWORD "******"
+setx DEFAULT_FROM_EMAIL "******"
+setx EMAIL_HOST "smtp.gmail.com"
+setx EMAIL_PORT "587"
+setx EMAIL_USE_TLS "true"
+```
+
+No uses la contraseña normal de Gmail. Usa únicamente la contraseña de aplicación.
+
+4. Cierra y vuelve a abrir VS Code, las terminales y los procesos de Django para cargar las variables.
+5. Verifica únicamente que existen sin mostrar sus valores:
+
+```powershell
+[Environment]::GetEnvironmentVariable("EMAIL_HOST_USER", "User") -ne $null
+[Environment]::GetEnvironmentVariable("EMAIL_HOST_PASSWORD", "User") -ne $null
+```
+
+Para cambiar una credencial, ejecuta nuevamente `setx` con el nuevo valor.
+
+Para eliminar todas las variables configuradas:
+
+```powershell
+[Environment]::SetEnvironmentVariable("EMAIL_HOST_USER", $null, "User")
+[Environment]::SetEnvironmentVariable("EMAIL_HOST_PASSWORD", $null, "User")
+[Environment]::SetEnvironmentVariable("DEFAULT_FROM_EMAIL", $null, "User")
+[Environment]::SetEnvironmentVariable("EMAIL_HOST", $null, "User")
+[Environment]::SetEnvironmentVariable("EMAIL_PORT", $null, "User")
+[Environment]::SetEnvironmentVariable("EMAIL_USE_TLS", $null, "User")
+```
  
