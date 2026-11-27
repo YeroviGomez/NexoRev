@@ -112,7 +112,7 @@ def _owned_alerts(doctor):
 def _owned_alert(doctor, alerta_id, lock=False):
     queryset = _owned_alerts(doctor)
     if lock:
-        queryset = queryset.select_for_update()
+        queryset = queryset.select_for_update(of=('self',))
     return queryset.filter(pk=alerta_id).first()
 
 
